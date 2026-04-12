@@ -13,44 +13,45 @@
 
 # AppKit
 
-AppKit is the shared app-facing surface monorepo for the nshkr platform core.
+AppKit is the northbound application-surface workspace for the nshkr platform
+core.
 
-The repository is intentionally generic for now. It exists to provide the stable app-consumption layer above the lower stack so product applications do not need to stitch `outer_brain`, Citadel, `jido_integration`, and execution-facing details together manually.
+It exists so product applications can consume stable chat, domain, operator,
+work-control, runtime-gateway, and conversation surfaces without stitching the
+lower stack manually.
 
 ## Scope
-
-- host-facing surfaces
-- stack composition and wiring
-- default bridges across core layers
-- app-level configuration contracts
-- reusable entrypoints for product applications
-
-## Starter Surface Areas
 
 - chat-facing surfaces
 - typed domain-facing surfaces
 - operator-facing surfaces
+- reusable work-control and governed-run surfaces
+- runtime gateways and conversation bridges
+- host-scope and managed-target helpers
+- default cross-stack composition
 
 ## Status
 
-Starter repository. The exact surface inventory will tighten as the first real consuming applications land.
+Active workspace buildout. The repo uses a non-umbrella workspace layout with
+core surface packages, bridge packages, and a proving example host.
 
 ## Development
 
-The project targets Elixir `~> 1.19` and Erlang/OTP `28`. The pinned toolchain lives in [`.tool-versions`](./.tool-versions).
+The project targets Elixir `~> 1.19` and Erlang/OTP `28`. The pinned toolchain
+lives in `.tool-versions`.
 
 ```bash
 mix deps.get
-mix test
+mix ci
 ```
 
 ## Documentation
 
-- [docs/overview.md](./docs/overview.md)
-- [docs/surfaces.md](./docs/surfaces.md)
-- [docs/composition.md](./docs/composition.md)
-- [CHANGELOG.md](./CHANGELOG.md)
+- `docs/overview.md`
+- `docs/layout.md`
+- `docs/surfaces.md`
+- `docs/composition.md`
+- `CHANGELOG.md`
 
-## License
-
-MIT. Copyright (c) 2026 nshkrdotcom. See [LICENSE](./LICENSE).
+This project is licensed under the MIT License.
+(c) 2026 nshkrdotcom. See `LICENSE`.

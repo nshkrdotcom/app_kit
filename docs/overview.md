@@ -1,12 +1,18 @@
 # Overview
 
-AppKit is the starter home for the shared app-facing surface.
+AppKit is the northbound application-surface workspace that sits above
+`outer_brain`, `jido_domain`, Citadel, and `jido_integration`.
 
-The repository is expected to hold:
+It owns the reusable app-facing seams that products should consume directly:
 
-- composition helpers
-- host-facing surfaces
-- default cross-stack wiring
-- application-level configuration contracts
+- chat surfaces
+- domain surfaces
+- operator surfaces
+- work-control and run-governance surfaces
+- runtime gateways
+- conversation bridges
+- scope and target helpers
+- normalized app config
 
-The exact shape is intentionally still light.
+The repo is intentionally northbound. It does not own semantic authority,
+policy authority, lower durable truth, or execution-plane realization.
