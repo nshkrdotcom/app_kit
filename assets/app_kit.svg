@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">AppKit logo</title>
+  <desc id="desc">A symmetric hexagonal interface emblem with layered panels, routing lines, and a centered application core.</desc>
+  <defs>
+    <linearGradient id="akShell" x1="31" y1="24" x2="169" y2="176" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFD36E"/>
+      <stop offset="0.5" stop-color="#FF8E5E"/>
+      <stop offset="1" stop-color="#FF4FA0"/>
+    </linearGradient>
+    <linearGradient id="akTrace" x1="55" y1="46" x2="145" y2="154" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFF5DC"/>
+      <stop offset="1" stop-color="#FFD7EC"/>
+    </linearGradient>
+    <radialGradient id="akAura" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(100 100) rotate(90) scale(74)">
+      <stop offset="0" stop-color="#FFB287" stop-opacity="0.68"/>
+      <stop offset="1" stop-color="#FFB287" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="akShadow" x="13" y="12" width="174" height="178" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="11" stdDeviation="11" flood-color="#1A1014" flood-opacity="0.24"/>
+    </filter>
+    <filter id="akBloom" x="41" y="39" width="118" height="122" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="4.4" result="blur"/>
+      <feBlend in="SourceGraphic" in2="blur" mode="screen"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#akShadow)">
+    <path d="M100 20L158.89 54V122L100 156L41.11 122V54L100 20Z" fill="url(#akAura)"/>
+    <path d="M100 24L155.42 56V120L100 152L44.58 120V56L100 24Z" fill="#171116" fill-opacity="0.94" stroke="url(#akShell)" stroke-width="4.6" stroke-linejoin="round"/>
+    <path d="M100 42L140.13 65V111L100 134L59.87 111V65L100 42Z" fill="#21161B" stroke="url(#akTrace)" stroke-width="3.3" stroke-linejoin="round"/>
+    <path d="M100 58L124.25 72V100L100 114L75.75 100V72L100 58Z" fill="#1C1319" stroke="#FFF0DB" stroke-opacity="0.74" stroke-width="2.1" stroke-linejoin="round"/>
+  </g>
+
+  <g filter="url(#akBloom)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M59.87 65H140.13" stroke="url(#akShell)" stroke-opacity="0.34" stroke-width="1.4"/>
+    <path d="M59.87 111H140.13" stroke="url(#akShell)" stroke-opacity="0.34" stroke-width="1.4"/>
+    <path d="M44.58 56L100 88L155.42 56" stroke="url(#akShell)" stroke-opacity="0.24" stroke-width="1.15"/>
+    <path d="M44.58 120L100 88L155.42 120" stroke="url(#akShell)" stroke-opacity="0.24" stroke-width="1.15"/>
+    <path d="M75.75 72L100 88L124.25 72" stroke="#FFF5DC" stroke-opacity="0.76" stroke-width="1.5"/>
+    <path d="M75.75 100L100 88L124.25 100" stroke="#FFD7EC" stroke-opacity="0.78" stroke-width="1.5"/>
+    <path d="M83.2 64.4V111.6" stroke="#FFF0DB" stroke-opacity="0.62" stroke-width="1.35"/>
+    <path d="M116.8 64.4V111.6" stroke="#FFF0DB" stroke-opacity="0.62" stroke-width="1.35"/>
+    <path d="M59.87 88H75.75" stroke="#FFB287" stroke-opacity="0.82" stroke-width="1.7"/>
+    <path d="M124.25 88H140.13" stroke="#FFB287" stroke-opacity="0.82" stroke-width="1.7"/>
+    <rect x="90.8" y="78.8" width="18.4" height="18.4" rx="4.2" fill="#281820" stroke="#FFF5DC" stroke-width="2"/>
+    <circle cx="100" cy="88" r="3.2" fill="#FFD36E"/>
+    <circle cx="59.87" cy="65" r="2.9" fill="#171116" stroke="#FFF5DC" stroke-width="1.15"/>
+    <circle cx="140.13" cy="65" r="2.9" fill="#171116" stroke="#FFF5DC" stroke-width="1.15"/>
+    <circle cx="59.87" cy="111" r="2.9" fill="#171116" stroke="#FFF5DC" stroke-width="1.15"/>
+    <circle cx="140.13" cy="111" r="2.9" fill="#171116" stroke="#FFF5DC" stroke-width="1.15"/>
+    <circle cx="75.75" cy="72" r="2.3" fill="#FFD36E"/>
+    <circle cx="124.25" cy="72" r="2.3" fill="#FFD36E"/>
+    <circle cx="75.75" cy="100" r="2.3" fill="#FF4FA0"/>
+    <circle cx="124.25" cy="100" r="2.3" fill="#FF4FA0"/>
+  </g>
+</svg>
