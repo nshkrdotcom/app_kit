@@ -1,6 +1,9 @@
 defmodule AppKitOuterBrainBridge.MixProject do
   use Mix.Project
 
+  @default_outer_brain_domain_bridge_path "/home/home/p/g/n/outer_brain/bridges/domain_bridge"
+  @outer_brain_domain_bridge_path_env "APP_KIT_OUTER_BRAIN_DOMAIN_BRIDGE_PATH"
+
   def project do
     [
       app: :app_kit_outer_brain_bridge,
@@ -26,9 +29,17 @@ defmodule AppKitOuterBrainBridge.MixProject do
     [
       {:app_kit_core, path: "../../core/app_kit_core"},
       {:app_kit_scope_objects, path: "../../core/scope_objects"},
+      {:outer_brain_domain_bridge, path: outer_brain_domain_bridge_path()},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40.1", only: :dev, runtime: false}
     ]
+  end
+
+  defp outer_brain_domain_bridge_path do
+    System.get_env(
+      @outer_brain_domain_bridge_path_env,
+      @default_outer_brain_domain_bridge_path
+    )
   end
 end

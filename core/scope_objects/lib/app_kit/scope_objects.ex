@@ -4,20 +4,27 @@ defmodule AppKit.ScopeObjects do
   """
 
   defmodule HostScope do
-    @moduledoc false
+    @moduledoc """
+    Host-facing scope descriptor used across typed and semantic app surfaces.
+    """
 
-    @enforce_keys [:scope_id, :actor_id]
-    defstruct [:scope_id, :actor_id, metadata: %{}]
+    @enforce_keys [:scope_id, :session_id, :tenant_id, :actor_id]
+    defstruct [:scope_id, :session_id, :tenant_id, :actor_id, :environment, metadata: %{}]
 
     @type t :: %__MODULE__{
             scope_id: String.t(),
+            session_id: String.t(),
+            tenant_id: String.t(),
             actor_id: String.t(),
+            environment: String.t() | nil,
             metadata: map()
           }
   end
 
   defmodule ManagedTarget do
-    @moduledoc false
+    @moduledoc """
+    Typed runtime target descriptor for host-managed resources.
+    """
 
     @enforce_keys [:target_id, :target_kind]
     defstruct [:target_id, :target_kind, metadata: %{}]
@@ -30,7 +37,9 @@ defmodule AppKit.ScopeObjects do
   end
 
   defmodule RouteStatus do
-    @moduledoc false
+    @moduledoc """
+    Lightweight route-state descriptor for host-visible status reporting.
+    """
 
     @enforce_keys [:route_name, :state]
     defstruct [:route_name, :state, details: %{}]
@@ -47,11 +56,16 @@ defmodule AppKit.ScopeObjects do
     attrs = Map.new(attrs)
 
     with scope_id when is_binary(scope_id) <- Map.get(attrs, :scope_id),
+         session_id when is_binary(session_id) <- Map.get(attrs, :session_id),
+         tenant_id when is_binary(tenant_id) <- Map.get(attrs, :tenant_id),
          actor_id when is_binary(actor_id) <- Map.get(attrs, :actor_id) do
       {:ok,
        %HostScope{
          scope_id: scope_id,
+         session_id: session_id,
+         tenant_id: tenant_id,
          actor_id: actor_id,
+         environment: Map.get(attrs, :environment),
          metadata: Map.get(attrs, :metadata, %{})
        }}
     else

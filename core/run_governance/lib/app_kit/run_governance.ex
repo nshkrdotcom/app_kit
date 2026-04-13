@@ -4,7 +4,9 @@ defmodule AppKit.RunGovernance do
   """
 
   defmodule Evidence do
-    @moduledoc false
+    @moduledoc """
+    Host-visible review evidence descriptor for governed runs.
+    """
 
     @enforce_keys [:kind, :summary]
     defstruct [:kind, :summary, details: %{}]
@@ -17,7 +19,9 @@ defmodule AppKit.RunGovernance do
   end
 
   defmodule Decision do
-    @moduledoc false
+    @moduledoc """
+    Host-visible review decision descriptor for governed runs.
+    """
 
     @enforce_keys [:run_id, :state]
     defstruct [:run_id, :state, reason: nil]

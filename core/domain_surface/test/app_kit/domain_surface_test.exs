@@ -4,19 +4,63 @@ defmodule AppKit.DomainSurfaceTest do
   alias AppKit.DomainSurface
   alias AppKit.ScopeObjects
 
-  test "submits commands and queries through the domain surface" do
-    assert {:ok, scope} =
-             ScopeObjects.host_scope(%{scope_id: "workspace/main", actor_id: "user-1"})
+  defmodule FakeKernelRuntime do
+    def dispatch_command(command, _opts) do
+      {:ok,
+       %{
+         request_id: command.idempotency_key,
+         session_id: command.context[:session_id],
+         trace_id: command.trace_id,
+         ingress_path: :direct_intent_envelope,
+         lifecycle_event: :live_owner,
+         continuity_revision: 1
+       }}
+    end
 
-    assert {:ok, command_result} =
-             DomainSurface.submit_command(scope, :compile_workspace, %{
-               workspace_id: "workspace/main"
+    def run_query(query, _opts) do
+      {:ok, %{query_name: query.name, target_id: query.params[:workspace_id], status: "ready"}}
+    end
+  end
+
+  test "submits real typed domain commands and queries through the app surface" do
+    assert {:ok, scope} =
+             ScopeObjects.host_scope(%{
+               scope_id: "workspace/main",
+               session_id: "sess-1",
+               tenant_id: "tenant-1",
+               actor_id: "user-1",
+               environment: "dev"
              })
 
-    assert {:ok, query_result} =
-             DomainSurface.ask_query(scope, :workspace_status, %{workspace_id: "workspace/main"})
+    opts = [
+      domain_module: Jido.Domain.Examples.ProvingGround,
+      kernel_runtime: {FakeKernelRuntime, []},
+      idempotency_key: "cmd-1",
+      context: %{trace_id: "trace/app-kit-1"}
+    ]
 
-    assert command_result.surface == :work_control
+    assert {:ok, command_result} =
+             DomainSurface.submit_command(
+               scope,
+               :compile_workspace,
+               %{workspace_id: "workspace/main"},
+               opts
+             )
+
+    assert {:ok, query_result} =
+             DomainSurface.ask_query(
+               scope,
+               :workspace_status,
+               %{workspace_id: "workspace/main"},
+               Keyword.drop(opts, [:idempotency_key])
+             )
+
+    assert command_result.surface == :domain
+    assert command_result.state == :accepted
+    assert command_result.payload.accepted.request_id == "cmd-1"
+
     assert query_result.surface == :domain
+    assert query_result.state == :accepted
+    assert query_result.payload.response.target_id == "workspace/main"
   end
 end

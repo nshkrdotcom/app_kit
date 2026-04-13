@@ -9,10 +9,18 @@ defmodule AppKit.ConversationBridge do
   alias AppKit.ScopeObjects.HostScope
 
   @spec compose_follow_up(HostScope.t(), String.t(), keyword()) ::
-          {:ok, Result.t()} | {:error, atom()}
+          {:ok, Result.t()} | {:error, term()}
   def compose_follow_up(%HostScope{} = scope, text, opts \\ []) do
-    with {:ok, turn} <- OuterBrainBridge.compile_turn(scope, text, opts) do
-      Result.new(%{surface: :conversation, state: :accepted, payload: %{turn: turn}})
+    with {:ok, submission} <- OuterBrainBridge.submit_turn(scope, text, opts) do
+      Result.new(%{
+        surface: :conversation,
+        state: :accepted,
+        payload: %{
+          action_request: submission.action_request,
+          accepted: submission.dispatch_result,
+          manifest_id: submission.manifest_id
+        }
+      })
     end
   end
 

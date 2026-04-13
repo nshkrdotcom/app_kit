@@ -7,7 +7,10 @@ defmodule AppKit.ScopeObjectsTest do
     assert {:ok, scope} =
              ScopeObjects.host_scope(%{
                scope_id: "workspace/main",
-               actor_id: "user-1"
+               session_id: "session-1",
+               tenant_id: "tenant-1",
+               actor_id: "user-1",
+               environment: "dev"
              })
 
     assert {:ok, target} =
@@ -17,6 +20,9 @@ defmodule AppKit.ScopeObjectsTest do
              })
 
     assert scope.scope_id == "workspace/main"
+    assert scope.session_id == "session-1"
+    assert scope.tenant_id == "tenant-1"
+    assert scope.environment == "dev"
     assert target.target_kind == :workspace_runtime
   end
 end
