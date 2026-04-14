@@ -1,0 +1,452 @@
+{
+  "projection": {
+    "build_path": "/tmp/weld-rollout-20260413/app_kit/dist/hex/app_kit_core",
+    "copied_files": [
+      ".formatter.exs",
+      "/tmp/weld-rollout-20260413/app_kit/dist/hex/app_kit_core/components/core/app_kit_core/lib/app_kit/core/result.ex",
+      "/tmp/weld-rollout-20260413/app_kit/dist/hex/app_kit_core/components/core/app_kit_core/lib/app_kit/core/run_ref.ex",
+      "CHANGELOG.md",
+      "LICENSE",
+      "README.md",
+      "config/config.exs",
+      "config/dev.exs",
+      "config/prod.exs",
+      "config/test.exs",
+      "docs/composition.md",
+      "docs/layout.md",
+      "docs/overview.md",
+      "docs/surfaces.md",
+      "test/projected_core_test.exs",
+      "test/test_helper.exs"
+    ],
+    "package_files": [
+      ".formatter.exs",
+      "CHANGELOG.md",
+      "LICENSE",
+      "README.md",
+      "components/core/app_kit_core",
+      "config",
+      "docs/composition.md",
+      "docs/layout.md",
+      "docs/overview.md",
+      "docs/surfaces.md",
+      "mix.exs",
+      "projection.lock.json"
+    ],
+    "git_revision": "2c30b05cd5b18a68c8599b04b5131752c6a65278",
+    "tree_digest": "d4a26d8e40603aef4c418b25f0d611df167fb8eb8464d40925de7bd6e080dc0e"
+  },
+  "manifest": {
+    "path": "/tmp/weld-rollout-20260413/app_kit/build_support/weld.exs",
+    "digest": "a471c8cfd46793c89febc2508c7a1304aac35dbe4bd60db58b198f405b6f0fdc"
+  },
+  "artifact": {
+    "id": "app_kit_core",
+    "package": {
+      "name": "app_kit_core",
+      "version": "0.1.0",
+      "otp_app": "app_kit_core"
+    }
+  },
+  "workspace": {
+    "root": "/tmp/weld-rollout-20260413/app_kit",
+    "discovery": {
+      "source": "manifest",
+      "project_ids": [
+        ".",
+        "bridges/domain_bridge",
+        "bridges/integration_bridge",
+        "bridges/outer_brain_bridge",
+        "bridges/projection_bridge",
+        "core/app_config",
+        "core/app_kit_core",
+        "core/chat_surface",
+        "core/conversation_bridge",
+        "core/domain_surface",
+        "core/operator_surface",
+        "core/run_governance",
+        "core/runtime_gateway",
+        "core/scope_objects",
+        "core/work_control",
+        "examples/reference_host"
+      ],
+      "adapter": null,
+      "globs": [
+        ".",
+        "bridges/*",
+        "core/*",
+        "examples/*"
+      ],
+      "root_project?": true
+    },
+    "project_count": 16
+  },
+  "graph": {
+    "edges": [
+      {
+        "kind": "runtime",
+        "app": "app_kit_core",
+        "to": "core/app_kit_core",
+        "requirement": null,
+        "from": "bridges/domain_bridge"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_scope_objects",
+        "to": "core/scope_objects",
+        "requirement": null,
+        "from": "bridges/domain_bridge"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_core",
+        "to": "core/app_kit_core",
+        "requirement": null,
+        "from": "bridges/integration_bridge"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_run_governance",
+        "to": "core/run_governance",
+        "requirement": null,
+        "from": "bridges/integration_bridge"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_scope_objects",
+        "to": "core/scope_objects",
+        "requirement": null,
+        "from": "bridges/integration_bridge"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_core",
+        "to": "core/app_kit_core",
+        "requirement": null,
+        "from": "bridges/outer_brain_bridge"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_scope_objects",
+        "to": "core/scope_objects",
+        "requirement": null,
+        "from": "bridges/outer_brain_bridge"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_core",
+        "to": "core/app_kit_core",
+        "requirement": null,
+        "from": "bridges/projection_bridge"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_scope_objects",
+        "to": "core/scope_objects",
+        "requirement": null,
+        "from": "bridges/projection_bridge"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_core",
+        "to": "core/app_kit_core",
+        "requirement": null,
+        "from": "core/app_config"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_app_config",
+        "to": "core/app_config",
+        "requirement": null,
+        "from": "core/chat_surface"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_core",
+        "to": "core/app_kit_core",
+        "requirement": null,
+        "from": "core/chat_surface"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_conversation_bridge",
+        "to": "core/conversation_bridge",
+        "requirement": null,
+        "from": "core/chat_surface"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_scope_objects",
+        "to": "core/scope_objects",
+        "requirement": null,
+        "from": "core/chat_surface"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_outer_brain_bridge",
+        "to": "bridges/outer_brain_bridge",
+        "requirement": null,
+        "from": "core/conversation_bridge"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_projection_bridge",
+        "to": "bridges/projection_bridge",
+        "requirement": null,
+        "from": "core/conversation_bridge"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_core",
+        "to": "core/app_kit_core",
+        "requirement": null,
+        "from": "core/conversation_bridge"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_scope_objects",
+        "to": "core/scope_objects",
+        "requirement": null,
+        "from": "core/conversation_bridge"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_domain_bridge",
+        "to": "bridges/domain_bridge",
+        "requirement": null,
+        "from": "core/domain_surface"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_app_config",
+        "to": "core/app_config",
+        "requirement": null,
+        "from": "core/domain_surface"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_core",
+        "to": "core/app_kit_core",
+        "requirement": null,
+        "from": "core/domain_surface"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_scope_objects",
+        "to": "core/scope_objects",
+        "requirement": null,
+        "from": "core/domain_surface"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_work_control",
+        "to": "core/work_control",
+        "requirement": null,
+        "from": "core/domain_surface"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_integration_bridge",
+        "to": "bridges/integration_bridge",
+        "requirement": null,
+        "from": "core/operator_surface"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_projection_bridge",
+        "to": "bridges/projection_bridge",
+        "requirement": null,
+        "from": "core/operator_surface"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_app_config",
+        "to": "core/app_config",
+        "requirement": null,
+        "from": "core/operator_surface"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_core",
+        "to": "core/app_kit_core",
+        "requirement": null,
+        "from": "core/operator_surface"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_run_governance",
+        "to": "core/run_governance",
+        "requirement": null,
+        "from": "core/operator_surface"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_core",
+        "to": "core/app_kit_core",
+        "requirement": null,
+        "from": "core/run_governance"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_scope_objects",
+        "to": "core/scope_objects",
+        "requirement": null,
+        "from": "core/run_governance"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_core",
+        "to": "core/app_kit_core",
+        "requirement": null,
+        "from": "core/runtime_gateway"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_scope_objects",
+        "to": "core/scope_objects",
+        "requirement": null,
+        "from": "core/runtime_gateway"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_core",
+        "to": "core/app_kit_core",
+        "requirement": null,
+        "from": "core/scope_objects"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_integration_bridge",
+        "to": "bridges/integration_bridge",
+        "requirement": null,
+        "from": "core/work_control"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_core",
+        "to": "core/app_kit_core",
+        "requirement": null,
+        "from": "core/work_control"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_run_governance",
+        "to": "core/run_governance",
+        "requirement": null,
+        "from": "core/work_control"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_scope_objects",
+        "to": "core/scope_objects",
+        "requirement": null,
+        "from": "core/work_control"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_core",
+        "to": "core/app_kit_core",
+        "requirement": null,
+        "from": "examples/reference_host"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_chat_surface",
+        "to": "core/chat_surface",
+        "requirement": null,
+        "from": "examples/reference_host"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_domain_surface",
+        "to": "core/domain_surface",
+        "requirement": null,
+        "from": "examples/reference_host"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_operator_surface",
+        "to": "core/operator_surface",
+        "requirement": null,
+        "from": "examples/reference_host"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_runtime_gateway",
+        "to": "core/runtime_gateway",
+        "requirement": null,
+        "from": "examples/reference_host"
+      },
+      {
+        "kind": "runtime",
+        "app": "app_kit_scope_objects",
+        "to": "core/scope_objects",
+        "requirement": null,
+        "from": "examples/reference_host"
+      }
+    ],
+    "digest": "c6f076dfe2e3a1ef1fedd8b90f98ca6f8da975ffdb5f413015b6c356b9de8288",
+    "excluded_projects": [
+      ".",
+      "bridges/domain_bridge",
+      "bridges/integration_bridge",
+      "bridges/outer_brain_bridge",
+      "bridges/projection_bridge",
+      "core/app_config",
+      "core/chat_surface",
+      "core/conversation_bridge",
+      "core/domain_surface",
+      "core/operator_surface",
+      "core/run_governance",
+      "core/runtime_gateway",
+      "core/scope_objects",
+      "core/work_control",
+      "examples/reference_host"
+    ],
+    "selected_projects": [
+      "core/app_kit_core"
+    ],
+    "violations": []
+  },
+  "verification": [
+    {
+      "env": "dev",
+      "status": "ok",
+      "task": "deps.get"
+    },
+    {
+      "env": "dev",
+      "status": "ok",
+      "task": "deps.compile"
+    },
+    {
+      "env": "dev",
+      "status": "ok",
+      "task": "compile --warnings-as-errors --no-compile-deps"
+    },
+    {
+      "env": "test",
+      "status": "ok",
+      "task": "test",
+      "failure_count": 0,
+      "test_count": 1
+    },
+    {
+      "env": "dev",
+      "status": "ok",
+      "task": "docs --warnings-as-errors"
+    },
+    {
+      "env": "dev",
+      "reason": "artifact_opted_out",
+      "status": "skipped",
+      "task": "hex.build"
+    },
+    {
+      "env": "dev",
+      "reason": "hex_build_disabled",
+      "status": "skipped",
+      "task": "hex.publish --dry-run --yes"
+    }
+  ]
+}

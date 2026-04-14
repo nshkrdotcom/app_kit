@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="ExDoc v0.40.1">
+    <meta name="project" content="app_kit_core v0.1.0">
+
+
+    <title>README — app_kit_core v0.1.0</title>
+
+    <link rel="stylesheet" href="dist/html-elixir-YJO4MOOW.css" />
+
+    <script defer src="dist/sidebar_items-8DB7ABB2.js"></script>
+    <script defer src="docs_config.js"></script>
+    <script defer src="dist/html-YU4BZFVS.js"></script>
+
+  </head>
+  <body>
+    <script>(()=>{var t="ex_doc:settings",e="dark";var o="dark",s="light";var E="sidebar_state",n="closed";var r="sidebar_width";var a="sidebar-open";var i=new URLSearchParams(window.location.search),S=i.get("theme")||JSON.parse(localStorage.getItem(t)||"{}").theme;(S===o||S!==s&&window.matchMedia("(prefers-color-scheme: dark)").matches)&&document.body.classList.add(e);var d=sessionStorage.getItem(E),A=d!==n&&!window.matchMedia(`screen and (max-width: ${768}px)`).matches;document.body.classList.toggle(a,A);var c=sessionStorage.getItem(r);c&&document.body.style.setProperty("--sidebarWidth",`${c}px`);var p=/(Macintosh|iPhone|iPad|iPod)/.test(window.navigator.userAgent);document.documentElement.classList.toggle("apple-os",p);})();
+</script>
+
+<div class="body-wrapper">
+
+<button id="sidebar-menu" class="sidebar-button sidebar-toggle" aria-label="toggle sidebar" aria-controls="sidebar">
+  <i class="ri-menu-line ri-lg" title="Collapse/expand sidebar"></i>
+</button>
+
+<nav id="sidebar" class="sidebar">
+
+  <div class="sidebar-header">
+    <div class="sidebar-projectInfo">
+
+      <div>
+        <a href="readme.html" class="sidebar-projectName" translate="no">
+app_kit_core
+        </a>
+        <div class="sidebar-projectVersion" translate="no">
+          v0.1.0
+        </div>
+      </div>
+    </div>
+    <ul id="sidebar-list-nav" class="sidebar-list-nav" role="tablist" data-extras="Pages"></ul>
+  </div>
+</nav>
+
+<output role="status" id="toast"></output>
+
+<main class="content page-extra" id="main" data-type="extras">
+  <div id="content" class="content-inner">
+    <div class="top-search">
+      <div class="search-settings">
+        <form class="search-bar" action="search.html">
+          <label class="search-label">
+            <span class="sr-only">Search documentation of app_kit_core</span>
+            <div class="search-input-wrapper">
+              <input name="q" type="text" class="search-input" placeholder="Press / to search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+              <button type="button" tabindex="-1" class="search-close-button" aria-hidden="true">
+                <i class="ri-close-line ri-lg" title="Cancel search"></i>
+              </button>
+            </div>
+          </label>
+        </form>
+        <div class="autocomplete">
+        </div>
+        <div class="engine-selector" data-multiple="false">
+          <button type="button" class="engine-button" aria-label="Select search engine" aria-haspopup="true" aria-expanded="false">
+            <i class="ri-search-2-line" aria-hidden="true"></i>
+            <span class="engine-name">Default</span>
+            <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
+          </button>
+          <div class="engine-dropdown" hidden role="menu">
+
+              <button type="button"
+                      class="engine-option"
+                      data-engine-url="search.html?q="
+                      role="menuitemradio"
+                      aria-checked="true">
+                <span class="name">Default</span>
+                <span class="help">In-browser search</span>
+              </button>
+
+          </div>
+        </div>
+        <button class="icon-settings display-settings">
+          <i class="ri-settings-3-line"></i>
+          <span class="sr-only">Settings</span>
+        </button>
+      </div>
+    </div>
+
+<div id="top-content">
+  <div class="heading-with-actions top-heading">
+    <h1>README</h1>
+
+<a href="readme.md" title="Copy Markdown (hold Ctrl/Cmd and click it to open as Markdown)" class="copy-markdown icon-action" rel="help">
+  <i class="ri-markdown-line" aria-hidden="true"></i>
+  <span class="sr-only">Copy Markdown</span>
+</a>
+
+
+  </div>
+
+
+<p align="center">  <img src="assets/app_kit.svg" width="200" height="200" alt="AppKit logo" /></p><p align="center">  <a href="https://github.com/nshkrdotcom/app_kit/actions/workflows/ci.yml">
+    <img alt="GitHub Actions Workflow Status" src="https://github.com/nshkrdotcom/app_kit/actions/workflows/ci.yml/badge.svg" />
+  </a>
+  <a href="https://github.com/nshkrdotcom/app_kit/blob/main/LICENSE">
+    <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-0b0f14.svg" />
+  </a></p><h1>AppKit</h1><p>AppKit is the northbound application-surface workspace for the nshkr platform
+core.</p><p>It exists so product applications can consume stable chat, domain, operator,
+work-control, runtime-gateway, and conversation surfaces without stitching the
+lower stack manually.</p><h2 id="scope" class="section-heading"><a href="#scope" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Scope</span></h2><ul><li>chat-facing surfaces</li><li>typed domain-facing surfaces</li><li>operator-facing surfaces</li><li>reusable work-control and governed-run surfaces</li><li>runtime gateways and conversation bridges</li><li>host-scope and managed-target helpers</li><li>default cross-stack composition</li></ul><h2 id="status" class="section-heading"><a href="#status" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Status</span></h2><p>Active workspace buildout. The repo uses a non-umbrella workspace layout with
+core surface packages, bridge packages, and a proving example host.</p><h2 id="development" class="section-heading"><a href="#development" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Development</span></h2><p>The project targets Elixir <code class="inline">~&gt; 1.19</code> and Erlang/OTP <code class="inline">28</code>. The pinned toolchain
+lives in <code class="inline">.tool-versions</code>.</p><pre><code class="makeup bash" translate="no"><span class="">mix deps.get
+</span><span class="">mix ci
+</span></code></pre><p>The welded <code class="inline">app_kit_core</code> artifact is tracked through the prepared bundle flow:</p><pre><code class="makeup bash" translate="no"><span class="">mix release.prepare
+</span><span class="">mix release.track
+</span><span class="">mix release.archive
+</span></code></pre><p><code class="inline">mix release.track</code> updates the orphan-backed <code class="inline">projection/app_kit_core</code> branch
+so downstream repos can pin a real generated-source ref before any formal
+release boundary exists.</p><h2 id="documentation" class="section-heading"><a href="#documentation" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Documentation</span></h2><ul><li><code class="inline">docs/overview.md</code></li><li><code class="inline">docs/layout.md</code></li><li><code class="inline">docs/surfaces.md</code></li><li><code class="inline">docs/composition.md</code></li><li><code class="inline">CHANGELOG.md</code></li></ul><p>This project is licensed under the MIT License.
+(c) 2026 nshkrdotcom. See <code class="inline">LICENSE</code>.</p>
+
+</div>
+
+<div class="bottom-actions" id="bottom-actions">
+  <div class="bottom-actions-item">
+
+  </div>
+  <div class="bottom-actions-item">
+
+      <a href="composition.html" class="bottom-actions-button" rel="next">
+        <span class="subheader">
+          Next Page →
+        </span>
+        <span class="title">
+Composition
+        </span>
+      </a>
+
+  </div>
+</div>
+    <footer class="footer">
+
+        <p>
+
+            <span class="line">
+              <a href="https://hex.pm/packages/app_kit_core/0.1.0">Hex Package</a>
+
+              <a href="https://preview.hex.pm/preview/app_kit_core/0.1.0">Hex Preview</a>
+
+                (<a href="https://preview.hex.pm/preview/app_kit_core/0.1.0/show/README.md">current file</a>)
+
+            </span>
+
+          <span class="line">
+            <button class="a-main footer-button display-quick-switch" title="Go to package docs">
+              Go to package docs
+            </button>
+
+              <a href="llms.txt" target="_blank">
+                View llms.txt
+              </a>
+
+
+              <a href="app_kit_core.epub">
+                Download ePub version
+              </a>
+
+          </span>
+        </p>
+
+        <p class="built-using">
+          Built using
+          <a href="https://github.com/elixir-lang/ex_doc" title="ExDoc" target="_blank" rel="help noopener" translate="no">ExDoc</a> (v0.40.1) for the
+
+            <a href="https://elixir-lang.org" title="Elixir" target="_blank" translate="no">Elixir programming language</a>
+
+        </p>
+
+
+    </footer>
+  </div>
+</main>
+</div>
+
+  </body>
+</html>

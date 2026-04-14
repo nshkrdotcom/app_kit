@@ -1,0 +1,18 @@
+# app_kit_core v0.1.0 - Table of Contents
+
+Projected northbound surface-core package from the AppKit workspace
+
+## Pages
+
+- [README](readme.md)
+- [Composition](composition.md)
+- [Workspace Layout](layout.md)
+- [Overview](overview.md)
+- [Surfaces](surfaces.md)
+
+## Modules
+
+- [AppKit.Core.Result](AppKit.Core.Result.md): Stable app-facing result wrapper for northbound surfaces.
+
+- [AppKit.Core.RunRef](AppKit.Core.RunRef.md): Stable run reference used across AppKit surfaces.
+
