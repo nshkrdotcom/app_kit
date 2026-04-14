@@ -1,8 +1,10 @@
 defmodule AppKitDomainSurface.MixProject do
   use Mix.Project
 
-  @default_citadel_domain_surface_path \
-    Path.expand("../../../citadel/surfaces/citadel_domain_surface", __DIR__)
+  @default_citadel_domain_surface_path Path.expand(
+                                         "../../../citadel/surfaces/citadel_domain_surface",
+                                         __DIR__
+                                       )
   @citadel_domain_surface_path_env "APP_KIT_CITADEL_DOMAIN_SURFACE_PATH"
 
   def project do
