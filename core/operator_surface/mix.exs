@@ -8,6 +8,7 @@ defmodule AppKitOperatorSurface.MixProject do
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      dialyzer: dialyzer(),
       description: "Operator-facing composition around review and projection reads",
       docs: [main: "readme", extras: ["README.md"]],
       name: "AppKit Operator Surface"
@@ -20,6 +21,10 @@ defmodule AppKitOperatorSurface.MixProject do
 
   def cli do
     [preferred_envs: [ci: :test]]
+  end
+
+  defp dialyzer do
+    [plt_add_deps: :apps_tree]
   end
 
   defp deps do

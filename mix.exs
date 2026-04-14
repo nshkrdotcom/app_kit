@@ -119,7 +119,7 @@ defmodule AppKit.Workspace.MixProject do
         compile: [args: ["compile", "--warnings-as-errors"]],
         test: [args: ["test"], mix_env: "test", color: true],
         credo: [args: ["credo"]],
-        dialyzer: [args: ["dialyzer"], mix_env: "test"],
+        dialyzer: [args: ["dialyzer", "--force-check"], mix_env: "test"],
         docs: [args: ["docs"]]
       ]
     ]

@@ -8,6 +8,7 @@ defmodule AppKitWorkControl.MixProject do
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      dialyzer: dialyzer(),
       description: "Reusable work-control helpers for the AppKit workspace",
       docs: [main: "readme", extras: ["README.md"]],
       name: "AppKit Work Control"
@@ -20,6 +21,10 @@ defmodule AppKitWorkControl.MixProject do
 
   def cli do
     [preferred_envs: [ci: :test]]
+  end
+
+  defp dialyzer do
+    [plt_add_deps: :apps_tree]
   end
 
   defp deps do
