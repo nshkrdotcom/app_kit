@@ -1,7 +1,7 @@
 defmodule AppKitDomainSurface.MixProject do
   use Mix.Project
 
-  @default_jido_domain_path "/home/home/p/g/n/jido_domain"
+  @default_jido_domain_path Path.expand("../../../jido_domain", __DIR__)
   @jido_domain_path_env "APP_KIT_JIDO_DOMAIN_PATH"
 
   def project do

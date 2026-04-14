@@ -45,6 +45,18 @@ mix deps.get
 mix ci
 ```
 
+The welded `app_kit_core` artifact is tracked through the prepared bundle flow:
+
+```bash
+mix release.prepare
+mix release.track
+mix release.archive
+```
+
+`mix release.track` updates the orphan-backed `projection/app_kit_core` branch
+so downstream repos can pin a real generated-source ref before any formal
+release boundary exists.
+
 ## Documentation
 
 - `docs/overview.md`

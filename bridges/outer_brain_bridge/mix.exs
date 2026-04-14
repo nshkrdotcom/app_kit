@@ -1,7 +1,10 @@
 defmodule AppKitOuterBrainBridge.MixProject do
   use Mix.Project
 
-  @default_outer_brain_domain_bridge_path "/home/home/p/g/n/outer_brain/bridges/domain_bridge"
+  @default_outer_brain_domain_bridge_path Path.expand(
+                                            "../../../outer_brain/bridges/domain_bridge",
+                                            __DIR__
+                                          )
   @outer_brain_domain_bridge_path_env "APP_KIT_OUTER_BRAIN_DOMAIN_BRIDGE_PATH"
 
   def project do
