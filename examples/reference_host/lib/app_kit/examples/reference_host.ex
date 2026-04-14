@@ -43,7 +43,9 @@ defmodule AppKit.Examples.ReferenceHost do
         target_kind: :workspace_runtime
       })
 
-    domain_module = Keyword.get(opts, :domain_module, Jido.Domain.Examples.ProvingGround)
+    domain_module =
+      Keyword.get(opts, :domain_module, Citadel.DomainSurface.Examples.ProvingGround)
+
     kernel_runtime = Keyword.get(opts, :kernel_runtime, {DemoKernelRuntime, []})
 
     {:ok, gateway} = RuntimeGateway.open(target, mode: :attached, transport: :session)
@@ -54,7 +56,7 @@ defmodule AppKit.Examples.ReferenceHost do
         "compile the workspace",
         idempotency_key: "chat-reference-host",
         domain_module: domain_module,
-        route_sources: [Jido.Domain.Examples.ProvingGround.Routes.CompileWorkspace],
+        route_sources: [Citadel.DomainSurface.Examples.ProvingGround.Routes.CompileWorkspace],
         kernel_runtime: kernel_runtime,
         workspace_root: "/workspace/main"
       )

@@ -4,7 +4,7 @@ defmodule AppKit.ConversationBridgeTest do
   alias AppKit.ConversationBridge
   alias AppKit.Core.RunRef
   alias AppKit.ScopeObjects
-  alias Jido.Domain.Adapters.CitadelAdapter.Accepted
+  alias Citadel.DomainSurface.Adapters.CitadelAdapter.Accepted
 
   defmodule FakeKernelRuntime do
     @moduledoc false
@@ -38,8 +38,10 @@ defmodule AppKit.ConversationBridgeTest do
                scope,
                "compile the workspace",
                idempotency_key: "conversation-turn-1",
-               domain_module: Jido.Domain.Examples.ProvingGround,
-               route_sources: [Jido.Domain.Examples.ProvingGround.Routes.CompileWorkspace],
+               domain_module: Citadel.DomainSurface.Examples.ProvingGround,
+               route_sources: [
+                 Citadel.DomainSurface.Examples.ProvingGround.Routes.CompileWorkspace
+               ],
                kernel_runtime: {FakeKernelRuntime, []}
              )
 

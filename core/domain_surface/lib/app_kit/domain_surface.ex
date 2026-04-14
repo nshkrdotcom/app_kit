@@ -7,8 +7,8 @@ defmodule AppKit.DomainSurface do
   alias AppKit.Bridges.DomainBridge
   alias AppKit.Core.Result
   alias AppKit.ScopeObjects.HostScope
-  alias Jido.Domain
-  alias Jido.Domain.Error
+  alias Citadel.DomainSurface, as: Domain
+  alias Citadel.DomainSurface.Error
 
   @type surface_error :: Error.t() | atom()
 

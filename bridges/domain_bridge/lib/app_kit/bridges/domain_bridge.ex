@@ -1,10 +1,10 @@
 defmodule AppKit.Bridges.DomainBridge do
   @moduledoc """
-  App-facing bridge for typed `jido_domain` calls.
+  App-facing bridge for typed `citadel_domain_surface` calls.
   """
 
   alias AppKit.ScopeObjects.HostScope
-  alias Jido.Domain.{Command, Error, Query}
+  alias Citadel.DomainSurface.{Command, Error, Query}
 
   @type compile_opts :: keyword()
   @type compile_error :: Error.t() | atom()

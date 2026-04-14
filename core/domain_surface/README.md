@@ -1,3 +1,3 @@
 # Domain Surface
 
-Typed app-facing composition above `jido_domain`.
+Typed app-facing composition above `citadel_domain_surface`.

@@ -3,7 +3,7 @@ defmodule AppKit.Bridges.DomainBridgeTest do
 
   alias AppKit.Bridges.DomainBridge
   alias AppKit.ScopeObjects
-  alias Jido.Domain.{Command, Query}
+  alias Citadel.DomainSurface.{Command, Query}
 
   test "compiles real typed domain commands and queries" do
     assert {:ok, scope} =
@@ -20,7 +20,7 @@ defmodule AppKit.Bridges.DomainBridgeTest do
                scope,
                :compile_workspace,
                %{workspace_id: "workspace/main"},
-               domain_module: Jido.Domain.Examples.ProvingGround,
+               domain_module: Citadel.DomainSurface.Examples.ProvingGround,
                idempotency_key: "cmd-1",
                context: %{trace_id: "trace/app-kit-1"}
              )
@@ -30,7 +30,7 @@ defmodule AppKit.Bridges.DomainBridgeTest do
                scope,
                :workspace_status,
                %{workspace_id: "workspace/main"},
-               domain_module: Jido.Domain.Examples.ProvingGround,
+               domain_module: Citadel.DomainSurface.Examples.ProvingGround,
                context: %{trace_id: "trace/app-kit-1"}
              )
 

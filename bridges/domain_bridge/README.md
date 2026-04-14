@@ -1,3 +1,3 @@
 # Domain Bridge
 
-App-facing bridge to typed `jido_domain` calls.
+App-facing bridge to typed `citadel_domain_surface` calls.

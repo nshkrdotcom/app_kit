@@ -3,7 +3,7 @@
 AppKit composes lower layers without swallowing their ownership:
 
 - `outer_brain` remains the semantic runtime
-- `jido_domain` remains the typed capability and route boundary
+- `citadel_domain_surface` remains the typed capability and route boundary
 - Citadel remains the policy kernel
 - `jido_integration` remains the durable lower truth owner
 - `ground_plane` remains primitive and lower-level
@@ -28,9 +28,9 @@ release boundary exists.
 The assembled host-facing paths are now split cleanly:
 
 - typed host path:
-  `reference_host -> AppKit.DomainSurface -> AppKit.Bridges.DomainBridge -> Jido.Domain -> Citadel.HostIngress -> jido_integration`
+  `reference_host -> AppKit.DomainSurface -> AppKit.Bridges.DomainBridge -> Citadel.DomainSurface -> Citadel.HostIngress -> jido_integration`
 - semantic host path:
-  `reference_host -> AppKit.ConversationBridge -> AppKit.Bridges.OuterBrainBridge -> OuterBrain -> Jido.Domain -> Citadel.HostIngress -> jido_integration`
+  `reference_host -> AppKit.ConversationBridge -> AppKit.Bridges.OuterBrainBridge -> OuterBrain -> Citadel.DomainSurface -> Citadel.HostIngress -> jido_integration`
 
 That split is deliberate:
 

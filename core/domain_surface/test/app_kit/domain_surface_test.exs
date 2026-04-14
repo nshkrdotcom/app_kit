@@ -33,7 +33,7 @@ defmodule AppKit.DomainSurfaceTest do
              })
 
     opts = [
-      domain_module: Jido.Domain.Examples.ProvingGround,
+      domain_module: Citadel.DomainSurface.Examples.ProvingGround,
       kernel_runtime: {FakeKernelRuntime, []},
       idempotency_key: "cmd-1",
       context: %{trace_id: "trace/app-kit-1"}

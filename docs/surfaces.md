@@ -3,7 +3,7 @@
 AppKit exposes seven main surface families:
 
 - `ChatSurface` for chat-oriented host ingress above `outer_brain`
-- `DomainSurface` for typed host ingress above `jido_domain`
+- `DomainSurface` for typed host ingress above `citadel_domain_surface`
 - `OperatorSurface` for review and status reads above lower durable truth
 - `WorkControl` for governed-run creation and work submission
 - `RunGovernance` for evidence and decision shaping

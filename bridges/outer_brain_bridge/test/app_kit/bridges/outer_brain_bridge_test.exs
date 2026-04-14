@@ -3,7 +3,7 @@ defmodule AppKit.Bridges.OuterBrainBridgeTest do
 
   alias AppKit.Bridges.OuterBrainBridge
   alias AppKit.ScopeObjects
-  alias Jido.Domain.Adapters.CitadelAdapter.Accepted
+  alias Citadel.DomainSurface.Adapters.CitadelAdapter.Accepted
 
   defmodule FakeKernelRuntime do
     @moduledoc false
@@ -37,8 +37,10 @@ defmodule AppKit.Bridges.OuterBrainBridgeTest do
                scope,
                "compile the workspace",
                idempotency_key: "turn-outer-brain-1",
-               domain_module: Jido.Domain.Examples.ProvingGround,
-               route_sources: [Jido.Domain.Examples.ProvingGround.Routes.CompileWorkspace],
+               domain_module: Citadel.DomainSurface.Examples.ProvingGround,
+               route_sources: [
+                 Citadel.DomainSurface.Examples.ProvingGround.Routes.CompileWorkspace
+               ],
                kernel_runtime: {FakeKernelRuntime, []}
              )
 

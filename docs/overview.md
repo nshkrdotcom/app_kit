@@ -1,7 +1,7 @@
 # Overview
 
 AppKit is the northbound application-surface workspace that sits above
-`outer_brain`, `jido_domain`, Citadel, and `jido_integration`.
+`outer_brain`, `citadel_domain_surface`, Citadel, and `jido_integration`.
 
 It owns the reusable app-facing seams that products should consume directly:
 
