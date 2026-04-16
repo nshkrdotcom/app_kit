@@ -324,6 +324,10 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     end
   end
 
+  defmodule FakeDeniedOperatorQueryService do
+    def get_unified_trace(_attrs, _opts), do: {:error, :unauthorized_lower_read}
+  end
+
   defmodule FakeOperatorActionService do
     alias AppKit.Core.RunRef
 
@@ -350,6 +354,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
   alias AppKit.Core.{
     DecisionRef,
+    ExecutionRef,
     FilterSet,
     InstallationBinding,
     InstallationRef,
@@ -686,6 +691,31 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     assert error.kind == :validation
     assert error.code == "missing_program_id"
+  end
+
+  test "normalizes unauthorized lower reads into an authorization surface error" do
+    context = request_context()
+
+    assert {:ok, subject_ref} = SubjectRef.new(%{id: "subj-1", subject_kind: "work_object"})
+
+    assert {:ok, execution_ref} =
+             ExecutionRef.new(%{
+               id: "exec-1",
+               subject_ref: subject_ref,
+               recipe_ref: "expense_capture",
+               dispatch_state: :accepted
+             })
+
+    assert {:error, error} =
+             MezzanineBridge.get_unified_trace(
+               context,
+               execution_ref,
+               operator_query_service: FakeDeniedOperatorQueryService
+             )
+
+    assert error.kind == :authorization
+    assert error.code == "unauthorized_lower_read"
+    refute error.retryable
   end
 
   defp request_context do

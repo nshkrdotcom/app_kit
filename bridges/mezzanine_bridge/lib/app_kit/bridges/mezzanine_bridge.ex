@@ -13,6 +13,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @behaviour AppKit.Core.Backends.WorkBackend
   @behaviour AppKit.Core.Backends.WorkQueryBackend
 
+  @authorization_reasons [:unauthorized_lower_read]
   alias AppKit.Core.{
     ActionResult,
     ActorRef,
@@ -1255,6 +1256,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
     |> String.capitalize()
   end
 
+  defp surface_error_kind(reason) when reason in @authorization_reasons, do: :authorization
   defp surface_error_kind(reason) when reason in @not_found_reasons, do: :not_found
   defp surface_error_kind(reason) when reason in @conflict_reasons, do: :conflict
   defp surface_error_kind(reason) when reason in @transient_reasons, do: :transient
