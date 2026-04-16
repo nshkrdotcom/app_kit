@@ -15,6 +15,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   alias AppKit.Core.{
     ActionResult,
+    ActorRef,
     DecisionRef,
     DecisionSummary,
     ExecutionRef,
@@ -273,7 +274,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
       when is_list(opts) do
     service = work_control_service(opts)
 
-    if function_exported?(service, :start_run, 3) do
+    if service_exports?(service, :start_run, 3) do
       case service.start_run(context, run_request, opts) do
         {:ok, result} -> {:ok, result}
         {:error, reason} -> normalize_surface_error(reason)
@@ -295,7 +296,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   def retry_run(%RequestContext{} = context, %RunRef{} = run_ref, opts) when is_list(opts) do
     service = work_control_service(opts)
 
-    if function_exported?(service, :retry_run, 3) do
+    if service_exports?(service, :retry_run, 3) do
       case service.retry_run(context, run_ref, opts) do
         {:ok, result} -> {:ok, result}
         {:error, reason} -> normalize_surface_error(reason)
@@ -309,7 +310,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   def cancel_run(%RequestContext{} = context, %RunRef{} = run_ref, opts) when is_list(opts) do
     service = work_control_service(opts)
 
-    if function_exported?(service, :cancel_run, 3) do
+    if service_exports?(service, :cancel_run, 3) do
       case service.cancel_run(context, run_ref, opts) do
         {:ok, result} -> {:ok, result}
         {:error, reason} -> normalize_surface_error(reason)
@@ -591,7 +592,8 @@ defmodule AppKit.Bridges.MezzanineBridge do
         pending_decision_refs: pending_decision_refs,
         available_actions: available_actions,
         timeline: timeline,
-        updated_at: fetch_value(row, :updated_at) || fetch_value(payload, :last_event_at),
+        updated_at:
+          coerce_datetime(fetch_value(row, :updated_at) || fetch_value(payload, :last_event_at)),
         payload: payload
       })
     else
@@ -640,11 +642,11 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   defp timeline_event_from_map(row) when is_map(row) do
     TimelineEvent.new(%{
-      ref: fetch_value(row, :ref) || fetch_value(row, :id),
+      ref: fetch_value(row, :ref) || fetch_value(row, :id) || fetch_value(row, :event_id),
       event_kind: normalize_string(fetch_value(row, :event_kind) || fetch_value(row, :kind)),
-      occurred_at: fetch_value(row, :occurred_at),
+      occurred_at: coerce_datetime(fetch_value(row, :occurred_at)),
       summary: fetch_value(row, :summary),
-      actor_ref: fetch_value(row, :actor_ref),
+      actor_ref: actor_ref_from_any(fetch_value(row, :actor_ref)),
       payload:
         fetch_value(row, :payload) ||
           compact_map(
@@ -663,6 +665,20 @@ defmodule AppKit.Bridges.MezzanineBridge do
   end
 
   defp timeline_event_from_map(_row), do: {:error, :invalid_timeline_event}
+
+  defp actor_ref_from_any(nil), do: nil
+  defp actor_ref_from_any(%ActorRef{} = actor_ref), do: actor_ref
+  defp actor_ref_from_any(%{} = actor_ref), do: actor_ref
+
+  defp actor_ref_from_any(actor_ref) when is_atom(actor_ref) do
+    %{id: Atom.to_string(actor_ref), kind: :system}
+  end
+
+  defp actor_ref_from_any(actor_ref) when is_binary(actor_ref) do
+    %{id: actor_ref, kind: :system}
+  end
+
+  defp actor_ref_from_any(_actor_ref), do: nil
 
   defp unified_trace_from_map(trace, %RequestContext{} = context) when is_map(trace) do
     steps = fetch_value(trace, :steps) || []
@@ -696,7 +712,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
     UnifiedTraceStep.new(%{
       ref: fetch_value(step, :ref) || fetch_value(step, :id),
       source: normalize_string(fetch_value(step, :source)),
-      occurred_at: fetch_value(step, :occurred_at),
+      occurred_at: coerce_datetime(fetch_value(step, :occurred_at)),
       trace_id: fetch_value(step, :trace_id),
       causation_id: fetch_value(step, :causation_id),
       freshness: normalize_string(fetch_value(step, :freshness)),
@@ -724,6 +740,18 @@ defmodule AppKit.Bridges.MezzanineBridge do
     do: %{actor_ref: actor_id}
 
   defp actor_payload(_context), do: %{actor_ref: "app_kit"}
+
+  defp coerce_datetime(nil), do: nil
+  defp coerce_datetime(%DateTime{} = value), do: value
+
+  defp coerce_datetime(value) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, datetime, _offset} -> datetime
+      _other -> value
+    end
+  end
+
+  defp coerce_datetime(value), do: value
 
   defp action_kind(%OperatorActionRequest{
          action_ref: %OperatorActionRef{action_kind: action_kind}
@@ -763,6 +791,12 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   defp operator_action_service(opts),
     do: Keyword.get(opts, :operator_action_service, Mezzanine.AppKitBridge.OperatorActionService)
+
+  defp service_exports?(service, function_name, arity)
+       when is_atom(service) and is_atom(function_name) and is_integer(arity) do
+    match?({:module, ^service}, Code.ensure_loaded(service)) and
+      function_exported?(service, function_name, arity)
+  end
 
   defp tenant_id(%RequestContext{tenant_ref: %{id: tenant_id}}) when is_binary(tenant_id),
     do: {:ok, tenant_id}

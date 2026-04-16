@@ -252,6 +252,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
          lifecycle_state: "processing",
          current_execution_ref: %{id: "exec-1", dispatch_state: "accepted"},
          pending_decision_refs: [],
+         updated_at: "2026-04-18T13:10:00Z",
          available_actions: [
            %{
              id: "subj-1:pause",
@@ -265,7 +266,8 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
                ref: "evt-1",
                event_kind: "run_scheduled",
                occurred_at: ~U[2026-04-18 13:00:00Z],
-               summary: "Run scheduled"
+               summary: "Run scheduled",
+               actor_ref: "app_kit_bridge"
              }
            ]
          }
@@ -281,7 +283,8 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
              ref: "evt-1",
              event_kind: "run_scheduled",
              occurred_at: ~U[2026-04-18 13:00:00Z],
-             summary: "Run scheduled"
+             summary: "Run scheduled",
+             actor_ref: "app_kit_bridge"
            }
          ],
          last_event_at: ~U[2026-04-18 13:00:00Z]
@@ -654,8 +657,11 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     assert retry_result.action_ref.action_kind == "retry"
     assert cancel_result.action_ref.action_kind == "cancel"
+    assert projection.updated_at == ~U[2026-04-18 13:10:00Z]
     assert hd(projection.available_actions).action_ref.action_kind == "pause"
     assert hd(timeline).event_kind == "run_scheduled"
+    assert hd(timeline).actor_ref.id == "app_kit_bridge"
+    assert hd(projection.timeline).actor_ref.kind == :system
     assert hd(actions).action_ref.action_kind == "cancel"
     assert action_result.metadata.params["reason"] == "duplicate"
     assert hd(trace.steps).source == "execution_record"
