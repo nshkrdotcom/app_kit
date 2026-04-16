@@ -2,6 +2,7 @@ defmodule AppKit.WorkspaceTest do
   use ExUnit.Case, async: true
 
   alias AppKit.Workspace
+  alias AppKit.Workspace.BoundaryGenerator
   alias AppKit.Workspace.MixProject
 
   test "lists workspace packages" do
@@ -51,5 +52,45 @@ defmodule AppKit.WorkspaceTest do
         ] do
       refute File.read!(path) =~ "/home/home/p/g/n/"
     end
+  end
+
+  test "boundary generator produces opaque-envelope dto and bridge mapper scaffolding" do
+    output_root =
+      Path.join(
+        System.tmp_dir!(),
+        "app_kit_boundary_generator_#{System.unique_integer([:positive])}"
+      )
+
+    on_exit(fn -> File.rm_rf(output_root) end)
+
+    assert :ok =
+             BoundaryGenerator.generate("operator_projection", output_root,
+               module_namespace: "AppKit.Generated"
+             )
+
+    dto_path =
+      Path.join(output_root, "core/app_kit_core/lib/app_kit/generated/operator_projection.ex")
+
+    mapper_path =
+      Path.join(
+        output_root,
+        "bridges/mezzanine_bridge/lib/app_kit/bridges/mezzanine_bridge/operator_projection_mapper.ex"
+      )
+
+    mapper_test_path =
+      Path.join(
+        output_root,
+        "bridges/mezzanine_bridge/test/app_kit/bridges/mezzanine_bridge/operator_projection_mapper_test.exs"
+      )
+
+    assert File.exists?(dto_path)
+    assert File.exists?(mapper_path)
+    assert File.exists?(mapper_test_path)
+
+    assert File.read!(dto_path) =~ "schema_ref"
+    assert File.read!(dto_path) =~ "schema_version"
+    assert File.read!(dto_path) =~ "payload"
+    assert File.read!(mapper_path) =~ "Map.get(payload, :payload, %{})"
+    assert File.read!(mapper_test_path) =~ "opaque payload envelope"
   end
 end

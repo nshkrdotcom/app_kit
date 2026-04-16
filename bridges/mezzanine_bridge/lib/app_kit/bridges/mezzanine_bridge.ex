@@ -23,15 +23,24 @@ defmodule AppKit.Bridges.MezzanineBridge do
     InstallationRef,
     InstallResult,
     InstallTemplate,
+    OperatorAction,
     OperatorActionRef,
+    OperatorActionRequest,
+    OperatorProjection,
     PageRequest,
     PageResult,
     ProjectionRef,
     RequestContext,
+    Result,
+    RunRef,
+    RunRequest,
     SubjectDetail,
     SubjectRef,
     SubjectSummary,
-    SurfaceError
+    SurfaceError,
+    TimelineEvent,
+    UnifiedTrace,
+    UnifiedTraceStep
   }
 
   @impl true
@@ -260,6 +269,142 @@ defmodule AppKit.Bridges.MezzanineBridge do
   end
 
   @impl true
+  def start_run(%RequestContext{} = context, %RunRequest{} = run_request, opts)
+      when is_list(opts) do
+    service = work_control_service(opts)
+
+    if function_exported?(service, :start_run, 3) do
+      case service.start_run(context, run_request, opts) do
+        {:ok, result} -> {:ok, result}
+        {:error, reason} -> normalize_surface_error(reason)
+      end
+    else
+      with {:ok, bridge_result} <- start_run_via_operator_action(context, run_request, opts),
+           {:ok, action_result} <- action_result_from_bridge(bridge_result),
+           {:ok, projection} <- fetch_operator_projection(context, run_request.subject_ref, opts),
+           {:ok, run_ref} <- run_ref_from_projection(projection, context, run_request, opts),
+           {:ok, result} <- run_result_from_projection(projection, run_ref, action_result) do
+        {:ok, result}
+      else
+        {:error, reason} -> normalize_surface_error(reason)
+      end
+    end
+  end
+
+  @impl true
+  def retry_run(%RequestContext{} = context, %RunRef{} = run_ref, opts) when is_list(opts) do
+    service = work_control_service(opts)
+
+    if function_exported?(service, :retry_run, 3) do
+      case service.retry_run(context, run_ref, opts) do
+        {:ok, result} -> {:ok, result}
+        {:error, reason} -> normalize_surface_error(reason)
+      end
+    else
+      work_control_action(context, run_ref, :replan, "retry", opts)
+    end
+  end
+
+  @impl true
+  def cancel_run(%RequestContext{} = context, %RunRef{} = run_ref, opts) when is_list(opts) do
+    service = work_control_service(opts)
+
+    if function_exported?(service, :cancel_run, 3) do
+      case service.cancel_run(context, run_ref, opts) do
+        {:ok, result} -> {:ok, result}
+        {:error, reason} -> normalize_surface_error(reason)
+      end
+    else
+      work_control_action(context, run_ref, :cancel, "cancel", opts)
+    end
+  end
+
+  @impl true
+  def subject_status(%RequestContext{} = context, %SubjectRef{} = subject_ref, opts)
+      when is_list(opts) do
+    with {:ok, tenant_id} <- tenant_id(context),
+         {:ok, row} <- operator_query_service(opts).subject_status(tenant_id, subject_ref.id),
+         {:ok, projection} <- operator_projection_from_row(row, context) do
+      {:ok, projection}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def timeline(%RequestContext{} = context, %SubjectRef{} = subject_ref, opts)
+      when is_list(opts) do
+    with {:ok, tenant_id} <- tenant_id(context),
+         {:ok, timeline_result} <-
+           operator_query_service(opts).timeline(tenant_id, subject_ref.id),
+         entries <- fetch_value(timeline_result, :entries) || [],
+         {:ok, timeline_entries} <- map_each(entries, &timeline_event_from_map/1) do
+      {:ok, timeline_entries}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def get_unified_trace(%RequestContext{} = context, %ExecutionRef{} = execution_ref, opts)
+      when is_list(opts) do
+    with {:ok, tenant_id} <- tenant_id(context),
+         {:ok, installation_id} <- installation_or_tenant_id(context),
+         trace_attrs <- %{
+           tenant_id: tenant_id,
+           actor_id: context.actor_ref.id,
+           installation_id: installation_id,
+           execution_id: execution_ref.id,
+           trace_id: context.trace_id
+         },
+         {:ok, trace} <- operator_query_service(opts).get_unified_trace(trace_attrs, opts),
+         {:ok, unified_trace} <- unified_trace_from_map(trace, context) do
+      {:ok, unified_trace}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def available_actions(%RequestContext{} = context, %SubjectRef{} = subject_ref, opts)
+      when is_list(opts) do
+    with {:ok, tenant_id} <- tenant_id(context),
+         {:ok, rows} <- operator_query_service(opts).available_actions(tenant_id, subject_ref.id),
+         {:ok, actions} <- map_each(rows, &operator_action_from_map/1) do
+      {:ok, actions}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def apply_action(
+        %RequestContext{} = context,
+        %SubjectRef{} = subject_ref,
+        %OperatorActionRequest{} = action_request,
+        opts
+      )
+      when is_list(opts) do
+    with {:ok, tenant_id} <- tenant_id(context),
+         action_kind <- action_kind(action_request),
+         action_params <- operator_action_params(action_request),
+         actor <- actor_payload(context),
+         {:ok, bridge_result} <-
+           operator_action_service(opts).apply_action(
+             tenant_id,
+             subject_ref.id,
+             action_kind,
+             action_params,
+             actor
+           ),
+         {:ok, action_result} <- action_result_from_bridge(bridge_result) do
+      {:ok, action_result}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
   def start_run(domain_call, opts) when is_map(domain_call) and is_list(opts) do
     work_control_service(opts).start_run(domain_call, opts)
   end
@@ -272,6 +417,330 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @impl true
   def review_run(run_ref, evidence_attrs, opts) when is_map(evidence_attrs) and is_list(opts) do
     operator_action_service(opts).review_run(run_ref, evidence_attrs, opts)
+  end
+
+  defp start_run_via_operator_action(
+         %RequestContext{} = context,
+         %RunRequest{} = run_request,
+         opts
+       ) do
+    with {:ok, tenant_id} <- tenant_id(context) do
+      operator_action_service(opts).apply_action(
+        tenant_id,
+        run_request.subject_ref.id,
+        :replan,
+        run_request_action_params(run_request),
+        actor_payload(context)
+      )
+    end
+  end
+
+  defp fetch_operator_projection(%RequestContext{} = context, %SubjectRef{} = subject_ref, opts) do
+    with {:ok, tenant_id} <- tenant_id(context),
+         {:ok, row} <- operator_query_service(opts).subject_status(tenant_id, subject_ref.id) do
+      operator_projection_from_row(row, context)
+    end
+  end
+
+  defp run_result_from_projection(
+         %OperatorProjection{} = projection,
+         %RunRef{} = run_ref,
+         action_result
+       ) do
+    Result.new(%{
+      surface: :work_control,
+      state: run_state(projection),
+      payload: %{
+        run_ref: run_ref,
+        work_object_id: projection.subject_ref.id,
+        subject_ref: projection.subject_ref,
+        action_result: action_result
+      }
+    })
+  end
+
+  defp run_state(%OperatorProjection{pending_decision_refs: [_ | _]}), do: :waiting_review
+  defp run_state(_projection), do: :scheduled
+
+  defp run_ref_from_projection(
+         %OperatorProjection{} = projection,
+         %RequestContext{} = context,
+         %RunRequest{} = run_request,
+         opts
+       ) do
+    scope_id = scope_id(context, opts, projection.subject_ref.id)
+    execution_id = projection.current_execution_ref && projection.current_execution_ref.id
+
+    RunRef.new(%{
+      run_id: execution_id || "subject/#{projection.subject_ref.id}",
+      scope_id: scope_id,
+      metadata: %{
+        tenant_id: context.tenant_ref.id,
+        work_object_id: projection.subject_ref.id,
+        recipe_ref: run_request.recipe_ref,
+        trace_id: context.trace_id
+      }
+    })
+  end
+
+  defp scope_id(%RequestContext{} = context, opts, subject_id) do
+    case Keyword.get(opts, :scope_id) || context_metadata(context, :scope_id) do
+      value when is_binary(value) and value != "" ->
+        value
+
+      _ ->
+        case program_id(context, opts) do
+          {:ok, value} -> "program/#{value}"
+          {:error, _reason} -> "subject/#{subject_id}"
+        end
+    end
+  end
+
+  defp work_control_action(
+         %RequestContext{} = context,
+         %RunRef{} = run_ref,
+         action,
+         public_kind,
+         opts
+       ) do
+    with {:ok, tenant_id} <- tenant_id(context),
+         {:ok, subject_ref} <- subject_ref_from_run_ref(run_ref),
+         {:ok, bridge_result} <-
+           operator_action_service(opts).apply_action(
+             tenant_id,
+             subject_ref.id,
+             action,
+             %{requested_by: public_kind},
+             actor_payload(context)
+           ),
+         {:ok, action_result} <- action_result_from_bridge(bridge_result),
+         {:ok, normalized_result} <- normalize_public_action_result(action_result, public_kind) do
+      {:ok, normalized_result}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  defp subject_ref_from_run_ref(%RunRef{metadata: metadata}) when is_map(metadata) do
+    case Map.get(metadata, :work_object_id) || Map.get(metadata, "work_object_id") ||
+           Map.get(metadata, :subject_id) || Map.get(metadata, "subject_id") do
+      value when is_binary(value) ->
+        SubjectRef.new(%{id: value, subject_kind: "work_object"})
+
+      _ ->
+        {:error, :missing_subject_id}
+    end
+  end
+
+  defp subject_ref_from_run_ref(_run_ref), do: {:error, :missing_subject_id}
+
+  defp normalize_public_action_result(%ActionResult{} = action_result, public_kind) do
+    action_kind = normalize_string(public_kind)
+
+    with {:ok, normalized_action_ref} <- public_action_ref(action_result.action_ref, action_kind) do
+      ActionResult.new(%{
+        status: action_result.status,
+        action_ref: normalized_action_ref,
+        execution_ref: action_result.execution_ref,
+        message: public_action_message(action_result.message, action_kind),
+        metadata: action_result.metadata
+      })
+    end
+  end
+
+  defp public_action_ref(nil, _action_kind), do: {:ok, nil}
+
+  defp public_action_ref(%OperatorActionRef{} = action_ref, action_kind) do
+    rewritten_id =
+      case String.split(action_ref.id, ":", parts: 2) do
+        [subject_id, _legacy_kind] -> "#{subject_id}:#{action_kind}"
+        _other -> action_ref.id
+      end
+
+    OperatorActionRef.new(%{
+      id: rewritten_id,
+      action_kind: action_kind,
+      subject_ref: action_ref.subject_ref
+    })
+  end
+
+  defp public_action_message(nil, "retry"), do: "Retry queued"
+  defp public_action_message(nil, "cancel"), do: "Cancelled"
+  defp public_action_message(message, _action_kind), do: message
+
+  defp operator_projection_from_row(row, %RequestContext{} = context) do
+    with {:ok, subject_ref} <-
+           subject_ref_from_any(fetch_value(row, :subject_ref), context),
+         false <- is_nil(subject_ref),
+         {:ok, current_execution_ref} <-
+           execution_ref_from_bridge(fetch_value(row, :current_execution_ref)),
+         {:ok, pending_decision_refs} <-
+           pending_decision_refs_from_maps(fetch_value(row, :pending_decision_refs) || []),
+         {:ok, available_actions} <-
+           operator_actions_from_maps(fetch_value(row, :available_actions) || []),
+         payload <- fetch_value(row, :payload) || %{},
+         timeline_rows <- fetch_value(payload, :timeline) || fetch_value(row, :timeline) || [],
+         {:ok, timeline} <- map_each(timeline_rows, &timeline_event_from_map/1) do
+      OperatorProjection.new(%{
+        subject_ref: subject_ref,
+        lifecycle_state:
+          normalize_string(
+            fetch_value(row, :lifecycle_state) || fetch_value(row, :status) || "unknown"
+          ),
+        current_execution_ref: current_execution_ref,
+        pending_decision_refs: pending_decision_refs,
+        available_actions: available_actions,
+        timeline: timeline,
+        updated_at: fetch_value(row, :updated_at) || fetch_value(payload, :last_event_at),
+        payload: payload
+      })
+    else
+      true -> {:error, :invalid_subject_ref}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp pending_decision_refs_from_maps(rows) when is_list(rows) do
+    rows
+    |> Enum.map(&DecisionRef.new/1)
+    |> collect()
+  end
+
+  defp operator_actions_from_maps(rows) when is_list(rows) do
+    map_each(rows, &operator_action_from_map/1)
+  end
+
+  defp operator_action_from_map(raw_action) when is_map(raw_action) do
+    raw_action_ref = fetch_value(raw_action, :action_ref) || raw_action
+
+    with {:ok, action_ref} <- operator_action_ref_from_map(raw_action_ref) do
+      OperatorAction.new(%{
+        action_ref: action_ref,
+        label: fetch_value(raw_action, :label) || action_label(action_ref.action_kind),
+        description: fetch_value(raw_action, :description),
+        dangerous?: danger_action?(action_ref.action_kind),
+        requires_confirmation?:
+          fetch_value(raw_action, :requires_confirmation?) ||
+            danger_action?(action_ref.action_kind),
+        metadata: fetch_value(raw_action, :metadata) || %{}
+      })
+    end
+  end
+
+  defp operator_action_from_map(_raw_action), do: {:error, :invalid_operator_action}
+
+  defp action_label(action_kind) when is_binary(action_kind) do
+    action_kind
+    |> String.replace("_", " ")
+    |> String.capitalize()
+  end
+
+  defp danger_action?(action_kind) when action_kind in ["cancel", "grant_override"], do: true
+  defp danger_action?(_action_kind), do: false
+
+  defp timeline_event_from_map(row) when is_map(row) do
+    TimelineEvent.new(%{
+      ref: fetch_value(row, :ref) || fetch_value(row, :id),
+      event_kind: normalize_string(fetch_value(row, :event_kind) || fetch_value(row, :kind)),
+      occurred_at: fetch_value(row, :occurred_at),
+      summary: fetch_value(row, :summary),
+      actor_ref: fetch_value(row, :actor_ref),
+      payload:
+        fetch_value(row, :payload) ||
+          compact_map(
+            Map.drop(Map.new(row), [
+              :ref,
+              :id,
+              :event_kind,
+              :kind,
+              :occurred_at,
+              :summary,
+              :actor_ref
+            ])
+          ),
+      metadata: fetch_value(row, :metadata) || %{}
+    })
+  end
+
+  defp timeline_event_from_map(_row), do: {:error, :invalid_timeline_event}
+
+  defp unified_trace_from_map(trace, %RequestContext{} = context) when is_map(trace) do
+    steps = fetch_value(trace, :steps) || []
+
+    with {:ok, normalized_steps} <- map_each(steps, &unified_trace_step_from_map/1) do
+      UnifiedTrace.new(%{
+        trace_id: fetch_value(trace, :trace_id),
+        installation_ref: installation_ref_for_trace(trace, context),
+        join_keys: fetch_value(trace, :join_keys) || %{},
+        steps: normalized_steps,
+        metadata: fetch_value(trace, :metadata) || %{}
+      })
+    end
+  end
+
+  defp unified_trace_from_map(_trace, _context), do: {:error, :invalid_unified_trace}
+
+  defp installation_ref_for_trace(trace, %RequestContext{
+         installation_ref: %InstallationRef{} = installation_ref
+       }) do
+    case fetch_value(trace, :installation_id) do
+      nil -> installation_ref
+      installation_id when installation_id == installation_ref.id -> installation_ref
+      _other -> nil
+    end
+  end
+
+  defp installation_ref_for_trace(_trace, _context), do: nil
+
+  defp unified_trace_step_from_map(step) when is_map(step) do
+    UnifiedTraceStep.new(%{
+      ref: fetch_value(step, :ref) || fetch_value(step, :id),
+      source: normalize_string(fetch_value(step, :source)),
+      occurred_at: fetch_value(step, :occurred_at),
+      trace_id: fetch_value(step, :trace_id),
+      causation_id: fetch_value(step, :causation_id),
+      freshness: normalize_string(fetch_value(step, :freshness)),
+      operator_actionable?: fetch_value(step, :operator_actionable?) || false,
+      diagnostic?: fetch_value(step, :diagnostic?) || false,
+      payload: fetch_value(step, :payload) || %{}
+    })
+  end
+
+  defp unified_trace_step_from_map(_step), do: {:error, :invalid_unified_trace_step}
+
+  defp installation_or_tenant_id(%RequestContext{
+         installation_ref: %InstallationRef{id: installation_id}
+       })
+       when is_binary(installation_id),
+       do: {:ok, installation_id}
+
+  defp installation_or_tenant_id(%RequestContext{tenant_ref: %{id: tenant_id}})
+       when is_binary(tenant_id),
+       do: {:ok, tenant_id}
+
+  defp installation_or_tenant_id(_context), do: {:error, :missing_installation_id}
+
+  defp actor_payload(%RequestContext{actor_ref: %{id: actor_id}}) when is_binary(actor_id),
+    do: %{actor_ref: actor_id}
+
+  defp actor_payload(_context), do: %{actor_ref: "app_kit"}
+
+  defp action_kind(%OperatorActionRequest{
+         action_ref: %OperatorActionRef{action_kind: action_kind}
+       }),
+       do: action_kind
+
+  defp operator_action_params(%OperatorActionRequest{} = action_request) do
+    action_request.params
+    |> Map.new()
+    |> maybe_put("reason", action_request.reason)
+  end
+
+  defp run_request_action_params(%RunRequest{} = run_request) do
+    run_request.params
+    |> Map.new()
+    |> maybe_put("recipe_ref", run_request.recipe_ref)
+    |> maybe_put("reason", run_request.reason)
   end
 
   defp work_query_service(opts),

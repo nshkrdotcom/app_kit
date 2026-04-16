@@ -199,13 +199,41 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
   end
 
   defmodule FakeWorkControlService do
-    alias AppKit.Core.Result
+    alias AppKit.Core.{ActionResult, RequestContext, Result, RunRequest}
 
     def start_run(domain_call, _opts) do
       Result.new(%{
         surface: :work_control,
         state: :scheduled,
         payload: %{domain_call: domain_call, backend: :fake}
+      })
+    end
+
+    def start_run(%RequestContext{} = context, %RunRequest{} = run_request, _opts) do
+      Result.new(%{
+        surface: :work_control,
+        state: :scheduled,
+        payload: %{
+          backend: :fake,
+          trace_id: context.trace_id,
+          subject_id: run_request.subject_ref.id
+        }
+      })
+    end
+
+    def retry_run(_context, run_ref, _opts) do
+      ActionResult.new(%{
+        status: :accepted,
+        action_ref: %{id: "#{run_ref.run_id}:retry", action_kind: "retry"},
+        message: "retry queued"
+      })
+    end
+
+    def cancel_run(_context, run_ref, _opts) do
+      ActionResult.new(%{
+        status: :completed,
+        action_ref: %{id: "#{run_ref.run_id}:cancel", action_kind: "cancel"},
+        message: "cancelled"
       })
     end
   end
@@ -216,6 +244,81 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     def run_status(%RunRef{} = run_ref, attrs, _opts) do
       {:ok, %{run_id: run_ref.run_id, attrs: attrs, backend: :fake}}
     end
+
+    def subject_status(_tenant_id, "subj-1") do
+      {:ok,
+       %{
+         subject_ref: %{id: "subj-1", subject_kind: "work_object"},
+         lifecycle_state: "processing",
+         current_execution_ref: %{id: "exec-1", dispatch_state: "accepted"},
+         pending_decision_refs: [],
+         available_actions: [
+           %{
+             id: "subj-1:pause",
+             action_kind: "pause",
+             subject_ref: %{id: "subj-1", subject_kind: "work_object"}
+           }
+         ],
+         payload: %{
+           timeline: [
+             %{
+               ref: "evt-1",
+               event_kind: "run_scheduled",
+               occurred_at: ~U[2026-04-18 13:00:00Z],
+               summary: "Run scheduled"
+             }
+           ]
+         }
+       }}
+    end
+
+    def timeline(_tenant_id, "subj-1") do
+      {:ok,
+       %{
+         subject_ref: %{id: "subj-1", subject_kind: "work_object"},
+         entries: [
+           %{
+             ref: "evt-1",
+             event_kind: "run_scheduled",
+             occurred_at: ~U[2026-04-18 13:00:00Z],
+             summary: "Run scheduled"
+           }
+         ],
+         last_event_at: ~U[2026-04-18 13:00:00Z]
+       }}
+    end
+
+    def available_actions(_tenant_id, "subj-1") do
+      {:ok,
+       [
+         %{
+           id: "subj-1:cancel",
+           action_kind: "cancel",
+           subject_ref: %{id: "subj-1", subject_kind: "work_object"}
+         }
+       ]}
+    end
+
+    def get_unified_trace(_attrs, _opts) do
+      {:ok,
+       %{
+         trace_id: "trace-mezzanine-bridge",
+         installation_id: "inst-1",
+         join_keys: %{"subject_id" => "subj-1"},
+         steps: [
+           %{
+             ref: "step-1",
+             source: :execution_record,
+             occurred_at: ~U[2026-04-18 13:05:00Z],
+             trace_id: "trace-mezzanine-bridge",
+             freshness: :lower_authoritative_unreconciled,
+             operator_actionable?: false,
+             diagnostic?: false,
+             payload: %{"dispatch_state" => "dispatching"}
+           }
+         ]
+       }}
+    end
   end
 
   defmodule FakeOperatorActionService do
@@ -223,6 +326,20 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     def review_run(%RunRef{} = run_ref, attrs, _opts) do
       {:ok, %{run_id: run_ref.run_id, attrs: attrs, backend: :fake}}
+    end
+
+    def apply_action(_tenant_id, "subj-1", "cancel", params, _actor) do
+      {:ok,
+       %{
+         status: :completed,
+         action_ref: %{
+           id: "subj-1:cancel",
+           action_kind: "cancel",
+           subject_ref: %{id: "subj-1", subject_kind: "work_object"}
+         },
+         message: "Cancelled",
+         metadata: %{params: params}
+       }}
     end
   end
 
@@ -234,10 +351,12 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     InstallationBinding,
     InstallationRef,
     InstallTemplate,
+    OperatorActionRequest,
     PageRequest,
     ProjectionRef,
     RequestContext,
     RunRef,
+    RunRequest,
     SortSpec,
     SubjectRef
   }
@@ -447,6 +566,99 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     assert status_projection.backend == :fake
     assert review_projection.backend == :fake
+  end
+
+  test "maps widened work-control and operator surface contracts into app-kit DTOs" do
+    context = request_context()
+
+    assert {:ok, run_request} =
+             RunRequest.new(%{
+               subject_ref: %{id: "subj-1", subject_kind: "work_object"},
+               recipe_ref: "expense_capture",
+               params: %{"priority" => "high"}
+             })
+
+    assert {:ok, start_result} =
+             MezzanineBridge.start_run(
+               context,
+               run_request,
+               work_control_service: FakeWorkControlService
+             )
+
+    assert start_result.payload.subject_id == "subj-1"
+
+    assert {:ok, run_ref} =
+             RunRef.new(%{
+               run_id: "run-1",
+               scope_id: "program/program-1",
+               metadata: %{work_object_id: "subj-1"}
+             })
+
+    assert {:ok, retry_result} =
+             MezzanineBridge.retry_run(
+               context,
+               run_ref,
+               work_control_service: FakeWorkControlService
+             )
+
+    assert {:ok, cancel_result} =
+             MezzanineBridge.cancel_run(
+               context,
+               run_ref,
+               work_control_service: FakeWorkControlService
+             )
+
+    assert {:ok, subject_ref} = SubjectRef.new(%{id: "subj-1", subject_kind: "work_object"})
+
+    assert {:ok, projection} =
+             MezzanineBridge.subject_status(
+               context,
+               subject_ref,
+               operator_query_service: FakeOperatorQueryService
+             )
+
+    assert {:ok, timeline} =
+             MezzanineBridge.timeline(
+               context,
+               subject_ref,
+               operator_query_service: FakeOperatorQueryService
+             )
+
+    assert {:ok, actions} =
+             MezzanineBridge.available_actions(
+               context,
+               subject_ref,
+               operator_query_service: FakeOperatorQueryService
+             )
+
+    assert {:ok, action_request} =
+             OperatorActionRequest.new(%{
+               action_ref: hd(actions).action_ref,
+               params: %{"reason" => "duplicate"}
+             })
+
+    assert {:ok, action_result} =
+             MezzanineBridge.apply_action(
+               context,
+               subject_ref,
+               action_request,
+               operator_action_service: FakeOperatorActionService
+             )
+
+    assert {:ok, trace} =
+             MezzanineBridge.get_unified_trace(
+               context,
+               projection.current_execution_ref,
+               operator_query_service: FakeOperatorQueryService
+             )
+
+    assert retry_result.action_ref.action_kind == "retry"
+    assert cancel_result.action_ref.action_kind == "cancel"
+    assert hd(projection.available_actions).action_ref.action_kind == "pause"
+    assert hd(timeline).event_kind == "run_scheduled"
+    assert hd(actions).action_ref.action_kind == "cancel"
+    assert action_result.metadata.params["reason"] == "duplicate"
+    assert hd(trace.steps).source == "execution_record"
   end
 
   test "normalizes missing program context into a surface error" do

@@ -7,7 +7,10 @@ defmodule AppKit.Workspace do
     "core/app_kit_core",
     "core/chat_surface",
     "core/domain_surface",
+    "core/installation_surface",
     "core/operator_surface",
+    "core/review_surface",
+    "core/work_surface",
     "core/work_control",
     "core/run_governance",
     "core/runtime_gateway",
@@ -16,6 +19,7 @@ defmodule AppKit.Workspace do
     "core/app_config",
     "bridges/outer_brain_bridge",
     "bridges/domain_bridge",
+    "bridges/mezzanine_bridge",
     "bridges/integration_bridge",
     "bridges/projection_bridge",
     "examples/reference_host"

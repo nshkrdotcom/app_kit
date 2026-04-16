@@ -12,19 +12,32 @@ defmodule AppKit.Core.ContractTest do
     InstallationRef,
     InstallResult,
     InstallTemplate,
+    OperatorAction,
     OperatorActionRef,
+    OperatorActionRequest,
+    OperatorProjection,
     PageRequest,
     PageResult,
     ProjectionRef,
     RequestContext,
+    RunRequest,
     SortSpec,
     SubjectDetail,
     SubjectSummary,
     SurfaceError,
-    TenantRef
+    TenantRef,
+    TimelineEvent,
+    UnifiedTrace,
+    UnifiedTraceStep
   }
 
-  alias AppKit.Core.Backends.{InstallationBackend, ReviewBackend, WorkQueryBackend}
+  alias AppKit.Core.Backends.{
+    InstallationBackend,
+    OperatorBackend,
+    ReviewBackend,
+    WorkBackend,
+    WorkQueryBackend
+  }
 
   test "builds nested request context primitives" do
     assert {:ok, context} =
@@ -191,6 +204,85 @@ defmodule AppKit.Core.ContractTest do
     assert %ExecutionRef{id: "exec-1"} = action_result.execution_ref
   end
 
+  test "builds operational DTOs for work control and operator surfaces" do
+    occurred_at = DateTime.from_naive!(~N[2026-04-18 11:00:00], "Etc/UTC")
+
+    assert {:ok, run_request} =
+             RunRequest.new(%{
+               subject_ref: %{id: "subj-1", subject_kind: "expense_request"},
+               recipe_ref: "expense_capture",
+               params: %{"priority" => "high"},
+               reason: "start governed execution"
+             })
+
+    assert {:ok, operator_action} =
+             OperatorAction.new(%{
+               action_ref: %{
+                 id: "subj-1:cancel",
+                 action_kind: "cancel",
+                 subject_ref: %{id: "subj-1", subject_kind: "expense_request"}
+               },
+               label: "Cancel run",
+               dangerous?: true,
+               requires_confirmation?: true
+             })
+
+    assert {:ok, action_request} =
+             OperatorActionRequest.new(%{
+               action_ref: operator_action.action_ref,
+               params: %{"reason" => "duplicate submission"},
+               reason: "operator requested cancel"
+             })
+
+    assert {:ok, timeline_event} =
+             TimelineEvent.new(%{
+               ref: "evt-1",
+               event_kind: "run_scheduled",
+               occurred_at: occurred_at,
+               summary: "Run scheduled for dispatch",
+               actor_ref: %{id: "user-1", kind: :human},
+               payload: %{"dispatch_state" => "pending_dispatch"}
+             })
+
+    assert {:ok, trace_step} =
+             UnifiedTraceStep.new(%{
+               ref: "trace-step-1",
+               source: "execution_record",
+               occurred_at: occurred_at,
+               trace_id: "trace-1",
+               causation_id: "cause-1",
+               freshness: "lower_authoritative_unreconciled",
+               operator_actionable?: false,
+               diagnostic?: false,
+               payload: %{"dispatch_state" => "dispatching"}
+             })
+
+    assert {:ok, trace} =
+             UnifiedTrace.new(%{
+               trace_id: "trace-1",
+               installation_ref: %{id: "inst-1", pack_slug: "expense_approval"},
+               join_keys: %{"subject_id" => "subj-1"},
+               steps: [trace_step]
+             })
+
+    assert {:ok, projection} =
+             OperatorProjection.new(%{
+               subject_ref: %{id: "subj-1", subject_kind: "expense_request"},
+               lifecycle_state: "processing",
+               current_execution_ref: %{id: "exec-1", dispatch_state: :accepted},
+               available_actions: [operator_action],
+               timeline: [timeline_event],
+               payload: %{"queue" => "expense_capture"}
+             })
+
+    assert %RunRequest{recipe_ref: "expense_capture"} = run_request
+    assert %OperatorActionRef{action_kind: "cancel"} = action_request.action_ref
+    assert %TimelineEvent{event_kind: "run_scheduled"} = timeline_event
+    assert %UnifiedTraceStep{source: "execution_record"} = trace_step
+    assert %UnifiedTrace{trace_id: "trace-1"} = trace
+    assert %OperatorProjection{lifecycle_state: "processing"} = projection
+  end
+
   test "builds installation DTOs" do
     assert {:ok, install_template} =
              InstallTemplate.new(%{
@@ -221,6 +313,16 @@ defmodule AppKit.Core.ContractTest do
   end
 
   test "exposes the frozen backend contracts" do
+    assert {:start_run, 3} in WorkBackend.behaviour_info(:callbacks)
+    assert {:retry_run, 3} in WorkBackend.behaviour_info(:callbacks)
+    assert {:cancel_run, 3} in WorkBackend.behaviour_info(:callbacks)
+
+    assert {:subject_status, 3} in OperatorBackend.behaviour_info(:callbacks)
+    assert {:timeline, 3} in OperatorBackend.behaviour_info(:callbacks)
+    assert {:get_unified_trace, 3} in OperatorBackend.behaviour_info(:callbacks)
+    assert {:available_actions, 3} in OperatorBackend.behaviour_info(:callbacks)
+    assert {:apply_action, 4} in OperatorBackend.behaviour_info(:callbacks)
+
     assert {:ingest_subject, 3} in WorkQueryBackend.behaviour_info(:callbacks)
     assert {:list_subjects, 4} in WorkQueryBackend.behaviour_info(:callbacks)
     assert {:record_decision, 4} in ReviewBackend.behaviour_info(:callbacks)
