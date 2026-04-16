@@ -6,7 +6,10 @@ defmodule AppKit.Build.WorkspaceContract do
     "core/chat_surface",
     "core/domain_surface",
     "core/operator_surface",
+    "core/review_surface",
     "core/work_control",
+    "core/work_surface",
+    "core/installation_surface",
     "core/run_governance",
     "core/runtime_gateway",
     "core/conversation_bridge",
@@ -15,6 +18,7 @@ defmodule AppKit.Build.WorkspaceContract do
     "bridges/outer_brain_bridge",
     "bridges/domain_bridge",
     "bridges/integration_bridge",
+    "bridges/mezzanine_bridge",
     "bridges/projection_bridge",
     "examples/reference_host"
   ]
