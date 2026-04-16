@@ -57,3 +57,7 @@ config :mezzanine_ops_domain,
     Mezzanine.Control
   ],
   start_runtime_children?: false
+
+if config_env() == :test do
+  import_config "test.exs"
+end

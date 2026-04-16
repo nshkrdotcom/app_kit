@@ -30,6 +30,7 @@ defmodule AppKitReviewSurface.MixProject do
   defp deps do
     [
       {:app_kit_core, path: "../app_kit_core"},
+      {:app_kit_mezzanine_bridge, path: "../../bridges/mezzanine_bridge"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40.1", only: :dev, runtime: false}

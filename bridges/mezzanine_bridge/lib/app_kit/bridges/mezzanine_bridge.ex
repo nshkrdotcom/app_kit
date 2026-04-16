@@ -787,6 +787,9 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp work_control_service(opts),
     do: Keyword.get(opts, :work_control_service, Mezzanine.AppKitBridge.WorkControlService)
 
+  defp program_context_service(opts),
+    do: Keyword.get(opts, :program_context_service, Mezzanine.AppKitBridge.ProgramContextService)
+
   defp operator_query_service(opts),
     do: Keyword.get(opts, :operator_query_service, Mezzanine.AppKitBridge.OperatorQueryService)
 
@@ -805,22 +808,93 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp tenant_id(_context), do: {:error, :missing_tenant_id}
 
   defp program_id(%RequestContext{} = context, opts) do
-    case Keyword.get(opts, :program_id) || context_metadata(context, :program_id) do
-      value when is_binary(value) and value != "" -> {:ok, value}
-      _ -> {:error, :missing_program_id}
+    case explicit_program_id(context, opts) do
+      {:ok, program_id} ->
+        {:ok, program_id}
+
+      :missing ->
+        with {:ok, tenant_id} <- tenant_id(context),
+             {:ok, program_slug} <- program_slug(context, opts),
+             {:ok, resolution} <-
+               program_context_service(opts).resolve(
+                 tenant_id,
+                 %{program_slug: program_slug},
+                 opts
+               ),
+             {:ok, program_id} <- resolved_id(resolution, :program_id, :missing_program_id) do
+          {:ok, program_id}
+        else
+          {:error, :missing_program_slug} -> {:error, :missing_program_id}
+          {:error, reason} -> {:error, reason}
+        end
     end
   end
 
   defp work_class_id(%RequestContext{} = context, attrs, opts) do
-    case Keyword.get(opts, :work_class_id) || fetch_value(attrs, :work_class_id) ||
-           context_metadata(context, :work_class_id) do
-      value when is_binary(value) and value != "" -> {:ok, value}
-      _ -> {:error, :missing_work_class_id}
+    case explicit_work_class_id(context, attrs, opts) do
+      {:ok, work_class_id} ->
+        {:ok, work_class_id}
+
+      :missing ->
+        with {:ok, tenant_id} <- tenant_id(context),
+             {:ok, program_slug} <- program_slug(context, opts),
+             {:ok, work_class_name} <- work_class_name(context, attrs, opts),
+             {:ok, resolution} <-
+               program_context_service(opts).resolve(
+                 tenant_id,
+                 %{program_slug: program_slug, work_class_name: work_class_name},
+                 opts
+               ),
+             {:ok, work_class_id} <-
+               resolved_id(resolution, :work_class_id, :missing_work_class_id) do
+          {:ok, work_class_id}
+        else
+          {:error, :missing_program_slug} -> {:error, :missing_work_class_id}
+          {:error, :missing_work_class_name} -> {:error, :missing_work_class_id}
+          {:error, reason} -> {:error, reason}
+        end
     end
   end
 
   defp context_metadata(%RequestContext{metadata: metadata}, key) do
     Map.get(metadata, key) || Map.get(metadata, Atom.to_string(key))
+  end
+
+  defp explicit_program_id(%RequestContext{} = context, opts) do
+    case Keyword.get(opts, :program_id) || context_metadata(context, :program_id) do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _ -> :missing
+    end
+  end
+
+  defp explicit_work_class_id(%RequestContext{} = context, attrs, opts) do
+    case Keyword.get(opts, :work_class_id) || fetch_value(attrs, :work_class_id) ||
+           context_metadata(context, :work_class_id) do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _ -> :missing
+    end
+  end
+
+  defp program_slug(%RequestContext{} = context, opts) do
+    case Keyword.get(opts, :program_slug) || context_metadata(context, :program_slug) do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _ -> {:error, :missing_program_slug}
+    end
+  end
+
+  defp work_class_name(%RequestContext{} = context, attrs, opts) do
+    case Keyword.get(opts, :work_class_name) || fetch_value(attrs, :work_class_name) ||
+           context_metadata(context, :work_class_name) do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _ -> {:error, :missing_work_class_name}
+    end
+  end
+
+  defp resolved_id(resolution, key, error) when is_map(resolution) do
+    case fetch_value(resolution, key) do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _ -> {:error, error}
+    end
   end
 
   defp subject_id_from_projection(%ProjectionRef{subject_ref: %SubjectRef{id: subject_id}})

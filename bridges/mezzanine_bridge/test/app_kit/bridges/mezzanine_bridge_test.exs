@@ -118,6 +118,22 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     end
   end
 
+  defmodule FakeProgramContextService do
+    def resolve(
+          "tenant-1",
+          %{program_slug: "expense_program", work_class_name: "expense_item"},
+          _opts
+        ) do
+      {:ok, %{program_id: "program-1", work_class_id: "work-class-1"}}
+    end
+
+    def resolve("tenant-1", %{program_slug: "expense_program"}, _opts) do
+      {:ok, %{program_id: "program-1"}}
+    end
+
+    def resolve(_tenant_id, _attrs, _opts), do: {:error, :bridge_not_found}
+  end
+
   defmodule FakeInstallationService do
     def create_installation(attrs, _opts) do
       {:ok,
@@ -432,6 +448,36 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     assert queue_stats.active_count == 2
   end
 
+  test "resolves program context from product metadata when raw lower ids are absent" do
+    context =
+      request_context(%{
+        program_slug: "expense_program",
+        work_class_name: "expense_item"
+      })
+
+    assert {:ok, created_ref} =
+             MezzanineBridge.ingest_subject(
+               context,
+               %{external_ref: "ENG-499", title: "Created from metadata"},
+               work_query_service: FakeWorkQueryService,
+               program_context_service: FakeProgramContextService
+             )
+
+    assert created_ref.id == "subj-1"
+
+    assert {:ok, page_request} = PageRequest.new(%{limit: 10})
+
+    assert {:ok, review_page} =
+             MezzanineBridge.list_pending(
+               context,
+               page_request,
+               review_query_service: FakeReviewQueryService,
+               program_context_service: FakeProgramContextService
+             )
+
+    assert hd(review_page.entries).decision_ref.id == "dec-1"
+  end
+
   test "maps review and installation services into app-kit contract types" do
     context = request_context()
     assert {:ok, page_request} = PageRequest.new(%{limit: 10})
@@ -718,14 +764,14 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     refute error.retryable
   end
 
-  defp request_context do
+  defp request_context(metadata \\ %{program_id: "program-1", work_class_id: "work-class-1"}) do
     {:ok, context} =
       RequestContext.new(%{
         trace_id: "trace-mezzanine-bridge",
         actor_ref: %{id: "user-1", kind: :human},
         tenant_ref: %{id: "tenant-1"},
         installation_ref: %{id: "inst-1", pack_slug: "expense_approval", status: :active},
-        metadata: %{program_id: "program-1", work_class_id: "work-class-1"}
+        metadata: metadata
       })
 
     context
