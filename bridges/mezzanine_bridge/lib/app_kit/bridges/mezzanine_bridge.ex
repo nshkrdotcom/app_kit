@@ -179,6 +179,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
            template
            |> Map.from_struct()
            |> Map.put(:tenant_id, tenant_id)
+           |> maybe_put_runtime_profile(context)
            |> Map.put_new(:metadata, %{}),
          {:ok, bridge_result} <- installation_service(opts).create_installation(attrs, opts),
          {:ok, install_result} <- install_result_from_bridge(bridge_result) do
@@ -1193,6 +1194,16 @@ defmodule AppKit.Bridges.MezzanineBridge do
   end
 
   defp installation_ref_from_map(_raw_installation_ref), do: {:error, :invalid_installation_ref}
+
+  defp maybe_put_runtime_profile(attrs, %RequestContext{} = context) do
+    case context_metadata(context, :runtime_profile) do
+      runtime_profile when is_map(runtime_profile) ->
+        Map.put(attrs, :runtime_profile, runtime_profile)
+
+      _other ->
+        attrs
+    end
+  end
 
   defp action_result_from_bridge(bridge_result) do
     with {:ok, action_ref} <-

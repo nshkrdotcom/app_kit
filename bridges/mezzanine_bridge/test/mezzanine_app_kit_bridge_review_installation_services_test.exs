@@ -17,7 +17,7 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
     SubjectKindSpec
   }
 
-  alias Mezzanine.Programs.{PolicyBundle, Program}
+  alias Mezzanine.Programs.{PlacementProfile, PolicyBundle, Program}
   alias Mezzanine.Review.ReviewUnit
   alias Mezzanine.Runs.{Run, RunArtifact, RunSeries}
   alias Mezzanine.Work.{WorkClass, WorkObject}
@@ -135,6 +135,59 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
 
     assert {:ok, bridge_installation} = AppKitBridge.get_installation(installation_id)
     assert bridge_installation.installation_ref.id == installation_id
+  end
+
+  test "installation service provisions and updates legacy runtime routing profile metadata" do
+    activate_fixture_registration!("1.0.0")
+
+    attrs = %{
+      tenant_id: "tenant-runtime-profile",
+      environment: "prod",
+      template_key: "expense-default",
+      pack_slug: "expense_approval",
+      pack_version: "1.0.0",
+      runtime_profile: runtime_profile_fixture(),
+      default_bindings: %{
+        "execution_bindings" => %{
+          "expense_capture" => %{
+            "placement_ref" => "local_default"
+          }
+        }
+      }
+    }
+
+    assert {:ok, first_result} = InstallationService.create_installation(attrs)
+    assert first_result.status == :created
+
+    assert {:ok, program, bundle, work_class, placement_profile} =
+             runtime_profile_records("tenant-runtime-profile")
+
+    assert program.status == :active
+    assert program.name == "Expense Program"
+    assert bundle.name == "default_coding_ops"
+    assert bundle.version == "1.0.0"
+    assert work_class.name == "coding_operations"
+    assert work_class.policy_bundle_id == bundle.id
+    assert placement_profile.profile_id == "local_default"
+    assert placement_profile.status == :active
+    assert placement_profile.runtime_preferences["topology"] == "single_node"
+
+    updated_attrs =
+      attrs
+      |> put_in([:runtime_profile, :program, :name], "Expense Program Revised")
+      |> put_in([:runtime_profile, :placement_profile, :runtime_preferences], %{
+        "locality" => "same_region",
+        "topology" => "dual_node"
+      })
+
+    assert {:ok, second_result} = InstallationService.create_installation(updated_attrs)
+    assert second_result.status == :updated
+
+    assert {:ok, program, _bundle, _work_class, placement_profile} =
+             runtime_profile_records("tenant-runtime-profile")
+
+    assert program.name == "Expense Program Revised"
+    assert placement_profile.runtime_preferences["topology"] == "dual_node"
   end
 
   test "adapter services normalize missing lookups to bridge-safe not-found errors" do
@@ -405,6 +458,64 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
     ---
     # Operator Prompt
     """
+  end
+
+  defp runtime_profile_fixture do
+    %{
+      program: %{
+        slug: "expense_program",
+        name: "Expense Program",
+        product_family: "finance",
+        configuration: %{"default_work_class" => "coding_operations"},
+        metadata: %{"managed_by" => "app_kit_bridge_test"}
+      },
+      policy_bundle: %{
+        name: "default_coding_ops",
+        version: "1.0.0",
+        policy_kind: :workflow_md,
+        source_ref: "bridge/runtime_profile_fixture",
+        body: workflow_body(),
+        metadata: %{"preset" => "default_coding_ops"}
+      },
+      work_class: %{
+        name: "coding_operations",
+        kind: "coding_task",
+        intake_schema: %{"required" => ["title"]},
+        default_review_profile: %{"required" => true},
+        default_run_profile: %{"runtime" => "session"}
+      },
+      placement_profile: %{
+        profile_id: "local_default",
+        strategy: "affinity",
+        target_selector: %{"runtime_driver" => "jido_session"},
+        runtime_preferences: %{"locality" => "same_region", "topology" => "single_node"},
+        workspace_policy: %{"root_mode" => "per_work", "sandbox_profile" => "strict"},
+        metadata: %{"preset" => "local_default"}
+      }
+    }
+  end
+
+  defp runtime_profile_records(tenant_id) do
+    actor = %{tenant_id: tenant_id}
+
+    with {:ok, %Program{} = program} <-
+           Program.by_slug(tenant_id, "expense_program", actor: actor, tenant: tenant_id),
+         {:ok, bundles} <-
+           PolicyBundle.list_for_program(program.id, actor: actor, tenant: tenant_id),
+         %PolicyBundle{} = bundle <-
+           Enum.find(bundles, &(&1.name == "default_coding_ops")),
+         {:ok, work_classes} <-
+           WorkClass.list_for_program(program.id, actor: actor, tenant: tenant_id),
+         %WorkClass{} = work_class <-
+           Enum.find(work_classes, &(&1.name == "coding_operations")),
+         {:ok, placement_profiles} <-
+           PlacementProfile.list_for_program(program.id, actor: actor, tenant: tenant_id),
+         %PlacementProfile{} = placement_profile <-
+           Enum.find(placement_profiles, &(&1.profile_id == "local_default")) do
+      {:ok, program, bundle, work_class, placement_profile}
+    else
+      _other -> {:error, :runtime_profile_missing}
+    end
   end
 
   defp allow_registry_process(config_pid) do

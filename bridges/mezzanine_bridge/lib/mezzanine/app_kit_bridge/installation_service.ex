@@ -9,7 +9,7 @@ defmodule Mezzanine.AppKitBridge.InstallationService do
 
   require Ash.Query
 
-  alias Mezzanine.AppKitBridge.AdapterSupport
+  alias Mezzanine.AppKitBridge.{AdapterSupport, RuntimeProfileService}
   alias Mezzanine.ConfigRegistry.{Installation, PackRegistration}
 
   @deployment_keys [
@@ -28,6 +28,7 @@ defmodule Mezzanine.AppKitBridge.InstallationService do
 
     with :ok <- reject_deployment_fields(attrs),
          {:ok, tenant_id} <- fetch_string(attrs, opts, :tenant_id),
+         {:ok, runtime_profile_status} <- ensure_runtime_profile(tenant_id, attrs, opts),
          {:ok, pack_slug} <- fetch_string(attrs, opts, :pack_slug),
          {:ok, pack_version} <- fetch_string(attrs, opts, :pack_version),
          environment <- optional_string(attrs, opts, :environment, "default"),
@@ -47,7 +48,12 @@ defmodule Mezzanine.AppKitBridge.InstallationService do
           )
 
         %Installation{} = installation ->
-          reuse_or_update_installation(installation, pack_registration, binding_config)
+          reuse_or_update_installation(
+            installation,
+            pack_registration,
+            binding_config,
+            runtime_profile_status
+          )
       end
     else
       {:error, reason} -> {:error, normalize_error(reason)}
@@ -141,14 +147,25 @@ defmodule Mezzanine.AppKitBridge.InstallationService do
     end
   end
 
-  defp reuse_or_update_installation(installation, pack_registration, binding_config) do
+  defp reuse_or_update_installation(
+         installation,
+         pack_registration,
+         binding_config,
+         runtime_profile_status
+       ) do
     if installation.pack_registration_id != pack_registration.id do
       {:error, :installation_pack_conflict}
     else
       with {:ok, installation} <- maybe_update_bindings(installation, binding_config),
            {:ok, active_installation} <- ensure_active(installation),
            {:ok, detail} <- installation_detail(active_installation) do
-        status = result_status(installation, active_installation, binding_config)
+        status =
+          result_status(
+            installation,
+            active_installation,
+            binding_config,
+            runtime_profile_status
+          )
 
         {:ok,
          %{
@@ -177,11 +194,19 @@ defmodule Mezzanine.AppKitBridge.InstallationService do
   defp ensure_active(%Installation{} = installation),
     do: MezzanineConfigRegistry.reactivate_installation(installation)
 
-  defp result_status(original_installation, active_installation, desired_bindings) do
+  defp result_status(
+         original_installation,
+         active_installation,
+         desired_bindings,
+         runtime_profile_status
+       ) do
+    runtime_profile_changed? = runtime_profile_status == :updated
+
     if original_installation.status == :active and
          original_installation.binding_config == desired_bindings and
          active_installation.compiled_pack_revision ==
-           original_installation.compiled_pack_revision do
+           original_installation.compiled_pack_revision and
+         not runtime_profile_changed? do
       :reused
     else
       :updated
@@ -308,6 +333,14 @@ defmodule Mezzanine.AppKitBridge.InstallationService do
     else
       metadata
     end
+  end
+
+  defp ensure_runtime_profile(tenant_id, attrs, opts) do
+    RuntimeProfileService.ensure(tenant_id, runtime_profile(attrs, opts))
+  end
+
+  defp runtime_profile(attrs, opts) do
+    Keyword.get(opts, :runtime_profile) || map_value(attrs, :runtime_profile)
   end
 
   defp reject_deployment_fields(attrs) do
