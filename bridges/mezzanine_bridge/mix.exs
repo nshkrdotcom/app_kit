@@ -57,7 +57,7 @@ defmodule AppKitMezzanineBridge.MixProject do
       {:mezzanine_config_registry, path: "../../../mezzanine/core/config_registry"},
       {:mezzanine_pack_model, path: "../../../mezzanine/core/pack_model"},
       {:mezzanine_pack_compiler, path: "../../../mezzanine/core/pack_compiler"},
-      {:mezzanine_ops_model, path: "../../../mezzanine/core/ops_model"},
+      {:mezzanine_core, path: "../../../mezzanine/core/mezzanine_core"},
       {:mezzanine_integration_bridge, path: "../../../mezzanine/bridges/integration_bridge"},
       {:ash, "~> 3.24"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

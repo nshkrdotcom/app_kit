@@ -22,9 +22,9 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   alias Mezzanine.EvidenceLedger.EvidenceRecord
   alias Mezzanine.Execution.ExecutionRecord
   alias Mezzanine.IntegrationBridge
+  alias Mezzanine.Intent.ReadIntent
   alias Mezzanine.Runs.RunSeries
   alias Mezzanine.Work.WorkObject
-  alias MezzanineOpsModel.Intent.ReadIntent
 
   @default_lower_operations [:fetch_run, :events, :attempts, :run_artifacts]
 

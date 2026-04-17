@@ -774,6 +774,25 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
            end)
   end
 
+  test "does not declare or reference the deprecated mezzanine ops_model package" do
+    deps = AppKitMezzanineBridge.MixProject.project()[:deps]
+
+    refute Enum.any?(deps, fn
+             {:mezzanine_ops_model, _opts} -> true
+             {:mezzanine_ops_model, _requirement, _opts} -> true
+             _other -> false
+           end)
+
+    bridge_root = Path.expand("../../..", __DIR__)
+
+    bridge_root
+    |> Path.join("lib/**/*.ex")
+    |> Path.wildcard(match_dot: true)
+    |> Enum.each(fn path ->
+      refute File.read!(path) =~ "MezzanineOpsModel", "#{path} still references MezzanineOpsModel"
+    end)
+  end
+
   defp request_context(metadata \\ %{program_id: "program-1", work_class_id: "work-class-1"}) do
     {:ok, context} =
       RequestContext.new(%{
