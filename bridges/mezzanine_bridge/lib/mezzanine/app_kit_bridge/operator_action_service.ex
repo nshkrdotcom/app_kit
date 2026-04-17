@@ -6,7 +6,7 @@ defmodule Mezzanine.AppKitBridge.OperatorActionService do
   alias AppKit.Core.RunRef
   alias Mezzanine.AppKitBridge.AdapterSupport
   alias Mezzanine.AppKitBridge.ReviewActionService
-  alias Mezzanine.Control.Commands
+  alias Mezzanine.OperatorActions
 
   @supported_actions [:pause, :resume, :cancel, :replan, :grant_override]
 
@@ -48,23 +48,23 @@ defmodule Mezzanine.AppKitBridge.OperatorActionService do
   end
 
   defp dispatch_action(:pause, tenant_id, subject_id, params, actor) do
-    Commands.pause_work(tenant_id, subject_id, actor_ref(actor, []), params)
+    OperatorActions.pause_work(tenant_id, subject_id, actor_ref(actor, []), params)
   end
 
   defp dispatch_action(:resume, tenant_id, subject_id, params, actor) do
-    Commands.resume_work(tenant_id, subject_id, actor_ref(actor, []), params)
+    OperatorActions.resume_work(tenant_id, subject_id, actor_ref(actor, []), params)
   end
 
   defp dispatch_action(:cancel, tenant_id, subject_id, params, actor) do
-    Commands.cancel_work(tenant_id, subject_id, actor_ref(actor, []), params)
+    OperatorActions.cancel_work(tenant_id, subject_id, actor_ref(actor, []), params)
   end
 
   defp dispatch_action(:replan, tenant_id, subject_id, params, actor) do
-    Commands.request_replan(tenant_id, subject_id, actor_ref(actor, []), params)
+    OperatorActions.request_replan(tenant_id, subject_id, actor_ref(actor, []), params)
   end
 
   defp dispatch_action(:grant_override, tenant_id, subject_id, params, actor) do
-    Commands.override_grant_profile(
+    OperatorActions.override_grant_profile(
       tenant_id,
       subject_id,
       actor_ref(actor, []),

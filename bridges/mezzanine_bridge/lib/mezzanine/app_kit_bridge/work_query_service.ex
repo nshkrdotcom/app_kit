@@ -12,10 +12,10 @@ defmodule Mezzanine.AppKitBridge.WorkQueryService do
   alias Mezzanine.AppKitBridge.AdapterSupport
   alias Mezzanine.Assurance
   alias Mezzanine.Audit.WorkAudit
-  alias Mezzanine.Control.ControlSession
   alias Mezzanine.Review.{Escalation, ReviewUnit}
   alias Mezzanine.Runs.{Run, RunSeries}
   alias Mezzanine.Work.{WorkObject, WorkPlan}
+  alias Mezzanine.WorkControl
 
   @active_statuses [:pending, :planning, :planned, :running, :awaiting_review, :blocked]
 
@@ -321,15 +321,7 @@ defmodule Mezzanine.AppKitBridge.WorkQueryService do
   end
 
   defp fetch_control_session(tenant_id, work_object_id) do
-    ControlSession
-    |> Ash.Query.set_tenant(tenant_id)
-    |> Ash.Query.filter(work_object_id == ^work_object_id)
-    |> Ash.read(actor: actor(tenant_id), domain: Mezzanine.Control)
-    |> case do
-      {:ok, [control_session | _]} -> {:ok, control_session}
-      {:ok, []} -> {:ok, nil}
-      {:error, reason} -> {:error, reason}
-    end
+    WorkControl.control_session_for_work(tenant_id, work_object_id)
   end
 
   defp open_escalation_count(tenant_id, work_objects) do

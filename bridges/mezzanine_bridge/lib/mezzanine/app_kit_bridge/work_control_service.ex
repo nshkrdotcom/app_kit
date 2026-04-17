@@ -8,10 +8,10 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
   alias AppKit.Core.{RequestContext, Result, RunRef, RunRequest}
   alias Mezzanine.AppKitBridge.AdapterSupport
   alias Mezzanine.Audit.WorkAudit
-  alias Mezzanine.Control.ControlSession
   alias Mezzanine.Review.ReviewUnit
   alias Mezzanine.Runs.{Run, RunSeries}
   alias Mezzanine.Work.{WorkObject, WorkPlan}
+  alias Mezzanine.WorkControl
 
   @active_run_statuses [:pending, :scheduled, :running]
   @review_kind_map %{
@@ -177,31 +177,17 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
   end
 
   defp ensure_control_session(tenant_id, %WorkObject{} = work_object) do
-    ControlSession
-    |> Ash.Query.set_tenant(tenant_id)
-    |> Ash.Query.filter(work_object_id == ^work_object.id and status == :active)
-    |> Ash.read(actor: actor(tenant_id), authorize?: false, domain: Mezzanine.Control)
+    WorkControl.ensure_control_session(tenant_id, work_object)
     |> case do
-      {:ok, [session | _]} ->
-        {:ok, session}
-
-      {:ok, []} ->
-        ControlSession.open(
-          %{program_id: work_object.program_id, work_object_id: work_object.id},
-          actor: actor(tenant_id),
-          tenant: tenant_id
-        )
+      {:ok, control_session} ->
+        {:ok, control_session}
 
       {:error, _reason} ->
         {:error, :control_session_unavailable}
     end
   end
 
-  defp ensure_run_series(
-         tenant_id,
-         %WorkObject{} = work_object,
-         %ControlSession{} = control_session
-       ) do
+  defp ensure_run_series(tenant_id, %WorkObject{} = work_object, control_session) do
     case RunSeries.list_for_work_object(work_object.id,
            actor: actor(tenant_id),
            tenant: tenant_id

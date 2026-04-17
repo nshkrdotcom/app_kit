@@ -18,7 +18,6 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   alias Mezzanine.Audit.UnifiedTrace
   alias Mezzanine.Audit.UnifiedTrace.Query
   alias Mezzanine.Audit.WorkAudit
-  alias Mezzanine.Control.ControlSession
   alias Mezzanine.Decisions.DecisionRecord
   alias Mezzanine.EvidenceLedger.EvidenceRecord
   alias Mezzanine.Execution.ExecutionRecord
@@ -26,6 +25,7 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   alias Mezzanine.Intent.ReadIntent
   alias Mezzanine.Runs.RunSeries
   alias Mezzanine.Work.WorkObject
+  alias Mezzanine.WorkControl
 
   @default_lower_operations [:fetch_run, :events, :attempts, :run_artifacts]
 
@@ -480,11 +480,7 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   end
 
   defp open_control_sessions(tenant_id, program_id) do
-    ControlSession.list_for_program(program_id, actor: actor(tenant_id), tenant: tenant_id)
-    |> case do
-      {:ok, sessions} -> {:ok, Enum.filter(sessions, &(&1.status == :active))}
-      {:error, reason} -> {:error, reason}
-    end
+    WorkControl.open_control_sessions(tenant_id, program_id)
   end
 
   defp active_run_count(tenant_id, program_id) do
