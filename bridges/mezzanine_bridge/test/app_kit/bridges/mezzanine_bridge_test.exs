@@ -853,6 +853,34 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     end)
   end
 
+  test "does not declare or reference the deprecated mezzanine ops_domain package directly" do
+    deps = AppKitMezzanineBridge.MixProject.project()[:deps]
+
+    refute Enum.any?(deps, fn
+             {:mezzanine_ops_domain, _opts} -> true
+             {:mezzanine_ops_domain, _requirement, _opts} -> true
+             _other -> false
+           end)
+
+    bridge_root = Path.expand("../../..", __DIR__)
+
+    bridge_root
+    |> Path.join("lib/**/*.ex")
+    |> Path.wildcard(match_dot: true)
+    |> Enum.each(fn path ->
+      contents = File.read!(path)
+
+      refute contents =~ "Mezzanine.OpsDomain.Repo",
+             "#{path} still references Mezzanine.OpsDomain.Repo"
+
+      refute Regex.match?(
+               ~r/Mezzanine\.(Programs|Work|Runs|Review|Evidence|Control)\b/,
+               contents
+             ),
+             "#{path} still references direct ops_domain namespaces"
+    end)
+  end
+
   defp request_context(metadata \\ %{program_id: "program-1", work_class_id: "work-class-1"}) do
     {:ok, context} =
       RequestContext.new(%{

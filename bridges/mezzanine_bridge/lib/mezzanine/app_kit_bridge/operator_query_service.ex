@@ -23,9 +23,8 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   alias Mezzanine.Execution.ExecutionRecord
   alias Mezzanine.IntegrationBridge
   alias Mezzanine.Intent.ReadIntent
-  alias Mezzanine.Runs.RunSeries
-  alias Mezzanine.Work.WorkObject
   alias Mezzanine.WorkControl
+  alias Mezzanine.WorkQueries
 
   @default_lower_operations [:fetch_run, :events, :attempts, :run_artifacts]
 
@@ -484,12 +483,7 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   end
 
   defp active_run_count(tenant_id, program_id) do
-    with {:ok, work_objects} <-
-           WorkObject.list_for_program(program_id, actor: actor(tenant_id), tenant: tenant_id) do
-      work_objects
-      |> Enum.map(& &1.id)
-      |> count_active_runs_for_work_ids(tenant_id)
-    end
+    WorkQueries.active_run_count(tenant_id, program_id)
   end
 
   defp alerts_for_subject_summary(tenant_id, subject) do
@@ -581,19 +575,6 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   defp alert_sort_key(alert) do
     raised_at = coerce_datetime(alert.raised_at) || DateTime.utc_now()
     {severity_rank(alert.severity), DateTime.to_unix(raised_at, :microsecond)}
-  end
-
-  defp count_active_runs_for_work_ids([], _tenant_id), do: {:ok, 0}
-
-  defp count_active_runs_for_work_ids(work_ids, tenant_id) do
-    RunSeries
-    |> Ash.Query.set_tenant(tenant_id)
-    |> Ash.Query.filter(work_object_id in ^work_ids and status == :active)
-    |> Ash.read(actor: actor(tenant_id), domain: Mezzanine.Runs)
-    |> case do
-      {:ok, series} -> {:ok, Enum.count(series, &is_binary(&1.current_run_id))}
-      {:error, reason} -> {:error, reason}
-    end
   end
 
   defp available_actions_from_detail(detail, subject_ref) do
@@ -698,7 +679,6 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   end
 
   defp fetch_string(attrs, opts, key), do: AdapterSupport.fetch_string(attrs, opts, key)
-  defp actor(tenant_id), do: AdapterSupport.actor(tenant_id)
   defp normalize_state(value), do: AdapterSupport.normalize_state(value)
 
   defp coerce_datetime(%DateTime{} = value), do: value
