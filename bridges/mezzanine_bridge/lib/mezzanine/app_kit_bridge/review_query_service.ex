@@ -9,10 +9,10 @@ defmodule Mezzanine.AppKitBridge.ReviewQueryService do
   require Ash.Query
 
   alias Mezzanine.AppKitBridge.AdapterSupport
-  alias Mezzanine.Assurance
   alias Mezzanine.Audit.WorkAudit
   alias Mezzanine.Evidence.EvidenceItem
   alias Mezzanine.Review.ReviewUnit
+  alias Mezzanine.Reviews
   alias Mezzanine.Runs.{Run, RunArtifact, RunSeries}
   alias Mezzanine.Work.WorkObject
 
@@ -20,7 +20,7 @@ defmodule Mezzanine.AppKitBridge.ReviewQueryService do
   def list_pending_reviews(tenant_id, program_id)
       when is_binary(tenant_id) and is_binary(program_id) do
     with {:ok, work_index} <- program_work_index(tenant_id, program_id),
-         {:ok, review_units} <- Assurance.list_pending_reviews(tenant_id) do
+         {:ok, review_units} <- Reviews.list_pending_reviews(tenant_id) do
       summaries =
         review_units
         |> Enum.filter(&Map.has_key?(work_index, &1.work_object_id))
@@ -51,8 +51,8 @@ defmodule Mezzanine.AppKitBridge.ReviewQueryService do
   @spec get_review_detail(String.t(), Ecto.UUID.t()) :: {:ok, map()} | {:error, term()}
   def get_review_detail(tenant_id, review_unit_id)
       when is_binary(tenant_id) and is_binary(review_unit_id) do
-    with {:ok, assurance_detail} <- Assurance.review_detail(tenant_id, review_unit_id),
-         %ReviewUnit{} = review_unit <- assurance_detail.review_unit,
+    with {:ok, review_detail} <- Reviews.review_detail(tenant_id, review_unit_id),
+         %ReviewUnit{} = review_unit <- review_detail.review_unit,
          subject_ref = subject_ref(review_unit.work_object_id),
          {:ok, work_object} <- fetch_work_object(tenant_id, review_unit.work_object_id),
          {:ok, run} <- fetch_review_run(tenant_id, review_unit),
@@ -80,10 +80,10 @@ defmodule Mezzanine.AppKitBridge.ReviewQueryService do
              timeline: normalize_value(audit_report.timeline),
              audit_events: normalize_value(audit_report.audit_events)
            },
-           gate_status: normalize_value(assurance_detail.gate_status),
-           decisions: normalize_value(assurance_detail.decisions),
-           waivers: normalize_value(assurance_detail.waivers),
-           escalations: normalize_value(assurance_detail.escalations)
+           gate_status: normalize_value(review_detail.gate_status),
+           decisions: normalize_value(review_detail.decisions),
+           waivers: normalize_value(review_detail.waivers),
+           escalations: normalize_value(review_detail.escalations)
          }
        }}
     else

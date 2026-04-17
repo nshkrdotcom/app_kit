@@ -9,7 +9,7 @@ defmodule Mezzanine.AppKitBridge.ReviewActionService do
   alias AppKit.Core.RunRef
   alias AppKit.RunGovernance
   alias Mezzanine.AppKitBridge.AdapterSupport
-  alias Mezzanine.Assurance
+  alias Mezzanine.Reviews
 
   @supported_decisions [:accept, :reject, :waive, :escalate]
 
@@ -51,7 +51,7 @@ defmodule Mezzanine.AppKitBridge.ReviewActionService do
              review_unit_id,
              %{
                program_id: program_id,
-               decision: decision_to_assurance(state),
+               decision: decision_to_review_decision(state),
                actor_ref: actor_ref(evidence_attrs, opts),
                reason: Keyword.get(opts, :reason),
                payload: %{
@@ -78,7 +78,7 @@ defmodule Mezzanine.AppKitBridge.ReviewActionService do
   end
 
   defp dispatch_decision(tenant_id, review_unit_id, :accept, attrs, opts, program_id) do
-    Assurance.record_decision(tenant_id, review_unit_id, %{
+    Reviews.record_decision(tenant_id, review_unit_id, %{
       program_id: program_id,
       decision: :accept,
       actor_kind: :human,
@@ -89,7 +89,7 @@ defmodule Mezzanine.AppKitBridge.ReviewActionService do
   end
 
   defp dispatch_decision(tenant_id, review_unit_id, :reject, attrs, opts, program_id) do
-    Assurance.record_decision(tenant_id, review_unit_id, %{
+    Reviews.record_decision(tenant_id, review_unit_id, %{
       program_id: program_id,
       decision: :reject,
       actor_kind: :human,
@@ -100,7 +100,7 @@ defmodule Mezzanine.AppKitBridge.ReviewActionService do
   end
 
   defp dispatch_decision(tenant_id, review_unit_id, :waive, attrs, opts, program_id) do
-    Assurance.waive_review(tenant_id, review_unit_id, %{
+    Reviews.waive_review(tenant_id, review_unit_id, %{
       program_id: program_id,
       actor_ref: actor_ref(attrs, opts),
       reason: map_value(attrs, :reason) || "waived by operator",
@@ -110,7 +110,7 @@ defmodule Mezzanine.AppKitBridge.ReviewActionService do
   end
 
   defp dispatch_decision(tenant_id, review_unit_id, :escalate, attrs, opts, program_id) do
-    Assurance.escalate_review(tenant_id, review_unit_id, %{
+    Reviews.escalate_review(tenant_id, review_unit_id, %{
       program_id: program_id,
       actor_ref: actor_ref(attrs, opts),
       reason: map_value(attrs, :reason),
@@ -167,8 +167,8 @@ defmodule Mezzanine.AppKitBridge.ReviewActionService do
     })
   end
 
-  defp decision_to_assurance(:approved), do: :accept
-  defp decision_to_assurance(:needs_changes), do: :reject
+  defp decision_to_review_decision(:approved), do: :accept
+  defp decision_to_review_decision(:needs_changes), do: :reject
 
   defp action_ref(review_unit_id, decision, bridge_result) do
     work_object_id = bridge_result.review_unit.work_object_id
