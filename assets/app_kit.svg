@@ -1,56 +1,243 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200" fill="none" role="img" aria-labelledby="title desc">
-  <title id="title">AppKit logo</title>
-  <desc id="desc">A symmetric hexagonal interface emblem with layered panels, routing lines, and a centered application core.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200" fill="none" role="img" aria-labelledby="ak-title ak-desc">
+  <title id="ak-title">AppKit logo</title>
+  <desc id="ak-desc">A crystalline hexagonal gateway emblem with tessellated panels, radiant portal core, and frosted glass surfaces.</desc>
   <defs>
-    <linearGradient id="akShell" x1="31" y1="24" x2="169" y2="176" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FFD36E"/>
-      <stop offset="0.5" stop-color="#FF8E5E"/>
-      <stop offset="1" stop-color="#FF4FA0"/>
+    <!-- Hexagon clip — perfectly regular, tightly fitted -->
+    <clipPath id="akHexClip">
+      <polygon points="100,4 183.3,52 183.3,148 100,196 16.7,148 16.7,52"/>
+    </clipPath>
+
+    <!-- Base gradient: deep space indigo → midnight blue -->
+    <linearGradient id="akBase" x1="16" y1="4" x2="184" y2="196" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B0E2A"/>
+      <stop offset="0.45" stop-color="#0D1337"/>
+      <stop offset="1" stop-color="#0A0C22"/>
     </linearGradient>
-    <linearGradient id="akTrace" x1="55" y1="46" x2="145" y2="154" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FFF5DC"/>
-      <stop offset="1" stop-color="#FFD7EC"/>
+
+    <!-- Surface gradient: subtle blue shimmer -->
+    <linearGradient id="akSurface" x1="100" y1="4" x2="100" y2="196" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1E2B5E" stop-opacity="0.6"/>
+      <stop offset="0.5" stop-color="#0F1940" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#1A2555" stop-opacity="0.5"/>
     </linearGradient>
-    <radialGradient id="akAura" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(100 100) rotate(90) scale(74)">
-      <stop offset="0" stop-color="#FFB287" stop-opacity="0.68"/>
-      <stop offset="1" stop-color="#FFB287" stop-opacity="0"/>
+
+    <!-- Edge metallic gradient: cyan-teal highlight -->
+    <linearGradient id="akEdge" x1="16" y1="52" x2="184" y2="148" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00E5FF"/>
+      <stop offset="0.35" stop-color="#00BCD4"/>
+      <stop offset="0.65" stop-color="#7C4DFF"/>
+      <stop offset="1" stop-color="#AA00FF"/>
+    </linearGradient>
+
+    <!-- Inner ring gradient -->
+    <linearGradient id="akInnerRing" x1="50" y1="40" x2="150" y2="160" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00E5FF" stop-opacity="0.9"/>
+      <stop offset="0.5" stop-color="#536DFE" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#AA00FF" stop-opacity="0.9"/>
+    </linearGradient>
+
+    <!-- Portal core radial glow -->
+    <radialGradient id="akPortalGlow" cx="100" cy="100" r="38" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E0F7FA" stop-opacity="0.95"/>
+      <stop offset="0.25" stop-color="#80DEEA" stop-opacity="0.7"/>
+      <stop offset="0.55" stop-color="#00BCD4" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#00BCD4" stop-opacity="0"/>
     </radialGradient>
-    <filter id="akShadow" x="13" y="12" width="174" height="178" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="11" stdDeviation="11" flood-color="#1A1014" flood-opacity="0.24"/>
+
+    <!-- Portal inner radial -->
+    <radialGradient id="akPortalInner" cx="100" cy="100" r="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="1"/>
+      <stop offset="0.4" stop-color="#B2EBF2" stop-opacity="0.9"/>
+      <stop offset="0.75" stop-color="#00ACC1" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#006064" stop-opacity="0.3"/>
+    </radialGradient>
+
+    <!-- Ambient wide glow -->
+    <radialGradient id="akAmbient" cx="100" cy="100" r="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00BCD4" stop-opacity="0.12"/>
+      <stop offset="0.4" stop-color="#1A237E" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Tessellation pattern -->
+    <pattern id="akTess" x="0" y="0" width="24" height="27.7" patternUnits="userSpaceOnUse" patternTransform="rotate(0)">
+      <polygon points="12,0 24,6.93 24,20.78 12,27.7 0,20.78 0,6.93" fill="none" stroke="#26418A" stroke-width="0.5" stroke-opacity="0.35"/>
+    </pattern>
+
+    <!-- Glass panel gradient (top-left) -->
+    <linearGradient id="akGlass1" x1="30" y1="20" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.08"/>
+      <stop offset="0.6" stop-color="#FFFFFF" stop-opacity="0.02"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Glass panel gradient (bottom-right) -->
+    <linearGradient id="akGlass2" x1="170" y1="180" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7C4DFF" stop-opacity="0.06"/>
+      <stop offset="0.5" stop-color="#AA00FF" stop-opacity="0.03"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Beam gradient -->
+    <linearGradient id="akBeam" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#00E5FF" stop-opacity="0"/>
+      <stop offset="0.3" stop-color="#00E5FF" stop-opacity="0.5"/>
+      <stop offset="0.7" stop-color="#00E5FF" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#00E5FF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Drop shadow filter -->
+    <filter id="akShadow" x="-20%" y="-20%" width="140%" height="140%" filterUnits="objectBoundingBox" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000814" flood-opacity="0.55"/>
     </filter>
-    <filter id="akBloom" x="41" y="39" width="118" height="122" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feGaussianBlur stdDeviation="4.4" result="blur"/>
-      <feBlend in="SourceGraphic" in2="blur" mode="screen"/>
+
+    <!-- Core bloom filter -->
+    <filter id="akBloom" x="-50%" y="-50%" width="200%" height="200%" filterUnits="objectBoundingBox" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="b1"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="b2"/>
+      <feMerge>
+        <feMergeNode in="b1"/>
+        <feMergeNode in="b2"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Soft glow for beams -->
+    <filter id="akBeamGlow" x="-30%" y="-30%" width="160%" height="160%" filterUnits="objectBoundingBox" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="2.5" result="bg"/>
+      <feMerge>
+        <feMergeNode in="bg"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Subtle inner bevel -->
+    <filter id="akBevel" x="-5%" y="-5%" width="110%" height="110%" filterUnits="objectBoundingBox" color-interpolation-filters="sRGB">
+      <feSpecularLighting surfaceScale="3" specularConstant="0.6" specularExponent="25" lighting-color="#B2EBF2" result="spec">
+        <fePointLight x="80" y="40" z="120"/>
+      </feSpecularLighting>
+      <feComposite in="spec" in2="SourceAlpha" operator="in" result="specIn"/>
+      <feMerge>
+        <feMergeNode in="SourceGraphic"/>
+        <feMergeNode in="specIn"/>
+      </feMerge>
     </filter>
   </defs>
 
-  <g filter="url(#akShadow)">
-    <path d="M100 20L158.89 54V122L100 156L41.11 122V54L100 20Z" fill="url(#akAura)"/>
-    <path d="M100 24L155.42 56V120L100 152L44.58 120V56L100 24Z" fill="#171116" fill-opacity="0.94" stroke="url(#akShell)" stroke-width="4.6" stroke-linejoin="round"/>
-    <path d="M100 42L140.13 65V111L100 134L59.87 111V65L100 42Z" fill="#21161B" stroke="url(#akTrace)" stroke-width="3.3" stroke-linejoin="round"/>
-    <path d="M100 58L124.25 72V100L100 114L75.75 100V72L100 58Z" fill="#1C1319" stroke="#FFF0DB" stroke-opacity="0.74" stroke-width="2.1" stroke-linejoin="round"/>
+  <!-- Everything clipped to hexagon -->
+  <g clip-path="url(#akHexClip)">
+
+    <!-- Layer 0: Deep background fill -->
+    <polygon points="100,4 183.3,52 183.3,148 100,196 16.7,148 16.7,52" fill="url(#akBase)"/>
+
+    <!-- Layer 1: Ambient radial haze -->
+    <polygon points="100,4 183.3,52 183.3,148 100,196 16.7,148 16.7,52" fill="url(#akAmbient)"/>
+
+    <!-- Layer 2: Surface sheen -->
+    <polygon points="100,4 183.3,52 183.3,148 100,196 16.7,148 16.7,52" fill="url(#akSurface)"/>
+
+    <!-- Layer 3: Honeycomb tessellation pattern -->
+    <rect x="0" y="0" width="200" height="200" fill="url(#akTess)" opacity="0.6"/>
+
+    <!-- Layer 4: Glass panels for depth -->
+    <polygon points="100,4 183.3,52 183.3,100 100,100 16.7,52" fill="url(#akGlass1)"/>
+    <polygon points="100,196 183.3,148 183.3,100 100,100 16.7,148" fill="url(#akGlass2)"/>
+
+    <!-- Layer 5: Structural inner hexagons -->
+    <!-- Mid hex -->
+    <polygon points="100,28 163,65 163,135 100,172 37,135 37,65" fill="none" stroke="#26418A" stroke-width="0.7" stroke-opacity="0.5"/>
+    <!-- Inner hex -->
+    <polygon points="100,48 144.5,78 144.5,122 100,152 55.5,122 55.5,78" fill="none" stroke="#3D5AFE" stroke-width="0.5" stroke-opacity="0.3"/>
+
+    <!-- Layer 6: Radiant beams from center -->
+    <g filter="url(#akBeamGlow)" opacity="0.55">
+      <!-- 6 beams radiating to each vertex -->
+      <line x1="100" y1="100" x2="100" y2="4" stroke="#00E5FF" stroke-width="1.2" stroke-opacity="0.4"/>
+      <line x1="100" y1="100" x2="183.3" y2="52" stroke="#00E5FF" stroke-width="1.2" stroke-opacity="0.35"/>
+      <line x1="100" y1="100" x2="183.3" y2="148" stroke="#00E5FF" stroke-width="1.2" stroke-opacity="0.3"/>
+      <line x1="100" y1="100" x2="100" y2="196" stroke="#00E5FF" stroke-width="1.2" stroke-opacity="0.4"/>
+      <line x1="100" y1="100" x2="16.7" y2="148" stroke="#00E5FF" stroke-width="1.2" stroke-opacity="0.3"/>
+      <line x1="100" y1="100" x2="16.7" y2="52" stroke="#00E5FF" stroke-width="1.2" stroke-opacity="0.35"/>
+      <!-- 6 beams to edge midpoints -->
+      <line x1="100" y1="100" x2="141.65" y2="28" stroke="#536DFE" stroke-width="0.7" stroke-opacity="0.25"/>
+      <line x1="100" y1="100" x2="183.3" y2="100" stroke="#536DFE" stroke-width="0.7" stroke-opacity="0.25"/>
+      <line x1="100" y1="100" x2="141.65" y2="172" stroke="#536DFE" stroke-width="0.7" stroke-opacity="0.25"/>
+      <line x1="100" y1="100" x2="58.35" y2="172" stroke="#536DFE" stroke-width="0.7" stroke-opacity="0.25"/>
+      <line x1="100" y1="100" x2="16.7" y2="100" stroke="#536DFE" stroke-width="0.7" stroke-opacity="0.25"/>
+      <line x1="100" y1="100" x2="58.35" y2="28" stroke="#536DFE" stroke-width="0.7" stroke-opacity="0.25"/>
+    </g>
+
+    <!-- Layer 7: Six faceted "surface panels" around core -->
+    <g opacity="0.18">
+      <polygon points="100,100 100,48 144.5,78" fill="#00BCD4"/>
+      <polygon points="100,100 144.5,78 144.5,122" fill="#0097A7"/>
+      <polygon points="100,100 144.5,122 100,152" fill="#00838F"/>
+      <polygon points="100,100 100,152 55.5,122" fill="#006064"/>
+      <polygon points="100,100 55.5,122 55.5,78" fill="#00838F"/>
+      <polygon points="100,100 55.5,78 100,48" fill="#0097A7"/>
+    </g>
+
+    <!-- Layer 8: Six connector nodes on mid-hex vertices -->
+    <g>
+      <circle cx="100" cy="28" r="3.5" fill="#0D1337" stroke="#00E5FF" stroke-width="1.2" stroke-opacity="0.7"/>
+      <circle cx="163" cy="65" r="3.5" fill="#0D1337" stroke="#00E5FF" stroke-width="1.2" stroke-opacity="0.7"/>
+      <circle cx="163" cy="135" r="3.5" fill="#0D1337" stroke="#00E5FF" stroke-width="1.2" stroke-opacity="0.7"/>
+      <circle cx="100" cy="172" r="3.5" fill="#0D1337" stroke="#00E5FF" stroke-width="1.2" stroke-opacity="0.7"/>
+      <circle cx="37" cy="135" r="3.5" fill="#0D1337" stroke="#00E5FF" stroke-width="1.2" stroke-opacity="0.7"/>
+      <circle cx="37" cy="65" r="3.5" fill="#0D1337" stroke="#00E5FF" stroke-width="1.2" stroke-opacity="0.7"/>
+      <!-- Inner dots on inner hex -->
+      <circle cx="100" cy="48" r="2.2" fill="#536DFE" fill-opacity="0.7"/>
+      <circle cx="144.5" cy="78" r="2.2" fill="#536DFE" fill-opacity="0.7"/>
+      <circle cx="144.5" cy="122" r="2.2" fill="#536DFE" fill-opacity="0.7"/>
+      <circle cx="100" cy="152" r="2.2" fill="#536DFE" fill-opacity="0.7"/>
+      <circle cx="55.5" cy="122" r="2.2" fill="#536DFE" fill-opacity="0.7"/>
+      <circle cx="55.5" cy="78" r="2.2" fill="#536DFE" fill-opacity="0.7"/>
+    </g>
+
+    <!-- Layer 9: Portal wide glow -->
+    <circle cx="100" cy="100" r="38" fill="url(#akPortalGlow)" filter="url(#akBloom)"/>
+
+    <!-- Layer 10: Central diamond portal -->
+    <g filter="url(#akBevel)">
+      <polygon points="100,74 126,100 100,126 74,100" fill="#0B1A3B" stroke="url(#akInnerRing)" stroke-width="2.2" stroke-linejoin="round"/>
+    </g>
+
+    <!-- Layer 11: Inner diamond highlight ring -->
+    <polygon points="100,80 120,100 100,120 80,100" fill="none" stroke="#80DEEA" stroke-width="1" stroke-opacity="0.5" stroke-linejoin="round"/>
+
+    <!-- Layer 12: Portal inner glow -->
+    <circle cx="100" cy="100" r="16" fill="url(#akPortalInner)" opacity="0.85"/>
+
+    <!-- Layer 13: Bright core pip -->
+    <circle cx="100" cy="100" r="4.5" fill="#E0F7FA" opacity="0.95"/>
+    <circle cx="100" cy="100" r="2" fill="#FFFFFF"/>
+
+    <!-- Layer 14: Four cardinal accent marks around diamond -->
+    <g stroke="#00E5FF" stroke-width="1.5" stroke-linecap="round" opacity="0.6">
+      <line x1="100" y1="68" x2="100" y2="62"/>
+      <line x1="100" y1="132" x2="100" y2="138"/>
+      <line x1="68" y1="100" x2="62" y2="100"/>
+      <line x1="132" y1="100" x2="138" y2="100"/>
+    </g>
+
+    <!-- Layer 15: Tiny spark accents -->
+    <g fill="#B2EBF2" opacity="0.55">
+      <circle cx="82" cy="58" r="1"/>
+      <circle cx="118" cy="58" r="1"/>
+      <circle cx="142" cy="88" r="1"/>
+      <circle cx="142" cy="112" r="1"/>
+      <circle cx="118" cy="142" r="1"/>
+      <circle cx="82" cy="142" r="1"/>
+      <circle cx="58" cy="112" r="1"/>
+      <circle cx="58" cy="88" r="1"/>
+    </g>
+
   </g>
 
-  <g filter="url(#akBloom)" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M59.87 65H140.13" stroke="url(#akShell)" stroke-opacity="0.34" stroke-width="1.4"/>
-    <path d="M59.87 111H140.13" stroke="url(#akShell)" stroke-opacity="0.34" stroke-width="1.4"/>
-    <path d="M44.58 56L100 88L155.42 56" stroke="url(#akShell)" stroke-opacity="0.24" stroke-width="1.15"/>
-    <path d="M44.58 120L100 88L155.42 120" stroke="url(#akShell)" stroke-opacity="0.24" stroke-width="1.15"/>
-    <path d="M75.75 72L100 88L124.25 72" stroke="#FFF5DC" stroke-opacity="0.76" stroke-width="1.5"/>
-    <path d="M75.75 100L100 88L124.25 100" stroke="#FFD7EC" stroke-opacity="0.78" stroke-width="1.5"/>
-    <path d="M83.2 64.4V111.6" stroke="#FFF0DB" stroke-opacity="0.62" stroke-width="1.35"/>
-    <path d="M116.8 64.4V111.6" stroke="#FFF0DB" stroke-opacity="0.62" stroke-width="1.35"/>
-    <path d="M59.87 88H75.75" stroke="#FFB287" stroke-opacity="0.82" stroke-width="1.7"/>
-    <path d="M124.25 88H140.13" stroke="#FFB287" stroke-opacity="0.82" stroke-width="1.7"/>
-    <rect x="90.8" y="78.8" width="18.4" height="18.4" rx="4.2" fill="#281820" stroke="#FFF5DC" stroke-width="2"/>
-    <circle cx="100" cy="88" r="3.2" fill="#FFD36E"/>
-    <circle cx="59.87" cy="65" r="2.9" fill="#171116" stroke="#FFF5DC" stroke-width="1.15"/>
-    <circle cx="140.13" cy="65" r="2.9" fill="#171116" stroke="#FFF5DC" stroke-width="1.15"/>
-    <circle cx="59.87" cy="111" r="2.9" fill="#171116" stroke="#FFF5DC" stroke-width="1.15"/>
-    <circle cx="140.13" cy="111" r="2.9" fill="#171116" stroke="#FFF5DC" stroke-width="1.15"/>
-    <circle cx="75.75" cy="72" r="2.3" fill="#FFD36E"/>
-    <circle cx="124.25" cy="72" r="2.3" fill="#FFD36E"/>
-    <circle cx="75.75" cy="100" r="2.3" fill="#FF4FA0"/>
-    <circle cx="124.25" cy="100" r="2.3" fill="#FF4FA0"/>
-  </g>
+  <!-- Layer 16: Outer hex border (drawn on top, outside clip) -->
+  <polygon points="100,4 183.3,52 183.3,148 100,196 16.7,148 16.7,52" fill="none" stroke="url(#akEdge)" stroke-width="3" stroke-linejoin="round" filter="url(#akShadow)"/>
+
+  <!-- Layer 17: Thin inner border highlight for depth -->
+  <polygon points="100,8 180,54 180,146 100,192 20,146 20,54" fill="none" stroke="#00E5FF" stroke-width="0.6" stroke-opacity="0.25" stroke-linejoin="round"/>
+
 </svg>
