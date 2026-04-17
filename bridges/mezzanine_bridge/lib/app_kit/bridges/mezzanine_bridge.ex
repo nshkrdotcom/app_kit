@@ -1,6 +1,6 @@
 defmodule AppKit.Bridges.MezzanineBridge do
   @moduledoc """
-  Internal AppKit backend adapter over the `mezzanine_app_kit_bridge` seam.
+  Internal AppKit backend adapter over lower-backed Mezzanine service modules.
 
   The bridge owns translation from lower service-shaped maps into the stable
   `AppKit.Core.*` contract so product-facing surfaces do not inherit lower

@@ -764,6 +764,16 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     refute error.retryable
   end
 
+  test "does not declare the deprecated mezzanine app-kit bridge package" do
+    deps = AppKitMezzanineBridge.MixProject.project()[:deps]
+
+    refute Enum.any?(deps, fn
+             {:mezzanine_app_kit_bridge, _opts} -> true
+             {:mezzanine_app_kit_bridge, _requirement, _opts} -> true
+             _other -> false
+           end)
+  end
+
   defp request_context(metadata \\ %{program_id: "program-1", work_class_id: "work-class-1"}) do
     {:ok, context} =
       RequestContext.new(%{
