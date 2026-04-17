@@ -47,7 +47,6 @@ defmodule AppKitMezzanineBridge.MixProject do
       {:app_kit_core, path: "../../core/app_kit_core"},
       {:app_kit_run_governance, path: "../../core/run_governance"},
       {:mezzanine_ops_domain, path: "../../../mezzanine/core/ops_domain"},
-      {:mezzanine_ops_audit, path: "../../../mezzanine/core/ops_audit"},
       {:mezzanine_ops_assurance, path: "../../../mezzanine/core/ops_assurance"},
       {:mezzanine_ops_control, path: "../../../mezzanine/core/ops_control"},
       {:mezzanine_audit_engine, path: "../../../mezzanine/core/audit_engine"},

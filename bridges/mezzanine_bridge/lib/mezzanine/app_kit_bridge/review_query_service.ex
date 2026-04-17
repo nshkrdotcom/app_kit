@@ -10,11 +10,11 @@ defmodule Mezzanine.AppKitBridge.ReviewQueryService do
 
   alias Mezzanine.AppKitBridge.AdapterSupport
   alias Mezzanine.Assurance
+  alias Mezzanine.Audit.WorkAudit
   alias Mezzanine.Evidence.EvidenceItem
   alias Mezzanine.Review.ReviewUnit
   alias Mezzanine.Runs.{Run, RunArtifact, RunSeries}
   alias Mezzanine.Work.WorkObject
-  alias Mezzanine.WorkAudit
 
   @spec list_pending_reviews(String.t(), Ecto.UUID.t()) :: {:ok, [map()]} | {:error, term()}
   def list_pending_reviews(tenant_id, program_id)

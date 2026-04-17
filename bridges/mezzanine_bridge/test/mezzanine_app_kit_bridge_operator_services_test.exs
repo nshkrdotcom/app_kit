@@ -11,6 +11,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
   }
 
   alias Mezzanine.Audit.Repo, as: AuditRepo
+  alias Mezzanine.Audit.WorkAudit
   alias Mezzanine.Control.ControlSession
   alias Mezzanine.Decisions.Repo, as: DecisionsRepo
   alias Mezzanine.EvidenceLedger.Repo, as: EvidenceRepo
@@ -365,7 +366,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
       )
 
     {:ok, _audit} =
-      Mezzanine.WorkAudit.record_event(tenant_id, %{
+      WorkAudit.record_event(tenant_id, %{
         program_id: program.id,
         work_object_id: work_object.id,
         run_id: run.id,

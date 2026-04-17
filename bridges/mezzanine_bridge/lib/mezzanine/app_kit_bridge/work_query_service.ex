@@ -11,11 +11,11 @@ defmodule Mezzanine.AppKitBridge.WorkQueryService do
 
   alias Mezzanine.AppKitBridge.AdapterSupport
   alias Mezzanine.Assurance
+  alias Mezzanine.Audit.WorkAudit
   alias Mezzanine.Control.ControlSession
   alias Mezzanine.Review.{Escalation, ReviewUnit}
   alias Mezzanine.Runs.{Run, RunSeries}
   alias Mezzanine.Work.{WorkObject, WorkPlan}
-  alias Mezzanine.WorkAudit
 
   @active_statuses [:pending, :planning, :planned, :running, :awaiting_review, :blocked]
 

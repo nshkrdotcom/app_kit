@@ -4,6 +4,7 @@ defmodule Mezzanine.AppKitBridgeTest do
   alias AppKit.Core.RunRef
   alias Ecto.Adapters.SQL.Sandbox
   alias Mezzanine.AppKitBridge
+  alias Mezzanine.Audit.WorkAudit
   alias Mezzanine.OpsDomain.Repo
   alias Mezzanine.Programs.{PolicyBundle, Program}
   alias Mezzanine.Review.ReviewUnit
@@ -45,7 +46,7 @@ defmodule Mezzanine.AppKitBridgeTest do
       fixture_stack("tenant-ak-status")
 
     {:ok, _audit} =
-      Mezzanine.WorkAudit.record_event(tenant_id, %{
+      WorkAudit.record_event(tenant_id, %{
         program_id: program.id,
         work_object_id: work_object.id,
         event_kind: :work_planned,

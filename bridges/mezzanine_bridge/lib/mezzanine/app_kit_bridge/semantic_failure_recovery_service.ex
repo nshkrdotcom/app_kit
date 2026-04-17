@@ -10,11 +10,11 @@ defmodule Mezzanine.AppKitBridge.SemanticFailureRecoveryService do
   require Ash.Query
 
   alias Mezzanine.AppKitBridge.AdapterSupport
+  alias Mezzanine.Audit.WorkAudit
   alias Mezzanine.Execution.ExecutionRecord
   alias Mezzanine.Review.ReviewUnit
   alias Mezzanine.Runs.{Run, RunSeries}
   alias Mezzanine.Work.WorkObject
-  alias Mezzanine.WorkAudit
 
   @open_review_statuses [:pending, :in_review, :escalated]
   @terminal_run_statuses [:completed, :failed, :cancelled]

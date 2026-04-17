@@ -51,10 +51,6 @@ config :mezzanine_ops_domain,
     Mezzanine.Control
   ]
 
-config :mezzanine_ops_audit,
-  ecto_repos: [Mezzanine.Audit.Repo],
-  ash_domains: []
-
 config :mezzanine_ops_control,
   ecto_repos: [Mezzanine.OpsDomain.Repo],
   ash_domains: [Mezzanine.Control]

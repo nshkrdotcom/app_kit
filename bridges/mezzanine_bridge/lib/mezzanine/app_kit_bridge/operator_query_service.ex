@@ -17,6 +17,7 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   alias Mezzanine.Audit.Repo
   alias Mezzanine.Audit.UnifiedTrace
   alias Mezzanine.Audit.UnifiedTrace.Query
+  alias Mezzanine.Audit.WorkAudit
   alias Mezzanine.Control.ControlSession
   alias Mezzanine.Decisions.DecisionRecord
   alias Mezzanine.EvidenceLedger.EvidenceRecord
@@ -53,7 +54,7 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   def subject_status(tenant_id, subject_id)
       when is_binary(tenant_id) and is_binary(subject_id) do
     with {:ok, detail} <- WorkQueryService.get_subject_detail(tenant_id, subject_id),
-         {:ok, audit_report} <- Mezzanine.WorkAudit.work_report(tenant_id, subject_id) do
+         {:ok, audit_report} <- WorkAudit.work_report(tenant_id, subject_id) do
       subject_ref = subject_ref(subject_id)
 
       {:ok,

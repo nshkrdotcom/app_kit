@@ -4,6 +4,7 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
   alias Ecto.Adapters.SQL.Sandbox
   alias Mezzanine.AppKitBridge
   alias Mezzanine.AppKitBridge.{InstallationService, ReviewActionService, ReviewQueryService}
+  alias Mezzanine.Audit.WorkAudit
   alias Mezzanine.ConfigRegistry.{PackRegistration, Repo}
   alias Mezzanine.Evidence.{EvidenceBundle, EvidenceItem}
   alias Mezzanine.OpsDomain.Repo, as: OpsRepo
@@ -345,7 +346,7 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
       )
 
     {:ok, _audit} =
-      Mezzanine.WorkAudit.record_event(tenant_id, %{
+      WorkAudit.record_event(tenant_id, %{
         program_id: program.id,
         work_object_id: work_object.id,
         run_id: run.id,

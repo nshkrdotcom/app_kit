@@ -7,11 +7,11 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
 
   alias AppKit.Core.{RequestContext, Result, RunRef, RunRequest}
   alias Mezzanine.AppKitBridge.AdapterSupport
+  alias Mezzanine.Audit.WorkAudit
   alias Mezzanine.Control.ControlSession
   alias Mezzanine.Review.ReviewUnit
   alias Mezzanine.Runs.{Run, RunSeries}
   alias Mezzanine.Work.{WorkObject, WorkPlan}
-  alias Mezzanine.WorkAudit
 
   @active_run_statuses [:pending, :scheduled, :running]
   @review_kind_map %{
