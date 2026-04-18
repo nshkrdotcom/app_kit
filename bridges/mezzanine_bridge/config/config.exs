@@ -56,7 +56,7 @@ config :mezzanine_archival_engine,
   start_runtime_children?: true,
   cold_store: [
     module: Mezzanine.Archival.FileSystemColdStore,
-    root: Path.expand("../tmp/archival_store", __DIR__)
+    root: Path.join(System.tmp_dir!(), "app_kit_mezzanine_bridge_archival_store")
   ],
   scheduler: [
     enabled?: false,

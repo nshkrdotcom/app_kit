@@ -365,6 +365,18 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     refute_received {:fetch_run, _args}
   end
 
+  test "operator services archive paths use disposable temp storage outside the bridge package" do
+    cold_store = Application.fetch_env!(:mezzanine_archival_engine, :cold_store)
+    configured_root = Keyword.fetch!(cold_store, :root)
+    archive_root = operator_services_archive_root()
+    bridge_root = Path.expand("..", __DIR__)
+
+    refute path_inside?(configured_root, bridge_root)
+    assert path_inside?(configured_root, System.tmp_dir!())
+    refute path_inside?(archive_root, bridge_root)
+    assert path_inside?(archive_root, System.tmp_dir!())
+  end
+
   defp fixture_stack(tenant_id, opts \\ []) do
     actor = %{tenant_id: tenant_id}
 
@@ -641,8 +653,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     manifest_ref =
       "archive/#{installation_id}/#{subject_id}/#{System.unique_integer([:positive])}"
 
-    archive_root = Path.expand("../tmp/operator_services_archival", __DIR__)
-    File.rm_rf!(archive_root)
+    archive_root = operator_services_archive_root()
 
     bundle = %{
       "manifest_ref" => manifest_ref,
@@ -768,6 +779,27 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     ])
 
     archived.manifest_ref
+  end
+
+  defp operator_services_archive_root do
+    root =
+      Path.join([
+        System.tmp_dir!(),
+        "app_kit_mezzanine_bridge",
+        "operator_services_archival",
+        Integer.to_string(System.unique_integer([:positive]))
+      ])
+
+    File.rm_rf!(root)
+    on_exit(fn -> File.rm_rf!(root) end)
+    root
+  end
+
+  defp path_inside?(path, root) do
+    expanded_path = path |> Path.expand() |> String.trim_trailing("/")
+    expanded_root = root |> Path.expand() |> String.trim_trailing("/")
+
+    expanded_path == expanded_root or String.starts_with?(expanded_path, expanded_root <> "/")
   end
 
   defp workflow_body do
