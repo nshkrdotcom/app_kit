@@ -17,6 +17,10 @@ defmodule AppKit.Bridges.MezzanineBridge do
   alias AppKit.Core.{
     ActionResult,
     ActorRef,
+    BindingDescriptor,
+    BindingEnvelope,
+    BindingFailurePosture,
+    BindingOwnership,
     DecisionRef,
     DecisionSummary,
     ExecutionRef,
@@ -25,25 +29,33 @@ defmodule AppKit.Bridges.MezzanineBridge do
     InstallationRef,
     InstallResult,
     InstallTemplate,
+    BlockingCondition,
+    NextStepPreview,
     OperatorAction,
     OperatorActionRef,
     OperatorActionRequest,
     OperatorProjection,
     PageRequest,
     PageResult,
+    PendingObligation,
     ProjectionRef,
+    ReadLease,
     RequestContext,
     Result,
     RunRef,
     RunRequest,
+    StreamAttachLease,
     SubjectDetail,
     SubjectRef,
     SubjectSummary,
     SurfaceError,
+    Telemetry,
     TimelineEvent,
     UnifiedTrace,
     UnifiedTraceStep
   }
+
+  alias Mezzanine.Archival.Query, as: ArchivalQuery
 
   @impl true
   def ingest_subject(%RequestContext{} = context, attrs, opts)
@@ -87,11 +99,13 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @impl true
   def get_subject(%RequestContext{} = context, %SubjectRef{} = subject_ref, opts)
       when is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
+    with :ok <- ensure_subject_not_archived(context, subject_ref),
+         {:ok, tenant_id} <- tenant_id(context),
          {:ok, row} <- work_query_service(opts).get_subject_detail(tenant_id, subject_ref.id),
          {:ok, detail} <- subject_detail_from_row(row, context) do
       {:ok, detail}
     else
+      {:error, :archived, manifest_ref} -> normalize_surface_error({:archived, manifest_ref})
       {:error, reason} -> normalize_surface_error(reason)
     end
   end
@@ -105,6 +119,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
            work_query_service(opts).get_subject_projection(tenant_id, subject_id) do
       {:ok, projection}
     else
+      {:error, :archived, manifest_ref} -> normalize_surface_error({:archived, manifest_ref})
       {:error, reason} -> normalize_surface_error(reason)
     end
   end
@@ -325,11 +340,13 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @impl true
   def subject_status(%RequestContext{} = context, %SubjectRef{} = subject_ref, opts)
       when is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
+    with :ok <- ensure_subject_not_archived(context, subject_ref),
+         {:ok, tenant_id} <- tenant_id(context),
          {:ok, row} <- operator_query_service(opts).subject_status(tenant_id, subject_ref.id),
          {:ok, projection} <- operator_projection_from_row(row, context) do
       {:ok, projection}
     else
+      {:error, :archived, manifest_ref} -> normalize_surface_error({:archived, manifest_ref})
       {:error, reason} -> normalize_surface_error(reason)
     end
   end
@@ -337,13 +354,15 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @impl true
   def timeline(%RequestContext{} = context, %SubjectRef{} = subject_ref, opts)
       when is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
+    with :ok <- ensure_subject_not_archived(context, subject_ref),
+         {:ok, tenant_id} <- tenant_id(context),
          {:ok, timeline_result} <-
            operator_query_service(opts).timeline(tenant_id, subject_ref.id),
          entries <- fetch_value(timeline_result, :entries) || [],
          {:ok, timeline_entries} <- map_each(entries, &timeline_event_from_map/1) do
       {:ok, timeline_entries}
     else
+      {:error, :archived, manifest_ref} -> normalize_surface_error({:archived, manifest_ref})
       {:error, reason} -> normalize_surface_error(reason)
     end
   end
@@ -352,17 +371,86 @@ defmodule AppKit.Bridges.MezzanineBridge do
   def get_unified_trace(%RequestContext{} = context, %ExecutionRef{} = execution_ref, opts)
       when is_list(opts) do
     with {:ok, tenant_id} <- tenant_id(context),
-         {:ok, installation_id} <- installation_or_tenant_id(context),
+         {:ok, lineage} <- execution_trace_lineage(context, execution_ref, opts),
          trace_attrs <- %{
            tenant_id: tenant_id,
            actor_id: context.actor_ref.id,
-           installation_id: installation_id,
+           installation_id: lineage.installation_id,
            execution_id: execution_ref.id,
-           trace_id: context.trace_id
+           trace_id: lineage.trace_id
          },
          {:ok, trace} <- operator_query_service(opts).get_unified_trace(trace_attrs, opts),
          {:ok, unified_trace} <- unified_trace_from_map(trace, context) do
+      Telemetry.unified_trace_assembled(
+        %{
+          trace_id: unified_trace.trace_id,
+          tenant_id: tenant_id,
+          installation_id: lineage.installation_id,
+          execution_id: execution_ref.id,
+          source: :northbound_surface,
+          surface: :mezzanine_bridge
+        },
+        %{
+          count: 1,
+          step_count: length(unified_trace.steps),
+          join_key_count: map_size(unified_trace.join_keys)
+        }
+      )
+
       {:ok, unified_trace}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def issue_read_lease(%RequestContext{} = context, %ExecutionRef{} = execution_ref, opts)
+      when is_list(opts) do
+    with {:ok, tenant_id} <- tenant_id(context),
+         {:ok, lineage} <- execution_trace_lineage(context, execution_ref, opts),
+         attrs <- %{
+           tenant_id: tenant_id,
+           installation_id: lineage.installation_id,
+           execution_id: execution_ref.id,
+           trace_id: lineage.trace_id,
+           allowed_family: Keyword.get(opts, :allowed_family, "unified_trace"),
+           allowed_operations:
+             Keyword.get(opts, :allowed_operations, [
+               :fetch_run,
+               :events,
+               :attempts,
+               :run_artifacts
+             ]),
+           scope: Keyword.get(opts, :scope, %{})
+         },
+         {:ok, lease} <- lease_service(opts).issue_read_lease(attrs, opts),
+         {:ok, read_lease} <- read_lease_from_map(lease) do
+      {:ok, read_lease}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def issue_stream_attach_lease(
+        %RequestContext{} = context,
+        %ExecutionRef{} = execution_ref,
+        opts
+      )
+      when is_list(opts) do
+    with {:ok, tenant_id} <- tenant_id(context),
+         {:ok, lineage} <- execution_trace_lineage(context, execution_ref, opts),
+         attrs <- %{
+           tenant_id: tenant_id,
+           installation_id: lineage.installation_id,
+           execution_id: execution_ref.id,
+           trace_id: lineage.trace_id,
+           allowed_family: Keyword.get(opts, :allowed_family, "runtime_stream"),
+           scope: Keyword.get(opts, :scope, %{})
+         },
+         {:ok, lease} <- lease_service(opts).issue_stream_attach_lease(attrs, opts),
+         {:ok, stream_attach_lease} <- stream_attach_lease_from_map(lease) do
+      {:ok, stream_attach_lease}
     else
       {:error, reason} -> normalize_surface_error(reason)
     end
@@ -371,11 +459,13 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @impl true
   def available_actions(%RequestContext{} = context, %SubjectRef{} = subject_ref, opts)
       when is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
+    with :ok <- ensure_subject_not_archived(context, subject_ref),
+         {:ok, tenant_id} <- tenant_id(context),
          {:ok, rows} <- operator_query_service(opts).available_actions(tenant_id, subject_ref.id),
          {:ok, actions} <- map_each(rows, &operator_action_from_map/1) do
       {:ok, actions}
     else
+      {:error, :archived, manifest_ref} -> normalize_surface_error({:archived, manifest_ref})
       {:error, reason} -> normalize_surface_error(reason)
     end
   end
@@ -414,7 +504,11 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   @impl true
   def run_status(run_ref, attrs, opts) when is_map(attrs) and is_list(opts) do
-    operator_query_service(opts).run_status(run_ref, attrs, opts)
+    case operator_query_service(opts).run_status(run_ref, attrs, opts) do
+      {:ok, result} -> {:ok, result}
+      {:error, :archived, manifest_ref} -> normalize_surface_error({:archived, manifest_ref})
+      {:error, reason} -> normalize_surface_error(reason)
+    end
   end
 
   @impl true
@@ -442,6 +536,17 @@ defmodule AppKit.Bridges.MezzanineBridge do
     with {:ok, tenant_id} <- tenant_id(context),
          {:ok, row} <- operator_query_service(opts).subject_status(tenant_id, subject_ref.id) do
       operator_projection_from_row(row, context)
+    end
+  end
+
+  defp execution_trace_lineage(%RequestContext{} = context, %ExecutionRef{} = execution_ref, opts) do
+    with {:ok, installation_id} <- installation_or_tenant_id(context),
+         {:ok, lineage} <- operator_query_service(opts).execution_trace_lineage(execution_ref.id),
+         true <- lineage.installation_id == installation_id do
+      {:ok, lineage}
+    else
+      false -> {:error, :unauthorized_lower_read}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -582,6 +687,21 @@ defmodule AppKit.Bridges.MezzanineBridge do
          {:ok, available_actions} <-
            operator_actions_from_maps(fetch_value(row, :available_actions) || []),
          payload <- fetch_value(row, :payload) || %{},
+         {:ok, pending_obligations} <-
+           pending_obligations_from_maps(
+             fetch_value(row, :pending_obligations) || fetch_value(payload, :pending_obligations) ||
+               []
+           ),
+         {:ok, blocking_conditions} <-
+           blocking_conditions_from_maps(
+             fetch_value(row, :blocking_conditions) ||
+               fetch_value(payload, :blocking_conditions) ||
+               []
+           ),
+         {:ok, next_step_preview} <-
+           next_step_preview_from_map(
+             fetch_value(row, :next_step_preview) || fetch_value(payload, :next_step_preview)
+           ),
          timeline_rows <- fetch_value(payload, :timeline) || fetch_value(row, :timeline) || [],
          {:ok, timeline} <- map_each(timeline_rows, &timeline_event_from_map/1) do
       OperatorProjection.new(%{
@@ -593,6 +713,9 @@ defmodule AppKit.Bridges.MezzanineBridge do
         current_execution_ref: current_execution_ref,
         pending_decision_refs: pending_decision_refs,
         available_actions: available_actions,
+        pending_obligations: pending_obligations,
+        blocking_conditions: blocking_conditions,
+        next_step_preview: next_step_preview,
         timeline: timeline,
         updated_at:
           coerce_datetime(fetch_value(row, :updated_at) || fetch_value(payload, :last_event_at)),
@@ -613,6 +736,60 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp operator_actions_from_maps(rows) when is_list(rows) do
     map_each(rows, &operator_action_from_map/1)
   end
+
+  defp pending_obligations_from_maps(rows) when is_list(rows) do
+    map_each(rows, &pending_obligation_from_map/1)
+  end
+
+  defp pending_obligation_from_map(row) when is_map(row) do
+    PendingObligation.new(%{
+      obligation_id: fetch_value(row, :obligation_id),
+      obligation_kind:
+        normalize_string(fetch_value(row, :obligation_kind) || fetch_value(row, :kind)),
+      status: normalize_string(fetch_value(row, :status) || "pending"),
+      summary: fetch_value(row, :summary),
+      decision_ref_id: fetch_value(row, :decision_ref_id),
+      required_by: coerce_datetime(fetch_value(row, :required_by)),
+      blocking?: fetch_value(row, :blocking?) || false,
+      metadata: fetch_value(row, :metadata) || %{}
+    })
+  end
+
+  defp pending_obligation_from_map(_row), do: {:error, :invalid_pending_obligation}
+
+  defp blocking_conditions_from_maps(rows) when is_list(rows) do
+    map_each(rows, &blocking_condition_from_map/1)
+  end
+
+  defp blocking_condition_from_map(row) when is_map(row) do
+    BlockingCondition.new(%{
+      blocker_kind: normalize_string(fetch_value(row, :blocker_kind) || fetch_value(row, :kind)),
+      status: normalize_string(fetch_value(row, :status) || "blocked"),
+      summary: fetch_value(row, :summary),
+      reason: normalize_string(fetch_value(row, :reason)),
+      obligation_id: fetch_value(row, :obligation_id),
+      decision_ref_id: fetch_value(row, :decision_ref_id),
+      metadata: fetch_value(row, :metadata) || %{}
+    })
+  end
+
+  defp blocking_condition_from_map(_row), do: {:error, :invalid_blocking_condition}
+
+  defp next_step_preview_from_map(nil), do: {:ok, nil}
+
+  defp next_step_preview_from_map(row) when is_map(row) do
+    NextStepPreview.new(%{
+      step_kind: normalize_string(fetch_value(row, :step_kind)),
+      status: normalize_string(fetch_value(row, :status)),
+      summary: fetch_value(row, :summary),
+      blocking_condition_kinds:
+        Enum.map(fetch_value(row, :blocking_condition_kinds) || [], &normalize_string/1),
+      obligation_ids: fetch_value(row, :obligation_ids) || [],
+      metadata: fetch_value(row, :metadata) || %{}
+    })
+  end
+
+  defp next_step_preview_from_map(_row), do: {:error, :invalid_next_step_preview}
 
   defp operator_action_from_map(raw_action) when is_map(raw_action) do
     raw_action_ref = fetch_value(raw_action, :action_ref) || raw_action
@@ -785,6 +962,9 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp installation_service(opts),
     do: Keyword.get(opts, :installation_service, Mezzanine.AppKitBridge.InstallationService)
 
+  defp lease_service(opts),
+    do: Keyword.get(opts, :lease_service, Mezzanine.AppKitBridge.LeaseService)
+
   defp work_control_service(opts),
     do: Keyword.get(opts, :work_control_service, Mezzanine.AppKitBridge.WorkControlService)
 
@@ -807,6 +987,36 @@ defmodule AppKit.Bridges.MezzanineBridge do
     do: {:ok, tenant_id}
 
   defp tenant_id(_context), do: {:error, :missing_tenant_id}
+
+  defp ensure_subject_not_archived(%RequestContext{} = context, %SubjectRef{} = subject_ref) do
+    case archival_installation_id(context, subject_ref) do
+      {:ok, installation_id} ->
+        case ArchivalQuery.archived_subject_manifest(installation_id, subject_ref.id) do
+          {:ok, manifest} -> {:error, :archived, manifest.manifest_ref}
+          {:error, :not_found} -> :ok
+          {:error, _reason} -> :ok
+        end
+
+      :error ->
+        :ok
+    end
+  end
+
+  defp archival_installation_id(
+         _context,
+         %SubjectRef{installation_ref: %InstallationRef{id: installation_id}}
+       )
+       when is_binary(installation_id),
+       do: {:ok, installation_id}
+
+  defp archival_installation_id(
+         %RequestContext{installation_ref: %InstallationRef{id: installation_id}},
+         _subject_ref
+       )
+       when is_binary(installation_id),
+       do: {:ok, installation_id}
+
+  defp archival_installation_id(_context, _subject_ref), do: :error
 
   defp program_id(%RequestContext{} = context, opts) do
     case explicit_program_id(context, opts) do
@@ -966,11 +1176,50 @@ defmodule AppKit.Bridges.MezzanineBridge do
         binding.config
         |> Map.new()
         |> maybe_put("credential_ref", binding.credential_ref)
+        |> maybe_put("descriptor", serialize_binding_descriptor(binding.descriptor))
 
       Map.update(acc, kind_key, %{binding.binding_key => config}, fn grouped ->
         Map.put(grouped, binding.binding_key, config)
       end)
     end)
+  end
+
+  defp serialize_binding_descriptor(nil), do: nil
+
+  defp serialize_binding_descriptor(%BindingDescriptor{} = descriptor) do
+    %{
+      "attachment" => descriptor.attachment,
+      "contract" => Atom.to_string(descriptor.contract),
+      "envelope" => serialize_binding_envelope(descriptor.envelope),
+      "failure" => serialize_binding_failure(descriptor.failure),
+      "ownership" => serialize_binding_ownership(descriptor.ownership)
+    }
+  end
+
+  defp serialize_binding_envelope(%BindingEnvelope{} = envelope) do
+    %{
+      "staleness_class" => Atom.to_string(envelope.staleness_class),
+      "trace_propagation" => Atom.to_string(envelope.trace_propagation),
+      "tenant_scope" => Atom.to_string(envelope.tenant_scope),
+      "blast_radius" => Atom.to_string(envelope.blast_radius),
+      "timeout_ms" => envelope.timeout_ms,
+      "runbook_ref" => envelope.runbook_ref
+    }
+  end
+
+  defp serialize_binding_failure(%BindingFailurePosture{} = failure) do
+    %{
+      "on_unavailable" => Atom.to_string(failure.on_unavailable),
+      "on_timeout" => Atom.to_string(failure.on_timeout)
+    }
+  end
+
+  defp serialize_binding_ownership(%BindingOwnership{} = ownership) do
+    %{
+      "external_system" => ownership.external_system,
+      "external_system_ref" => ownership.external_system_ref,
+      "operator_owner" => ownership.operator_owner
+    }
   end
 
   defp page_result(entries, %PageRequest{} = page_request) do
@@ -1062,7 +1311,13 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp subject_detail_from_row(row, %RequestContext{} = context) do
     with {:ok, subject_ref} <- subject_ref_from_summary(row, context),
          {:ok, current_execution_ref} <- execution_ref_from_row(row, subject_ref),
-         {:ok, pending_decision_refs} <- pending_decision_refs_from_row(row, subject_ref) do
+         {:ok, pending_decision_refs} <- pending_decision_refs_from_row(row, subject_ref),
+         {:ok, pending_obligations} <-
+           pending_obligations_from_maps(fetch_value(row, :pending_obligations) || []),
+         {:ok, blocking_conditions} <-
+           blocking_conditions_from_maps(fetch_value(row, :blocking_conditions) || []),
+         {:ok, next_step_preview} <-
+           next_step_preview_from_map(fetch_value(row, :next_step_preview)) do
       SubjectDetail.new(%{
         subject_ref: subject_ref,
         lifecycle_state: normalize_string(fetch_value(row, :status) || "unknown"),
@@ -1071,6 +1326,9 @@ defmodule AppKit.Bridges.MezzanineBridge do
         current_execution_ref: current_execution_ref,
         pending_decision_refs: pending_decision_refs,
         available_actions: [],
+        pending_obligations: pending_obligations,
+        blocking_conditions: blocking_conditions,
+        next_step_preview: next_step_preview,
         schema_ref: "mezzanine/work_object",
         schema_version: 1,
         payload:
@@ -1082,12 +1340,23 @@ defmodule AppKit.Bridges.MezzanineBridge do
             source_kind: fetch_value(row, :source_kind),
             current_plan_id: fetch_value(row, :current_plan_id),
             current_plan_status: normalize_string(fetch_value(row, :current_plan_status)),
+            active_run_id: fetch_value(row, :active_run_id),
             active_run_status: normalize_string(fetch_value(row, :active_run_status)),
+            active_execution_trace_id:
+              normalize_string(fetch_value(row, :active_execution_trace_id)),
+            latest_execution_id: fetch_value(row, :latest_execution_id),
+            latest_execution_dispatch_state:
+              normalize_string(fetch_value(row, :latest_execution_dispatch_state)),
+            latest_execution_trace_id:
+              normalize_string(fetch_value(row, :latest_execution_trace_id)),
             gate_status: fetch_value(row, :gate_status),
             timeline: fetch_value(row, :timeline),
             audit_events: fetch_value(row, :audit_events),
             run_series_ids: fetch_value(row, :run_series_ids),
             obligation_ids: fetch_value(row, :obligation_ids),
+            pending_obligations: fetch_value(row, :pending_obligations),
+            blocking_conditions: fetch_value(row, :blocking_conditions),
+            next_step_preview: fetch_value(row, :next_step_preview),
             evidence_bundle_id: fetch_value(row, :evidence_bundle_id),
             control_session_id: fetch_value(row, :control_session_id),
             control_mode: normalize_string(fetch_value(row, :control_mode)),
@@ -1098,12 +1367,12 @@ defmodule AppKit.Bridges.MezzanineBridge do
   end
 
   defp execution_ref_from_row(row, %SubjectRef{} = subject_ref) do
-    case fetch_value(row, :active_run_id) do
-      run_id when is_binary(run_id) ->
+    case fetch_value(row, :active_execution_id) do
+      execution_id when is_binary(execution_id) ->
         ExecutionRef.new(%{
-          id: run_id,
+          id: execution_id,
           subject_ref: subject_ref,
-          dispatch_state: normalize_string(fetch_value(row, :active_run_status))
+          dispatch_state: normalize_string(fetch_value(row, :active_execution_dispatch_state))
         })
 
       _ ->
@@ -1249,6 +1518,62 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   defp execution_ref_from_bridge(_raw_execution_ref), do: {:error, :invalid_execution_ref}
 
+  defp read_lease_from_map(raw_read_lease) when is_map(raw_read_lease) do
+    ReadLease.new(%{
+      lease_ref: read_lease_ref_from_map(fetch_value(raw_read_lease, :lease_ref)),
+      trace_id: fetch_value(raw_read_lease, :trace_id),
+      expires_at: fetch_value(raw_read_lease, :expires_at),
+      lease_token: fetch_value(raw_read_lease, :lease_token),
+      allowed_operations: fetch_value(raw_read_lease, :allowed_operations) || [],
+      scope: fetch_value(raw_read_lease, :scope) || %{},
+      lineage_anchor: fetch_value(raw_read_lease, :lineage_anchor) || %{},
+      invalidation_cursor: fetch_value(raw_read_lease, :invalidation_cursor) || 0,
+      invalidation_channel: fetch_value(raw_read_lease, :invalidation_channel)
+    })
+  end
+
+  defp read_lease_from_map(_raw_read_lease), do: {:error, :invalid_read_lease}
+
+  defp read_lease_ref_from_map(raw_read_lease_ref) when is_map(raw_read_lease_ref) do
+    %{
+      id: fetch_value(raw_read_lease_ref, :id),
+      allowed_family: fetch_value(raw_read_lease_ref, :allowed_family),
+      execution_ref: fetch_value(raw_read_lease_ref, :execution_ref)
+    }
+  end
+
+  defp read_lease_ref_from_map(_raw_read_lease_ref), do: nil
+
+  defp stream_attach_lease_from_map(raw_stream_attach_lease)
+       when is_map(raw_stream_attach_lease) do
+    StreamAttachLease.new(%{
+      lease_ref:
+        stream_attach_lease_ref_from_map(fetch_value(raw_stream_attach_lease, :lease_ref)),
+      trace_id: fetch_value(raw_stream_attach_lease, :trace_id),
+      expires_at: fetch_value(raw_stream_attach_lease, :expires_at),
+      attach_token: fetch_value(raw_stream_attach_lease, :attach_token),
+      scope: fetch_value(raw_stream_attach_lease, :scope) || %{},
+      lineage_anchor: fetch_value(raw_stream_attach_lease, :lineage_anchor) || %{},
+      reconnect_cursor: fetch_value(raw_stream_attach_lease, :reconnect_cursor) || 0,
+      invalidation_channel: fetch_value(raw_stream_attach_lease, :invalidation_channel),
+      poll_interval_ms: fetch_value(raw_stream_attach_lease, :poll_interval_ms) || 2_000
+    })
+  end
+
+  defp stream_attach_lease_from_map(_raw_stream_attach_lease),
+    do: {:error, :invalid_stream_attach_lease}
+
+  defp stream_attach_lease_ref_from_map(raw_stream_attach_lease_ref)
+       when is_map(raw_stream_attach_lease_ref) do
+    %{
+      id: fetch_value(raw_stream_attach_lease_ref, :id),
+      allowed_family: fetch_value(raw_stream_attach_lease_ref, :allowed_family),
+      execution_ref: fetch_value(raw_stream_attach_lease_ref, :execution_ref)
+    }
+  end
+
+  defp stream_attach_lease_ref_from_map(_raw_stream_attach_lease_ref), do: nil
+
   defp collect(results) do
     Enum.reduce_while(results, {:ok, []}, fn
       {:ok, value}, {:ok, acc} -> {:cont, {:ok, [value | acc]}}
@@ -1316,6 +1641,19 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp normalize_string(value), do: value
 
   defp normalize_surface_error(%SurfaceError{} = error), do: {:error, error}
+
+  defp normalize_surface_error({:archived, manifest_ref}) when is_binary(manifest_ref) do
+    {:ok, error} =
+      SurfaceError.new(%{
+        code: "archived",
+        message: "Subject is archived",
+        kind: :terminal,
+        retryable: false,
+        details: %{manifest_ref: manifest_ref}
+      })
+
+    {:error, error}
+  end
 
   defp normalize_surface_error(reason) do
     {:ok, error} =

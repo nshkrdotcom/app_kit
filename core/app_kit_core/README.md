@@ -14,6 +14,5 @@ Current contract groups:
 - installation DTOs
 - northbound backend behaviours for work queries, reviews, and installations
 
-Legacy `AppKit.Core.Result` and `AppKit.Core.RunRef` remain in place as
-compatibility shims for the older surface modules until the later Phase-3
-surface refactors consume the new DTO set directly.
+`AppKit.Core.Result` and `AppKit.Core.RunRef` remain part of the current
+northbound contract set and are not treated as temporary coexistence shims.

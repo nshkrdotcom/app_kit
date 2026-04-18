@@ -30,7 +30,10 @@ defmodule AppKitMezzanineBridge.MixProject do
 
   defp aliases do
     [
-      test: ["ash.setup --quiet", "test"],
+      test: ["ash.setup --quiet", "leasing.migrate", "test"],
+      "leasing.migrate": [
+        "ecto.migrate -r Mezzanine.Execution.Repo --migrations-path ../../../mezzanine/core/leasing/priv/repo/migrations"
+      ],
       ci: [
         "format --check-formatted",
         "compile --warnings-as-errors",
@@ -48,8 +51,10 @@ defmodule AppKitMezzanineBridge.MixProject do
       {:app_kit_run_governance, path: "../../core/run_governance"},
       {:mezzanine_audit_engine, path: "../../../mezzanine/core/audit_engine"},
       {:mezzanine_execution_engine, path: "../../../mezzanine/core/execution_engine"},
+      {:mezzanine_leasing, path: "../../../mezzanine/core/leasing"},
       {:mezzanine_decision_engine, path: "../../../mezzanine/core/decision_engine"},
       {:mezzanine_evidence_engine, path: "../../../mezzanine/core/evidence_engine"},
+      {:mezzanine_archival_engine, path: "../../../mezzanine/core/archival_engine"},
       {:mezzanine_config_registry, path: "../../../mezzanine/core/config_registry"},
       {:mezzanine_pack_model, path: "../../../mezzanine/core/pack_model"},
       {:mezzanine_pack_compiler, path: "../../../mezzanine/core/pack_compiler"},

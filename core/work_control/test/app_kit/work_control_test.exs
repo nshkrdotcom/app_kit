@@ -112,7 +112,7 @@ defmodule AppKit.WorkControlTest do
   defp request_context do
     {:ok, context} =
       RequestContext.new(%{
-        trace_id: "trace-work-control",
+        trace_id: "11111111111111111111111111111111",
         actor_ref: %{id: "user-1", kind: :human},
         tenant_ref: %{id: "tenant-1"},
         metadata: %{program_id: "program-1"}

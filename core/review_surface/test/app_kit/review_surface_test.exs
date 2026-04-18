@@ -99,7 +99,7 @@ defmodule AppKit.ReviewSurfaceTest do
   defp request_context do
     {:ok, context} =
       RequestContext.new(%{
-        trace_id: "trace-review-surface",
+        trace_id: "55555555555555555555555555555555",
         actor_ref: %{id: "reviewer-1", kind: :human},
         tenant_ref: %{id: "tenant-1"},
         metadata: %{program_id: "program-1"}

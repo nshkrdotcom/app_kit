@@ -223,7 +223,7 @@ defmodule AppKit.Core.UnifiedTraceStep do
   Stable northbound unified-trace step.
   """
 
-  alias AppKit.Core.Support
+  alias AppKit.Core.{Support, TraceIdentity}
 
   @enforce_keys [:ref, :source]
   defstruct [
@@ -259,8 +259,7 @@ defmodule AppKit.Core.UnifiedTraceStep do
          true <- Support.present_binary?(source),
          occurred_at <- Map.get(attrs, :occurred_at),
          true <- Support.optional_datetime?(occurred_at),
-         trace_id <- Map.get(attrs, :trace_id),
-         true <- Support.optional_binary?(trace_id),
+         {:ok, trace_id} <- TraceIdentity.ensure_optional(Map.get(attrs, :trace_id)),
          causation_id <- Map.get(attrs, :causation_id),
          true <- Support.optional_binary?(causation_id),
          freshness <- Map.get(attrs, :freshness),
@@ -294,7 +293,7 @@ defmodule AppKit.Core.UnifiedTrace do
   Stable northbound unified-trace envelope.
   """
 
-  alias AppKit.Core.{InstallationRef, Support, UnifiedTraceStep}
+  alias AppKit.Core.{InstallationRef, Support, TraceIdentity, UnifiedTraceStep}
 
   @enforce_keys [:trace_id, :steps]
   defstruct [:trace_id, installation_ref: nil, join_keys: %{}, steps: [], metadata: %{}]
@@ -310,8 +309,7 @@ defmodule AppKit.Core.UnifiedTrace do
   @spec new(map() | keyword()) :: {:ok, t()} | {:error, :invalid_unified_trace}
   def new(attrs) do
     with {:ok, attrs} <- Support.normalize_attrs(attrs),
-         trace_id <- Map.get(attrs, :trace_id),
-         true <- Support.present_binary?(trace_id),
+         {:ok, trace_id} <- TraceIdentity.ensure(Map.get(attrs, :trace_id)),
          {:ok, installation_ref} <-
            Support.nested_struct(Map.get(attrs, :installation_ref), InstallationRef),
          steps <- Map.get(attrs, :steps),
@@ -334,15 +332,347 @@ defmodule AppKit.Core.UnifiedTrace do
   end
 end
 
+defmodule AppKit.Core.ReadLease do
+  @moduledoc """
+  Stable northbound leased direct-read envelope.
+  """
+
+  alias AppKit.Core.{ReadLeaseRef, Support, TraceIdentity}
+
+  @enforce_keys [:lease_ref, :trace_id, :expires_at, :lease_token]
+  defstruct [
+    :lease_ref,
+    :trace_id,
+    :expires_at,
+    :lease_token,
+    allowed_operations: [],
+    scope: %{},
+    lineage_anchor: %{},
+    invalidation_cursor: 0,
+    invalidation_channel: nil
+  ]
+
+  @type t :: %__MODULE__{
+          lease_ref: ReadLeaseRef.t(),
+          trace_id: String.t(),
+          expires_at: DateTime.t(),
+          lease_token: String.t(),
+          allowed_operations: [String.t() | atom()],
+          scope: map(),
+          lineage_anchor: map(),
+          invalidation_cursor: non_neg_integer(),
+          invalidation_channel: String.t() | nil
+        }
+
+  @spec new(map() | keyword()) :: {:ok, t()} | {:error, :invalid_read_lease}
+  def new(attrs) do
+    with {:ok, attrs} <- Support.normalize_attrs(attrs),
+         {:ok, lease_ref} <- Support.nested_struct(Map.get(attrs, :lease_ref), ReadLeaseRef),
+         false <- is_nil(lease_ref),
+         {:ok, trace_id} <- TraceIdentity.ensure(Map.get(attrs, :trace_id)),
+         expires_at <- Map.get(attrs, :expires_at),
+         true <- Support.optional_datetime?(expires_at),
+         false <- is_nil(expires_at),
+         lease_token <- Map.get(attrs, :lease_token),
+         true <- Support.present_binary?(lease_token),
+         allowed_operations <- Map.get(attrs, :allowed_operations, []),
+         true <- Support.list_of?(allowed_operations, &Support.atom_or_binary?/1),
+         scope <- Map.get(attrs, :scope, %{}),
+         true <- is_map(scope),
+         lineage_anchor <- Map.get(attrs, :lineage_anchor, %{}),
+         true <- is_map(lineage_anchor),
+         invalidation_cursor <- Map.get(attrs, :invalidation_cursor, 0),
+         true <- Support.optional_non_neg_integer?(invalidation_cursor),
+         invalidation_channel <- Map.get(attrs, :invalidation_channel),
+         true <- Support.optional_binary?(invalidation_channel) do
+      {:ok,
+       %__MODULE__{
+         lease_ref: lease_ref,
+         trace_id: trace_id,
+         expires_at: expires_at,
+         lease_token: lease_token,
+         allowed_operations: allowed_operations,
+         scope: scope,
+         lineage_anchor: lineage_anchor,
+         invalidation_cursor: invalidation_cursor,
+         invalidation_channel: invalidation_channel
+       }}
+    else
+      _ -> {:error, :invalid_read_lease}
+    end
+  end
+end
+
+defmodule AppKit.Core.StreamAttachLease do
+  @moduledoc """
+  Stable northbound stream-attach lease envelope.
+  """
+
+  alias AppKit.Core.{StreamAttachLeaseRef, Support, TraceIdentity}
+
+  @enforce_keys [:lease_ref, :trace_id, :expires_at, :attach_token]
+  defstruct [
+    :lease_ref,
+    :trace_id,
+    :expires_at,
+    :attach_token,
+    scope: %{},
+    lineage_anchor: %{},
+    reconnect_cursor: 0,
+    invalidation_channel: nil,
+    poll_interval_ms: 2_000
+  ]
+
+  @type t :: %__MODULE__{
+          lease_ref: StreamAttachLeaseRef.t(),
+          trace_id: String.t(),
+          expires_at: DateTime.t(),
+          attach_token: String.t(),
+          scope: map(),
+          lineage_anchor: map(),
+          reconnect_cursor: non_neg_integer(),
+          invalidation_channel: String.t() | nil,
+          poll_interval_ms: pos_integer()
+        }
+
+  @spec new(map() | keyword()) :: {:ok, t()} | {:error, :invalid_stream_attach_lease}
+  def new(attrs) do
+    with {:ok, attrs} <- Support.normalize_attrs(attrs),
+         {:ok, lease_ref} <-
+           Support.nested_struct(Map.get(attrs, :lease_ref), StreamAttachLeaseRef),
+         false <- is_nil(lease_ref),
+         {:ok, trace_id} <- TraceIdentity.ensure(Map.get(attrs, :trace_id)),
+         expires_at <- Map.get(attrs, :expires_at),
+         true <- Support.optional_datetime?(expires_at),
+         false <- is_nil(expires_at),
+         attach_token <- Map.get(attrs, :attach_token),
+         true <- Support.present_binary?(attach_token),
+         scope <- Map.get(attrs, :scope, %{}),
+         true <- is_map(scope),
+         lineage_anchor <- Map.get(attrs, :lineage_anchor, %{}),
+         true <- is_map(lineage_anchor),
+         reconnect_cursor <- Map.get(attrs, :reconnect_cursor, 0),
+         true <- Support.optional_non_neg_integer?(reconnect_cursor),
+         invalidation_channel <- Map.get(attrs, :invalidation_channel),
+         true <- Support.optional_binary?(invalidation_channel),
+         poll_interval_ms <- Map.get(attrs, :poll_interval_ms, 2_000),
+         true <- Support.positive_integer?(poll_interval_ms),
+         true <- poll_interval_ms <= 2_000 do
+      {:ok,
+       %__MODULE__{
+         lease_ref: lease_ref,
+         trace_id: trace_id,
+         expires_at: expires_at,
+         attach_token: attach_token,
+         scope: scope,
+         lineage_anchor: lineage_anchor,
+         reconnect_cursor: reconnect_cursor,
+         invalidation_channel: invalidation_channel,
+         poll_interval_ms: poll_interval_ms
+       }}
+    else
+      _ -> {:error, :invalid_stream_attach_lease}
+    end
+  end
+end
+
+defmodule AppKit.Core.PendingObligation do
+  @moduledoc """
+  Stable northbound pending-obligation projection.
+  """
+
+  alias AppKit.Core.Support
+
+  @enforce_keys [:obligation_id, :obligation_kind, :status]
+  defstruct [
+    :obligation_id,
+    :obligation_kind,
+    :status,
+    summary: nil,
+    decision_ref_id: nil,
+    required_by: nil,
+    blocking?: false,
+    metadata: %{}
+  ]
+
+  @type t :: %__MODULE__{
+          obligation_id: String.t(),
+          obligation_kind: String.t(),
+          status: String.t(),
+          summary: String.t() | nil,
+          decision_ref_id: String.t() | nil,
+          required_by: DateTime.t() | nil,
+          blocking?: boolean(),
+          metadata: map()
+        }
+
+  @spec new(map() | keyword()) :: {:ok, t()} | {:error, :invalid_pending_obligation}
+  def new(attrs) do
+    with {:ok, attrs} <- Support.normalize_attrs(attrs),
+         obligation_id <- Map.get(attrs, :obligation_id),
+         true <- Support.present_binary?(obligation_id),
+         obligation_kind <- Map.get(attrs, :obligation_kind),
+         true <- Support.present_binary?(obligation_kind),
+         status <- Map.get(attrs, :status),
+         true <- Support.present_binary?(status),
+         summary <- Map.get(attrs, :summary),
+         true <- Support.optional_binary?(summary),
+         decision_ref_id <- Map.get(attrs, :decision_ref_id),
+         true <- Support.optional_binary?(decision_ref_id),
+         required_by <- Map.get(attrs, :required_by),
+         true <- Support.optional_datetime?(required_by),
+         blocking? <- Map.get(attrs, :blocking?, false),
+         true <- is_boolean(blocking?),
+         metadata <- Map.get(attrs, :metadata, %{}),
+         true <- is_map(metadata) do
+      {:ok,
+       %__MODULE__{
+         obligation_id: obligation_id,
+         obligation_kind: obligation_kind,
+         status: status,
+         summary: summary,
+         decision_ref_id: decision_ref_id,
+         required_by: required_by,
+         blocking?: blocking?,
+         metadata: metadata
+       }}
+    else
+      _ -> {:error, :invalid_pending_obligation}
+    end
+  end
+end
+
+defmodule AppKit.Core.BlockingCondition do
+  @moduledoc """
+  Stable northbound blocking-condition projection.
+  """
+
+  alias AppKit.Core.Support
+
+  @enforce_keys [:blocker_kind, :status]
+  defstruct [
+    :blocker_kind,
+    :status,
+    summary: nil,
+    reason: nil,
+    obligation_id: nil,
+    decision_ref_id: nil,
+    metadata: %{}
+  ]
+
+  @type t :: %__MODULE__{
+          blocker_kind: String.t(),
+          status: String.t(),
+          summary: String.t() | nil,
+          reason: String.t() | nil,
+          obligation_id: String.t() | nil,
+          decision_ref_id: String.t() | nil,
+          metadata: map()
+        }
+
+  @spec new(map() | keyword()) :: {:ok, t()} | {:error, :invalid_blocking_condition}
+  def new(attrs) do
+    with {:ok, attrs} <- Support.normalize_attrs(attrs),
+         blocker_kind <- Map.get(attrs, :blocker_kind),
+         true <- Support.present_binary?(blocker_kind),
+         status <- Map.get(attrs, :status),
+         true <- Support.present_binary?(status),
+         summary <- Map.get(attrs, :summary),
+         true <- Support.optional_binary?(summary),
+         reason <- Map.get(attrs, :reason),
+         true <- Support.optional_binary?(reason),
+         obligation_id <- Map.get(attrs, :obligation_id),
+         true <- Support.optional_binary?(obligation_id),
+         decision_ref_id <- Map.get(attrs, :decision_ref_id),
+         true <- Support.optional_binary?(decision_ref_id),
+         metadata <- Map.get(attrs, :metadata, %{}),
+         true <- is_map(metadata) do
+      {:ok,
+       %__MODULE__{
+         blocker_kind: blocker_kind,
+         status: status,
+         summary: summary,
+         reason: reason,
+         obligation_id: obligation_id,
+         decision_ref_id: decision_ref_id,
+         metadata: metadata
+       }}
+    else
+      _ -> {:error, :invalid_blocking_condition}
+    end
+  end
+end
+
+defmodule AppKit.Core.NextStepPreview do
+  @moduledoc """
+  Stable northbound next-step itinerary projection.
+  """
+
+  alias AppKit.Core.Support
+
+  @enforce_keys [:step_kind, :status]
+  defstruct [
+    :step_kind,
+    :status,
+    summary: nil,
+    blocking_condition_kinds: [],
+    obligation_ids: [],
+    metadata: %{}
+  ]
+
+  @type t :: %__MODULE__{
+          step_kind: String.t(),
+          status: String.t(),
+          summary: String.t() | nil,
+          blocking_condition_kinds: [String.t()],
+          obligation_ids: [String.t()],
+          metadata: map()
+        }
+
+  @spec new(map() | keyword()) :: {:ok, t()} | {:error, :invalid_next_step_preview}
+  def new(attrs) do
+    with {:ok, attrs} <- Support.normalize_attrs(attrs),
+         step_kind <- Map.get(attrs, :step_kind),
+         true <- Support.present_binary?(step_kind),
+         status <- Map.get(attrs, :status),
+         true <- Support.present_binary?(status),
+         summary <- Map.get(attrs, :summary),
+         true <- Support.optional_binary?(summary),
+         blocking_condition_kinds <- Map.get(attrs, :blocking_condition_kinds, []),
+         true <-
+           is_list(blocking_condition_kinds) and
+             Enum.all?(blocking_condition_kinds, &Support.present_binary?/1),
+         obligation_ids <- Map.get(attrs, :obligation_ids, []),
+         true <- is_list(obligation_ids) and Enum.all?(obligation_ids, &Support.present_binary?/1),
+         metadata <- Map.get(attrs, :metadata, %{}),
+         true <- is_map(metadata) do
+      {:ok,
+       %__MODULE__{
+         step_kind: step_kind,
+         status: status,
+         summary: summary,
+         blocking_condition_kinds: blocking_condition_kinds,
+         obligation_ids: obligation_ids,
+         metadata: metadata
+       }}
+    else
+      _ -> {:error, :invalid_next_step_preview}
+    end
+  end
+end
+
 defmodule AppKit.Core.OperatorProjection do
   @moduledoc """
   Stable northbound operator-facing projection envelope.
   """
 
   alias AppKit.Core.{
+    BlockingCondition,
     DecisionRef,
     ExecutionRef,
+    NextStepPreview,
     OperatorAction,
+    PendingObligation,
     SubjectRef,
     Support,
     TimelineEvent
@@ -355,6 +685,9 @@ defmodule AppKit.Core.OperatorProjection do
     current_execution_ref: nil,
     pending_decision_refs: [],
     available_actions: [],
+    pending_obligations: [],
+    blocking_conditions: [],
+    next_step_preview: nil,
     timeline: [],
     updated_at: nil,
     payload: %{}
@@ -366,6 +699,9 @@ defmodule AppKit.Core.OperatorProjection do
           current_execution_ref: ExecutionRef.t() | nil,
           pending_decision_refs: [DecisionRef.t()],
           available_actions: [OperatorAction.t()],
+          pending_obligations: [PendingObligation.t()],
+          blocking_conditions: [BlockingCondition.t()],
+          next_step_preview: NextStepPreview.t() | nil,
           timeline: [TimelineEvent.t()],
           updated_at: DateTime.t() | nil,
           payload: map()
@@ -384,6 +720,18 @@ defmodule AppKit.Core.OperatorProjection do
            Support.nested_structs(Map.get(attrs, :pending_decision_refs, []), DecisionRef),
          {:ok, available_actions} <-
            Support.nested_structs(Map.get(attrs, :available_actions, []), OperatorAction),
+         {:ok, pending_obligations} <-
+           Support.nested_structs(
+             Map.get(attrs, :pending_obligations, []),
+             PendingObligation
+           ),
+         {:ok, blocking_conditions} <-
+           Support.nested_structs(
+             Map.get(attrs, :blocking_conditions, []),
+             BlockingCondition
+           ),
+         {:ok, next_step_preview} <-
+           Support.nested_struct(Map.get(attrs, :next_step_preview), NextStepPreview),
          {:ok, timeline} <-
            Support.nested_structs(Map.get(attrs, :timeline, []), TimelineEvent),
          updated_at <- Map.get(attrs, :updated_at),
@@ -397,6 +745,9 @@ defmodule AppKit.Core.OperatorProjection do
          current_execution_ref: current_execution_ref,
          pending_decision_refs: pending_decision_refs,
          available_actions: available_actions,
+         pending_obligations: pending_obligations,
+         blocking_conditions: blocking_conditions,
+         next_step_preview: next_step_preview,
          timeline: timeline,
          updated_at: updated_at,
          payload: payload

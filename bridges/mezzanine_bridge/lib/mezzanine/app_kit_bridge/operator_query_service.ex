@@ -11,9 +11,11 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   alias AppKit.Core.RunRef
   alias Ecto.Adapters.SQL
   alias Mezzanine.AppKitBridge.AdapterSupport
+  alias Mezzanine.AppKitBridge.LeaseService
   alias Mezzanine.AppKitBridge.ReviewQueryService
   alias Mezzanine.AppKitBridge.WorkQueryService
-  alias Mezzanine.Audit.ExecutionLineage
+  alias Mezzanine.Archival.Query, as: ArchivalQuery
+  alias Mezzanine.Audit.ExecutionLineageStore
   alias Mezzanine.Audit.Repo
   alias Mezzanine.Audit.UnifiedTrace
   alias Mezzanine.Audit.UnifiedTrace.Query
@@ -23,10 +25,16 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   alias Mezzanine.Execution.ExecutionRecord
   alias Mezzanine.IntegrationBridge
   alias Mezzanine.Intent.ReadIntent
+  alias Mezzanine.Leasing
   alias Mezzanine.WorkControl
   alias Mezzanine.WorkQueries
 
-  @default_lower_operations [:fetch_run, :events, :attempts, :run_artifacts]
+  @default_lower_operations [
+    :fetch_run,
+    :events,
+    :attempts,
+    :run_artifacts
+  ]
 
   @spec run_status(RunRef.t(), map(), keyword()) :: {:ok, map()} | {:error, atom()}
   def run_status(%RunRef{} = run_ref, attrs, opts \\ []) when is_map(attrs) and is_list(opts) do
@@ -45,6 +53,7 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
          gate_status: Map.get(payload, :gate_status, %{})
        }}
     else
+      {:error, :archived, manifest_ref} -> {:error, :archived, manifest_ref}
       {:error, reason} -> {:error, normalize_error(reason)}
     end
   end
@@ -76,6 +85,11 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
            current_plan_status: normalize_state(detail.current_plan_status),
            active_run_id: detail.active_run_id,
            active_run_status: normalize_state(detail.active_run_status),
+           active_execution_trace_id: detail.active_execution_trace_id,
+           latest_execution_id: detail.latest_execution_id,
+           latest_execution_dispatch_state:
+             normalize_state(detail.latest_execution_dispatch_state),
+           latest_execution_trace_id: detail.latest_execution_trace_id,
            control_session_id: detail.control_session_id,
            control_mode: normalize_state(detail.control_mode),
            gate_status: normalize_value(detail.gate_status),
@@ -85,9 +99,15 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
            evidence_bundle_id: detail.evidence_bundle_id,
            run_series_ids: detail.run_series_ids,
            obligation_ids: detail.obligation_ids,
+           pending_obligations: normalize_value(detail.pending_obligations),
+           blocking_conditions: normalize_value(detail.blocking_conditions),
+           next_step_preview: normalize_value(detail.next_step_preview),
            last_event_at: detail.last_event_at
          }
        }}
+    else
+      {:error, :archived, manifest_ref} -> {:error, :archived, manifest_ref}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -102,6 +122,9 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
          entries: Enum.map(payload, &timeline_entry/1),
          last_event_at: detail.last_event_at
        }}
+    else
+      {:error, :archived, manifest_ref} -> {:error, :archived, manifest_ref}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -110,6 +133,25 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
       when is_binary(tenant_id) and is_binary(subject_id) do
     with {:ok, detail} <- WorkQueryService.get_subject_detail(tenant_id, subject_id) do
       {:ok, available_actions_from_detail(detail, subject_ref(subject_id))}
+    else
+      {:error, :archived, manifest_ref} -> {:error, :archived, manifest_ref}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec execution_trace_lineage(Ecto.UUID.t()) :: {:ok, map()} | {:error, term()}
+  def execution_trace_lineage(execution_id) when is_binary(execution_id) do
+    with {:ok, lineage} <- ExecutionLineageStore.fetch(execution_id) do
+      {:ok,
+       %{
+         execution_id: lineage.execution_id,
+         installation_id: lineage.installation_id,
+         trace_id: lineage.trace_id
+       }}
+    else
+      {:error, %Ash.Error.Query.NotFound{}} -> {:error, :execution_not_found}
+      {:error, %Ash.Error.Invalid{}} -> {:error, :execution_not_found}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -163,14 +205,18 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
          {:ok, query} <- build_unified_trace_query(attrs, installation_id, trace_id),
          {:ok, sources} <- fetch_trace_sources(attrs, opts, query, execution_id),
          {:ok, timeline} <- UnifiedTrace.assemble(query, sources) do
+      metadata =
+        %{
+          indexed_join_keys: Enum.map(timeline.join_keys, &Atom.to_string/1)
+        }
+        |> maybe_put_archived_manifest_ref(Map.get(sources, :archived_manifest_ref))
+
       {:ok,
        %{
          trace_id: timeline.trace_id,
          installation_id: timeline.installation_id,
          join_keys: trace_join_keys(attrs, timeline, execution_id),
-         metadata: %{
-           indexed_join_keys: Enum.map(timeline.join_keys, &Atom.to_string/1)
-         },
+         metadata: metadata,
          steps: Enum.map(timeline.steps, &normalize_unified_step/1)
        }}
     end
@@ -191,19 +237,61 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   end
 
   defp fetch_trace_sources(attrs, opts, %Query{} = query, execution_id) do
-    with {:ok, audit_facts} <- list_audit_facts(query.installation_id, query.trace_id),
-         {:ok, executions} <- list_execution_records(query.installation_id, query.trace_id),
-         {:ok, decisions} <- list_decision_records(query.installation_id, query.trace_id),
-         {:ok, evidence} <- list_evidence_records(query.installation_id, query.trace_id),
+    with {:ok, hot_sources} <- list_hot_trace_sources(query.installation_id, query.trace_id),
+         {:ok, trace_sources} <-
+           maybe_archived_trace_sources(hot_sources, query.installation_id, query.trace_id),
          {:ok, lower_facts} <- lower_trace_facts(attrs, opts, query, execution_id) do
+      trace_sources = normalize_trace_sources(trace_sources)
+
+      {:ok,
+       %{
+         audit_facts: trace_sources.audit_facts,
+         executions: trace_sources.executions,
+         decisions: trace_sources.decisions,
+         evidence: trace_sources.evidence,
+         archived_manifest_ref: Map.get(trace_sources, :archived_manifest_ref),
+         lower_facts: lower_facts
+       }}
+    end
+  end
+
+  defp list_hot_trace_sources(installation_id, trace_id) do
+    with {:ok, audit_facts} <- list_audit_facts(installation_id, trace_id),
+         {:ok, executions} <- list_execution_records(installation_id, trace_id),
+         {:ok, decisions} <- list_decision_records(installation_id, trace_id),
+         {:ok, evidence} <- list_evidence_records(installation_id, trace_id) do
       {:ok,
        %{
          audit_facts: audit_facts,
          executions: executions,
          decisions: decisions,
-         evidence: evidence,
-         lower_facts: lower_facts
+         evidence: evidence
        }}
+    end
+  end
+
+  defp maybe_archived_trace_sources(hot_sources, installation_id, trace_id)
+       when is_map(hot_sources) do
+    if trace_sources_empty?(hot_sources) do
+      case ArchivalQuery.archived_trace_sources(installation_id, trace_id) do
+        {:ok, %{manifest: manifest, sources: archived_sources}} ->
+          {:ok, Map.put(archived_sources, :archived_manifest_ref, manifest.manifest_ref)}
+
+        {:error, :not_found} ->
+          {:ok,
+           %{
+             audit_facts: [],
+             executions: [],
+             decisions: [],
+             evidence: [],
+             archived_manifest_ref: nil
+           }}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    else
+      {:ok, Map.put(hot_sources, :archived_manifest_ref, nil)}
     end
   end
 
@@ -251,6 +339,9 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
              dispatch_state: row.dispatch_state,
              recipe_ref: row.recipe_ref,
              compiled_pack_revision: row.compiled_pack_revision,
+             barrier_id: row.barrier_id,
+             last_reconcile_wave_id: row.last_reconcile_wave_id,
+             supersedes_execution_id: row.supersedes_execution_id,
              failure_kind: row.failure_kind,
              terminal_rejection_reason: row.terminal_rejection_reason
            }
@@ -262,27 +353,18 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   end
 
   defp authorize_trace_query(installation_id, execution_id, trace_id) do
-    with {:ok, execution} <- fetch_execution_record(execution_id) do
+    with {:ok, lineage} <- execution_trace_lineage(execution_id) do
       cond do
-        is_nil(execution) ->
-          :ok
-
-        execution.installation_id != installation_id ->
+        lineage.installation_id != installation_id ->
           {:error, :unauthorized_lower_read}
 
-        execution.trace_id != trace_id ->
+        lineage.trace_id != trace_id ->
           {:error, :invalid_trace_query}
 
         true ->
           :ok
       end
     end
-  end
-
-  defp fetch_execution_record(execution_id) do
-    ExecutionRecord
-    |> Ash.Query.filter(id == ^execution_id)
-    |> Ash.read_one(authorize?: false, domain: Mezzanine.Execution)
   end
 
   defp list_decision_records(installation_id, trace_id) do
@@ -347,33 +429,62 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
     operations = Keyword.get(opts, :lower_operations, @default_lower_operations)
     now = Keyword.get(opts, :now, DateTime.utc_now())
 
-    Enum.reduce_while(operations, {:ok, []}, fn operation, {:ok, acc} ->
-      accumulate_lower_fact(operation, acc, attrs, opts, query, execution_id, now)
-    end)
+    with {:ok, read_lease} <- issue_lower_trace_read_lease(attrs, opts, query, execution_id) do
+      Enum.reduce_while(operations, {:ok, []}, fn operation, {:ok, acc} ->
+        accumulate_lower_fact(operation, acc, attrs, opts, query, execution_id, now, read_lease)
+      end)
+    else
+      {:error, :bridge_not_found} -> {:ok, []}
+      {:error, :execution_not_found} -> {:ok, []}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
-  defp dispatch_lower_fact(operation, attrs, opts, installation_id, execution_id, now) do
-    read_intent =
-      ReadIntent.new!(%{
-        intent_id: "operator-trace:#{execution_id}:#{operation}",
-        read_type: :lower_fact,
-        subject: %{
-          actor_id: Map.get(attrs, :actor_id, "operator"),
-          installation_id: installation_id,
-          execution_id: execution_id
-        },
-        query: lower_query(operation, attrs)
-      })
+  defp issue_lower_trace_read_lease(attrs, opts, %Query{} = query, execution_id) do
+    LeaseService.issue_read_lease(
+      %{
+        tenant_id: Map.get(attrs, :tenant_id),
+        installation_id: query.installation_id,
+        execution_id: execution_id,
+        trace_id: query.trace_id,
+        allowed_family: "unified_trace",
+        allowed_operations: Keyword.get(opts, :lower_operations, @default_lower_operations),
+        scope: %{"include_lower" => true}
+      },
+      opts
+    )
+  end
 
-    lower_opts =
-      case Keyword.fetch(opts, :lower_facts) do
-        {:ok, lower_facts} -> [lower_facts: lower_facts, fetch_lineage: &fetch_lineage/1]
-        :error -> [fetch_lineage: &fetch_lineage/1]
+  defp dispatch_lower_fact(operation, attrs, opts, installation_id, execution_id, now, read_lease) do
+    with {:ok, _lease} <-
+           Leasing.authorize_read(
+             read_lease.lease_ref.id,
+             read_lease.lease_token,
+             operation,
+             repo: Keyword.get(opts, :lease_repo, Mezzanine.Execution.Repo)
+           ) do
+      read_intent =
+        ReadIntent.new!(%{
+          intent_id: "operator-trace:#{execution_id}:#{operation}",
+          read_type: :lower_fact,
+          subject: %{
+            actor_id: Map.get(attrs, :actor_id, "operator"),
+            installation_id: installation_id,
+            execution_id: execution_id
+          },
+          query: lower_query(operation, attrs)
+        })
+
+      lower_opts =
+        case Keyword.fetch(opts, :lower_facts) do
+          {:ok, lower_facts} -> [lower_facts: lower_facts, fetch_lineage: &fetch_lineage/1]
+          :error -> [fetch_lineage: &fetch_lineage/1]
+        end
+
+      with {:ok, response} <- IntegrationBridge.dispatch_read(read_intent, lower_opts) do
+        {:ok,
+         normalize_lower_records(response, execution_id, now, attrs.trace_id || attrs["trace_id"])}
       end
-
-    with {:ok, response} <- IntegrationBridge.dispatch_read(read_intent, lower_opts) do
-      {:ok,
-       normalize_lower_records(response, execution_id, now, attrs.trace_id || attrs["trace_id"])}
     end
   end
 
@@ -437,39 +548,43 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   end
 
   defp fetch_lineage(execution_id) do
-    with {:ok, result} <-
-           SQL.query(
-             Repo,
-             """
-             SELECT trace_id, causation_id, installation_id, subject_id, execution_id,
-                    dispatch_outbox_entry_id, citadel_request_id, citadel_submission_id,
-                    ji_submission_key, lower_run_id, lower_attempt_id, artifact_refs
-             FROM execution_lineage_records
-             WHERE execution_id = $1
-             LIMIT 1
-             """,
-             [execution_id]
-           ),
-         [row | _] <- result_rows(result) do
-      {:ok,
-       ExecutionLineage.new!(%{
-         trace_id: row.trace_id,
-         causation_id: row.causation_id,
-         installation_id: row.installation_id,
-         subject_id: row.subject_id,
-         execution_id: row.execution_id,
-         dispatch_outbox_entry_id: row.dispatch_outbox_entry_id,
-         citadel_request_id: row.citadel_request_id,
-         citadel_submission_id: row.citadel_submission_id,
-         ji_submission_key: row.ji_submission_key,
-         lower_run_id: row.lower_run_id,
-         lower_attempt_id: row.lower_attempt_id,
-         artifact_refs: row.artifact_refs || []
-       })}
+    with {:ok, lineage} <- ExecutionLineageStore.fetch(execution_id) do
+      {:ok, lineage}
     else
-      [] -> {:error, :unknown_execution_lineage}
+      {:error, %Ash.Error.Query.NotFound{}} -> {:error, :unknown_execution_lineage}
+      {:error, %Ash.Error.Invalid{}} -> {:error, :unknown_execution_lineage}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp trace_sources_empty?(sources) when is_map(sources) do
+    Enum.all?(Map.values(sources), &(is_list(&1) and &1 == []))
+  end
+
+  defp normalize_trace_sources(trace_sources) when is_map(trace_sources) do
+    Enum.reduce([:audit_facts, :executions, :decisions, :evidence], trace_sources, fn family,
+                                                                                      acc ->
+      Map.update(acc, family, [], fn rows -> Enum.map(rows, &normalize_trace_row/1) end)
+    end)
+  end
+
+  defp normalize_trace_row(row) when is_map(row) do
+    row = Map.new(row)
+
+    Map.put(
+      row,
+      :occurred_at,
+      trace_row_occurred_at(row)
+    )
+  end
+
+  defp trace_row_occurred_at(row) when is_map(row) do
+    [:occurred_at, :resolved_at, :verified_at, :collected_at, :updated_at, :inserted_at]
+    |> Enum.find_value(fn field ->
+      row
+      |> Map.get(field)
+      |> coerce_datetime()
+    end)
   end
 
   defp result_rows(%Postgrex.Result{columns: columns, rows: rows}) do
@@ -535,9 +650,9 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   defp maybe_add_alert(alerts, true, alert), do: [alert | alerts]
   defp maybe_add_alert(alerts, false, _alert), do: alerts
 
-  defp accumulate_lower_fact(operation, acc, attrs, opts, query, execution_id, now) do
+  defp accumulate_lower_fact(operation, acc, attrs, opts, query, execution_id, now, read_lease) do
     operation
-    |> dispatch_lower_fact(attrs, opts, query.installation_id, execution_id, now)
+    |> dispatch_lower_fact(attrs, opts, query.installation_id, execution_id, now, read_lease)
     |> merge_lower_fact_result(acc, query, execution_id, operation, now)
   end
 
@@ -590,14 +705,21 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
     |> Enum.map(&action_ref(&1, subject_ref))
   end
 
-  defp current_execution_ref(%{active_run_id: nil}, _subject_ref), do: nil
-
   defp current_execution_ref(detail, subject_ref) do
-    %{
-      id: detail.active_run_id,
-      subject_ref: subject_ref,
-      dispatch_state: normalize_state(detail.active_run_status)
-    }
+    execution_id = detail.active_execution_id || detail.latest_execution_id
+
+    if is_binary(execution_id) do
+      dispatch_state =
+        detail.active_execution_dispatch_state || detail.latest_execution_dispatch_state
+
+      %{
+        id: execution_id,
+        subject_ref: subject_ref,
+        dispatch_state: normalize_state(dispatch_state)
+      }
+    else
+      nil
+    end
   end
 
   defp timeline_entry(entry) do
@@ -680,6 +802,11 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
 
   defp fetch_string(attrs, opts, key), do: AdapterSupport.fetch_string(attrs, opts, key)
   defp normalize_state(value), do: AdapterSupport.normalize_state(value)
+  defp maybe_put_archived_manifest_ref(metadata, nil), do: metadata
+
+  defp maybe_put_archived_manifest_ref(metadata, manifest_ref) when is_binary(manifest_ref) do
+    Map.put(metadata, :archived_manifest_ref, manifest_ref)
+  end
 
   defp coerce_datetime(%DateTime{} = value), do: value
   defp coerce_datetime(%NaiveDateTime{} = value), do: DateTime.from_naive!(value, "Etc/UTC")

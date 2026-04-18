@@ -8,6 +8,7 @@ config :ash,
     Mezzanine.Audit,
     Mezzanine.Decisions,
     Mezzanine.EvidenceLedger,
+    Mezzanine.Archival,
     Mezzanine.Programs,
     Mezzanine.Work,
     Mezzanine.Runs,
@@ -24,6 +25,15 @@ config :mezzanine_execution_engine,
   ecto_repos: [Mezzanine.Execution.Repo],
   ash_domains: [Mezzanine.Execution]
 
+config :mezzanine_execution_engine, Oban,
+  name: Mezzanine.Execution.Oban,
+  repo: Mezzanine.Execution.Repo,
+  engine: Oban.Engines.Basic,
+  notifier: Oban.Notifiers.Postgres,
+  peer: false,
+  queues: [dispatch: 10],
+  plugins: []
+
 config :mezzanine_object_engine,
   ecto_repos: [Mezzanine.Objects.Repo],
   ash_domains: [Mezzanine.Objects]
@@ -39,6 +49,19 @@ config :mezzanine_decision_engine,
 config :mezzanine_evidence_engine,
   ecto_repos: [Mezzanine.EvidenceLedger.Repo],
   ash_domains: [Mezzanine.EvidenceLedger]
+
+config :mezzanine_archival_engine,
+  ecto_repos: [Mezzanine.Archival.Repo],
+  ash_domains: [Mezzanine.Archival],
+  start_runtime_children?: true,
+  cold_store: [
+    module: Mezzanine.Archival.FileSystemColdStore,
+    root: Path.expand("../tmp/archival_store", __DIR__)
+  ],
+  scheduler: [
+    enabled?: false,
+    interval_ms: :timer.minutes(5)
+  ]
 
 config :mezzanine_ops_domain,
   ecto_repos: [Mezzanine.OpsDomain.Repo],
@@ -59,6 +82,7 @@ config :app_kit_mezzanine_bridge,
     Mezzanine.Execution.Repo,
     Mezzanine.Decisions.Repo,
     Mezzanine.EvidenceLedger.Repo,
+    Mezzanine.Archival.Repo,
     Mezzanine.OpsDomain.Repo
   ]
 

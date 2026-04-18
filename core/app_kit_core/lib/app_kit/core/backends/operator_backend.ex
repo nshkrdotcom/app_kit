@@ -12,8 +12,10 @@ defmodule AppKit.Core.Backends.OperatorBackend do
     OperatorAction,
     OperatorActionRequest,
     OperatorProjection,
+    ReadLease,
     RequestContext,
     RunRef,
+    StreamAttachLease,
     SubjectRef,
     SurfaceError,
     TimelineEvent,
@@ -29,6 +31,12 @@ defmodule AppKit.Core.Backends.OperatorBackend do
   @callback get_unified_trace(RequestContext.t(), ExecutionRef.t(), keyword()) ::
               {:ok, UnifiedTrace.t()} | {:error, SurfaceError.t()}
 
+  @callback issue_read_lease(RequestContext.t(), ExecutionRef.t(), keyword()) ::
+              {:ok, ReadLease.t()} | {:error, SurfaceError.t()}
+
+  @callback issue_stream_attach_lease(RequestContext.t(), ExecutionRef.t(), keyword()) ::
+              {:ok, StreamAttachLease.t()} | {:error, SurfaceError.t()}
+
   @callback available_actions(RequestContext.t(), SubjectRef.t(), keyword()) ::
               {:ok, [OperatorAction.t()]} | {:error, SurfaceError.t()}
 
@@ -42,6 +50,8 @@ defmodule AppKit.Core.Backends.OperatorBackend do
     subject_status: 3,
     timeline: 3,
     get_unified_trace: 3,
+    issue_read_lease: 3,
+    issue_stream_attach_lease: 3,
     available_actions: 3,
     apply_action: 4,
     run_status: 3,

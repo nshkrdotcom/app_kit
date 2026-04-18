@@ -1,6 +1,14 @@
 defmodule AppKit.Bridges.MezzanineBridgeTest do
   use ExUnit.Case, async: true
 
+  alias AppKit.Core.{BindingDescriptor, Telemetry}
+
+  defmodule TelemetryForwarder do
+    def handle_event(event, measurements, metadata, test_pid) do
+      send(test_pid, {:telemetry, event, measurements, metadata})
+    end
+  end
+
   defmodule FakeWorkQueryService do
     def ingest_subject(attrs, _opts) do
       {:ok,
@@ -59,9 +67,36 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
          description: "detail",
          status: :planned,
          active_run_id: "run-1",
-         active_run_status: :accepted,
+         active_run_status: :running,
+         active_execution_id: "exec-1",
+         active_execution_dispatch_state: :awaiting_receipt,
+         active_execution_trace_id: "11111111111111111111111111111111",
          pending_review_ids: ["dec-1"],
          gate_status: %{status: :pending},
+         pending_obligations: [
+           %{
+             obligation_id: "ob-1",
+             obligation_kind: :review,
+             status: :pending,
+             summary: "Operator review required",
+             decision_ref_id: "dec-1",
+             blocking?: true
+           }
+         ],
+         blocking_conditions: [
+           %{
+             blocker_kind: :review_pending,
+             status: :blocked,
+             summary: "Waiting for operator review",
+             obligation_id: "ob-1",
+             decision_ref_id: "dec-1"
+           }
+         ],
+         next_step_preview: %{
+           step_kind: :record_review_decision,
+           status: :blocked,
+           summary: "Record operator review"
+         },
          timeline: [%{event: "planned"}],
          audit_events: [%{event_kind: :work_planned}],
          run_series_ids: ["series-1"],
@@ -80,6 +115,14 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     def queue_stats(_tenant_id, _program_id) do
       {:ok, %{active_count: 2, running_count: 1}}
     end
+  end
+
+  defmodule FakeArchivedWorkQueryService do
+    def ingest_subject(_attrs, _opts), do: {:error, :bridge_not_found}
+    def list_subjects(_tenant_id, _program_id, _filters), do: {:ok, []}
+    def get_subject_detail(_tenant_id, _subject_id), do: {:error, :archived, "manifest-1"}
+    def get_subject_projection(_tenant_id, _subject_id), do: {:error, :archived, "manifest-1"}
+    def queue_stats(_tenant_id, _program_id), do: {:ok, %{active_count: 0, running_count: 0}}
   end
 
   defmodule FakeReviewQueryService do
@@ -180,13 +223,13 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
        ]}
     end
 
-    def update_bindings("inst-1", _binding_config, _opts) do
+    def update_bindings("inst-1", binding_config, _opts) do
       {:ok,
        %{
          status: :completed,
          action_ref: %{id: "inst-1:update_bindings", action_kind: "update_bindings"},
          message: "Bindings updated",
-         metadata: %{backend: :fake}
+         metadata: %{backend: :fake, binding_config: binding_config}
        }}
     end
 
@@ -210,6 +253,46 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
          },
          message: "Installation reactivated",
          metadata: %{backend: :fake}
+       }}
+    end
+  end
+
+  defmodule FakeLeaseService do
+    def issue_read_lease(_attrs, _opts) do
+      {:ok,
+       %{
+         lease_ref: %{
+           id: "lease-read-1",
+           allowed_family: "unified_trace",
+           execution_ref: %{id: "run-1"}
+         },
+         trace_id: "33333333333333333333333333333333",
+         expires_at: ~U[2026-04-18 12:10:00Z],
+         lease_token: "read-token-1",
+         allowed_operations: ["fetch_run", "events"],
+         scope: %{"include_lower" => true},
+         lineage_anchor: %{"submission_ref" => "sub-1"},
+         invalidation_cursor: 7,
+         invalidation_channel: "read:unified_trace"
+       }}
+    end
+
+    def issue_stream_attach_lease(_attrs, _opts) do
+      {:ok,
+       %{
+         lease_ref: %{
+           id: "lease-stream-1",
+           allowed_family: "runtime_stream",
+           execution_ref: %{id: "run-1"}
+         },
+         trace_id: "33333333333333333333333333333333",
+         expires_at: ~U[2026-04-18 12:10:00Z],
+         attach_token: "stream-token-1",
+         scope: %{"transport" => "sse"},
+         lineage_anchor: %{"submission_ref" => "sub-1"},
+         reconnect_cursor: 7,
+         invalidation_channel: "stream:runtime_stream",
+         poll_interval_ms: 2_000
        }}
     end
   end
@@ -269,6 +352,32 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
          current_execution_ref: %{id: "exec-1", dispatch_state: "accepted"},
          pending_decision_refs: [],
          updated_at: "2026-04-18T13:10:00Z",
+         pending_obligations: [
+           %{
+             obligation_id: "ob-1",
+             obligation_kind: "review",
+             status: "pending",
+             summary: "Operator review required",
+             decision_ref_id: "dec-1",
+             blocking?: true
+           }
+         ],
+         blocking_conditions: [
+           %{
+             blocker_kind: "review_pending",
+             status: "blocked",
+             summary: "Waiting for operator review",
+             obligation_id: "ob-1",
+             decision_ref_id: "dec-1"
+           }
+         ],
+         next_step_preview: %{
+           step_kind: "record_review_decision",
+           status: "blocked",
+           summary: "Record operator review",
+           blocking_condition_kinds: ["review_pending"],
+           obligation_ids: ["ob-1"]
+         },
          available_actions: [
            %{
              id: "subj-1:pause",
@@ -318,10 +427,19 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
        ]}
     end
 
+    def execution_trace_lineage("exec-1") do
+      {:ok,
+       %{
+         execution_id: "exec-1",
+         installation_id: "inst-1",
+         trace_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       }}
+    end
+
     def get_unified_trace(_attrs, _opts) do
       {:ok,
        %{
-         trace_id: "trace-mezzanine-bridge",
+         trace_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
          installation_id: "inst-1",
          join_keys: %{"subject_id" => "subj-1"},
          steps: [
@@ -329,7 +447,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
              ref: "step-1",
              source: :execution_record,
              occurred_at: ~U[2026-04-18 13:05:00Z],
-             trace_id: "trace-mezzanine-bridge",
+             trace_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
              freshness: :lower_authoritative_unreconciled,
              operator_actionable?: false,
              diagnostic?: false,
@@ -341,6 +459,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
   end
 
   defmodule FakeDeniedOperatorQueryService do
+    def execution_trace_lineage(_execution_id), do: {:error, :unauthorized_lower_read}
     def get_unified_trace(_attrs, _opts), do: {:error, :unauthorized_lower_read}
   end
 
@@ -423,8 +542,11 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
                work_query_service: FakeWorkQueryService
              )
 
-    assert detail.current_execution_ref.id == "run-1"
+    assert detail.current_execution_ref.id == "exec-1"
     assert length(detail.pending_decision_refs) == 1
+    assert hd(detail.pending_obligations).obligation_id == "ob-1"
+    assert hd(detail.blocking_conditions).blocker_kind == "review_pending"
+    assert detail.next_step_preview.step_kind == "record_review_decision"
 
     assert {:ok, projection_ref} =
              ProjectionRef.new(%{name: "review_queue", subject_ref: subject_ref})
@@ -446,6 +568,23 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
              )
 
     assert queue_stats.active_count == 2
+  end
+
+  test "maps archived hot-subject reads into a terminal surface error carrying manifest_ref" do
+    context = request_context()
+    assert {:ok, subject_ref} = SubjectRef.new(%{id: "subj-1", subject_kind: "work_object"})
+
+    assert {:error, error} =
+             MezzanineBridge.get_subject(
+               context,
+               subject_ref,
+               work_query_service: FakeArchivedWorkQueryService
+             )
+
+    assert error.kind == :terminal
+    assert error.code == "archived"
+    assert error.details.manifest_ref == "manifest-1"
+    refute error.retryable
   end
 
   test "resolves program context from product metadata when raw lower ids are absent" do
@@ -549,22 +688,74 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     assert fetched_ref.id == "inst-1"
 
-    assert {:ok, binding} =
+    assert {:ok, execution_binding} =
              InstallationBinding.new(%{
                binding_key: "expense_capture",
                binding_kind: :execution,
                config: %{"placement_ref" => "local_runner"}
              })
 
+    assert {:ok, descriptor} =
+             BindingDescriptor.new(%{
+               attachment: "outer_brain.context_adapter",
+               contract: :contributing,
+               envelope: %{
+                 staleness_class: :diagnostic_only,
+                 trace_propagation: :required,
+                 tenant_scope: :installation_scoped,
+                 blast_radius: :installation,
+                 timeout_ms: 600,
+                 runbook_ref: "runbooks/context_adapter"
+               },
+               failure: %{
+                 on_unavailable: :proceed_without,
+                 on_timeout: :proceed_without
+               },
+               ownership: %{
+                 external_system: "Mem0",
+                 external_system_ref: "mem0.primary",
+                 operator_owner: "memory-ops"
+               }
+             })
+
+    assert {:ok, context_binding} =
+             InstallationBinding.new(%{
+               binding_key: "workspace_memory",
+               binding_kind: :context,
+               descriptor: descriptor,
+               config: %{
+                 "adapter_key" => "mem0_context",
+                 "config" => %{"workspace" => "default"},
+                 "timeout_ms" => 500
+               },
+               credential_ref: "cred-memory-1"
+             })
+
     assert {:ok, update_result} =
              MezzanineBridge.update_bindings(
                context,
                installation_ref,
-               [binding],
+               [execution_binding, context_binding],
                installation_service: FakeInstallationService
              )
 
     assert update_result.metadata.backend == :fake
+
+    assert update_result.metadata.binding_config["execution_bindings"]["expense_capture"][
+             "placement_ref"
+           ] == "local_runner"
+
+    assert update_result.metadata.binding_config["context_bindings"]["workspace_memory"][
+             "adapter_key"
+           ] == "mem0_context"
+
+    assert get_in(update_result.metadata.binding_config, [
+             "context_bindings",
+             "workspace_memory",
+             "descriptor",
+             "ownership",
+             "external_system_ref"
+           ]) == "mem0.primary"
 
     assert {:ok, list_result} =
              MezzanineBridge.list_installations(
@@ -593,7 +784,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     assert reactivate_result.metadata.backend == :fake
   end
 
-  test "keeps legacy work-control and operator-backend compatibility" do
+  test "routes work control and operator actions through the current backend split" do
     assert {:ok, result} =
              MezzanineBridge.start_run(
                %{route_name: "compile.workspace"},
@@ -623,6 +814,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
   end
 
   test "maps widened work-control and operator surface contracts into app-kit DTOs" do
+    attach_telemetry(self(), [:unified_trace_assembled])
     context = request_context()
 
     assert {:ok, run_request} =
@@ -706,22 +898,56 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
                operator_query_service: FakeOperatorQueryService
              )
 
+    assert {:ok, read_lease} =
+             MezzanineBridge.issue_read_lease(
+               context,
+               projection.current_execution_ref,
+               lease_service: FakeLeaseService,
+               operator_query_service: FakeOperatorQueryService
+             )
+
+    assert {:ok, stream_attach_lease} =
+             MezzanineBridge.issue_stream_attach_lease(
+               context,
+               projection.current_execution_ref,
+               lease_service: FakeLeaseService,
+               operator_query_service: FakeOperatorQueryService
+             )
+
     assert retry_result.action_ref.action_kind == "retry"
     assert cancel_result.action_ref.action_kind == "cancel"
     assert projection.updated_at == ~U[2026-04-18 13:10:00Z]
     assert hd(projection.available_actions).action_ref.action_kind == "pause"
+    assert hd(projection.pending_obligations).obligation_id == "ob-1"
+    assert hd(projection.blocking_conditions).blocker_kind == "review_pending"
+    assert projection.next_step_preview.step_kind == "record_review_decision"
     assert hd(timeline).event_kind == "run_scheduled"
     assert hd(timeline).actor_ref.id == "app_kit_bridge"
     assert hd(projection.timeline).actor_ref.kind == :system
     assert hd(actions).action_ref.action_kind == "cancel"
     assert action_result.metadata.params["reason"] == "duplicate"
     assert hd(trace.steps).source == "execution_record"
+    assert read_lease.lease_ref.allowed_family == "unified_trace"
+    assert stream_attach_lease.lease_ref.allowed_family == "runtime_stream"
+
+    assert_event(
+      :unified_trace_assembled,
+      %{count: 1, step_count: 1, join_key_count: 1},
+      %{
+        trace_id: trace.trace_id,
+        tenant_id: "tenant-1",
+        installation_id: "inst-1",
+        execution_id: projection.current_execution_ref.id,
+        source: :northbound_surface,
+        surface: :mezzanine_bridge
+      }
+    )
   end
 
   test "normalizes missing program context into a surface error" do
     {:ok, context} =
       RequestContext.new(%{
-        trace_id: "trace-missing-program",
+        trace_id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         actor_ref: %{id: "user-1", kind: :human},
         tenant_ref: %{id: "tenant-1"}
       })
@@ -884,7 +1110,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
   defp request_context(metadata \\ %{program_id: "program-1", work_class_id: "work-class-1"}) do
     {:ok, context} =
       RequestContext.new(%{
-        trace_id: "trace-mezzanine-bridge",
+        trace_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         actor_ref: %{id: "user-1", kind: :human},
         tenant_ref: %{id: "tenant-1"},
         installation_ref: %{id: "inst-1", pack_slug: "expense_approval", status: :active},
@@ -892,5 +1118,32 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
       })
 
     context
+  end
+
+  defp attach_telemetry(test_pid, event_keys) do
+    handler_id = "mezzanine-bridge-test-#{System.unique_integer([:positive])}"
+
+    :telemetry.attach_many(
+      handler_id,
+      Enum.map(event_keys, &Telemetry.event_name/1),
+      &TelemetryForwarder.handle_event/4,
+      test_pid
+    )
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+  end
+
+  defp assert_event(event_key, measurements, metadata) do
+    event_name = Telemetry.event_name(event_key)
+    assert_receive {:telemetry, ^event_name, ^measurements, ^metadata}
+    assert_contract_shape(event_key, measurements, metadata)
+  end
+
+  defp assert_contract_shape(event_key, measurements, metadata) do
+    assert Enum.sort(Map.keys(measurements)) ==
+             event_key |> Telemetry.measurement_keys() |> Enum.sort()
+
+    assert Enum.sort(Map.keys(metadata)) ==
+             event_key |> Telemetry.metadata_keys() |> Enum.sort()
   end
 end

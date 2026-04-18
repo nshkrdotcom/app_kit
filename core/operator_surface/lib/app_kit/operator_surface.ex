@@ -11,8 +11,10 @@ defmodule AppKit.OperatorSurface do
     OperatorAction,
     OperatorActionRequest,
     OperatorProjection,
+    ReadLease,
     RequestContext,
     RunRef,
+    StreamAttachLease,
     SubjectRef,
     SurfaceError,
     TimelineEvent,
@@ -61,6 +63,40 @@ defmodule AppKit.OperatorSurface do
       when is_list(opts) do
     with_operator_surface(opts, fn backend ->
       backend.get_unified_trace(context, execution_ref, opts)
+    end)
+  end
+
+  @spec issue_read_lease(RequestContext.t(), ExecutionRef.t()) ::
+          {:ok, ReadLease.t()} | {:error, SurfaceError.t()}
+  def issue_read_lease(%RequestContext{} = context, %ExecutionRef{} = execution_ref) do
+    issue_read_lease(context, execution_ref, [])
+  end
+
+  @spec issue_read_lease(RequestContext.t(), ExecutionRef.t(), keyword()) ::
+          {:ok, ReadLease.t()} | {:error, SurfaceError.t()}
+  def issue_read_lease(%RequestContext{} = context, %ExecutionRef{} = execution_ref, opts)
+      when is_list(opts) do
+    with_operator_surface(opts, fn backend ->
+      backend.issue_read_lease(context, execution_ref, opts)
+    end)
+  end
+
+  @spec issue_stream_attach_lease(RequestContext.t(), ExecutionRef.t()) ::
+          {:ok, StreamAttachLease.t()} | {:error, SurfaceError.t()}
+  def issue_stream_attach_lease(%RequestContext{} = context, %ExecutionRef{} = execution_ref) do
+    issue_stream_attach_lease(context, execution_ref, [])
+  end
+
+  @spec issue_stream_attach_lease(RequestContext.t(), ExecutionRef.t(), keyword()) ::
+          {:ok, StreamAttachLease.t()} | {:error, SurfaceError.t()}
+  def issue_stream_attach_lease(
+        %RequestContext{} = context,
+        %ExecutionRef{} = execution_ref,
+        opts
+      )
+      when is_list(opts) do
+    with_operator_surface(opts, fn backend ->
+      backend.issue_stream_attach_lease(context, execution_ref, opts)
     end)
   end
 

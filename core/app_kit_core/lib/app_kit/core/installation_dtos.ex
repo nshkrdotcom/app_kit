@@ -48,18 +48,30 @@ defmodule AppKit.Core.InstallationBinding do
   Stable northbound installation binding envelope.
   """
 
-  alias AppKit.Core.Support
+  alias AppKit.Core.{BindingDescriptor, Support}
 
-  @binding_kinds [:execution, :connector, :evidence, :actor]
+  @binding_kinds [:execution, :connector, :evidence, :actor, :context]
+  @attachment_by_binding_kind %{
+    execution: "mezzanine.execution_recipe",
+    context: "outer_brain.context_adapter"
+  }
 
   @enforce_keys [:binding_key, :binding_kind]
-  defstruct [:binding_key, :binding_kind, config: %{}, credential_ref: nil, metadata: %{}]
+  defstruct [
+    :binding_key,
+    :binding_kind,
+    :descriptor,
+    config: %{},
+    credential_ref: nil,
+    metadata: %{}
+  ]
 
-  @type binding_kind :: :execution | :connector | :evidence | :actor
+  @type binding_kind :: :execution | :connector | :evidence | :actor | :context
 
   @type t :: %__MODULE__{
           binding_key: String.t(),
           binding_kind: binding_kind(),
+          descriptor: BindingDescriptor.t() | nil,
           config: map(),
           credential_ref: String.t() | nil,
           metadata: map()
@@ -72,8 +84,12 @@ defmodule AppKit.Core.InstallationBinding do
          true <- Support.present_binary?(binding_key),
          binding_kind <- Map.get(attrs, :binding_kind),
          true <- Support.enum?(binding_kind, @binding_kinds),
+         {:ok, descriptor} <-
+           Support.nested_struct(Map.get(attrs, :descriptor), BindingDescriptor),
+         :ok <- descriptor_requirement(binding_kind, descriptor),
          config <- Map.get(attrs, :config, %{}),
          true <- is_map(config),
+         :ok <- binding_config_requirement(binding_kind, config),
          credential_ref <- Map.get(attrs, :credential_ref),
          true <- Support.optional_binary?(credential_ref),
          metadata <- Map.get(attrs, :metadata, %{}),
@@ -82,6 +98,7 @@ defmodule AppKit.Core.InstallationBinding do
        %__MODULE__{
          binding_key: binding_key,
          binding_kind: binding_kind,
+         descriptor: descriptor,
          config: config,
          credential_ref: credential_ref,
          metadata: metadata
@@ -90,6 +107,45 @@ defmodule AppKit.Core.InstallationBinding do
       _ -> {:error, :invalid_installation_binding}
     end
   end
+
+  defp descriptor_requirement(:context, nil), do: {:error, :missing_descriptor}
+
+  defp descriptor_requirement(binding_kind, %BindingDescriptor{} = descriptor) do
+    case Map.get(@attachment_by_binding_kind, binding_kind) do
+      nil ->
+        :ok
+
+      attachment when descriptor.attachment == attachment ->
+        :ok
+
+      _attachment ->
+        {:error, :binding_descriptor_attachment_mismatch}
+    end
+  end
+
+  defp descriptor_requirement(_binding_kind, _descriptor), do: :ok
+
+  defp binding_config_requirement(:context, config) do
+    adapter_key = Map.get(config, :adapter_key) || Map.get(config, "adapter_key")
+    timeout_ms = Map.get(config, :timeout_ms) || Map.get(config, "timeout_ms")
+    adapter_config = Map.get(config, :config, %{}) || Map.get(config, "config", %{})
+
+    cond do
+      not Support.present_binary?(adapter_key) ->
+        {:error, :invalid_context_binding_config}
+
+      not is_map(adapter_config) ->
+        {:error, :invalid_context_binding_config}
+
+      not is_nil(timeout_ms) and not Support.positive_integer?(timeout_ms) ->
+        {:error, :invalid_context_binding_config}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp binding_config_requirement(_binding_kind, _config), do: :ok
 end
 
 defmodule AppKit.Core.InstallResult do

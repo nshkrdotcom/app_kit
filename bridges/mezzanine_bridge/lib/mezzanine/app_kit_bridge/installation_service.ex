@@ -267,6 +267,7 @@ defmodule Mezzanine.AppKitBridge.InstallationService do
       tenant_id: installation.tenant_id,
       environment: installation.environment,
       bindings: installation.binding_config,
+      external_systems: external_system_groups(installation.binding_config),
       metadata: installation.metadata,
       pack_registration_id: installation.pack_registration_id
     }
@@ -323,6 +324,84 @@ defmodule Mezzanine.AppKitBridge.InstallationService do
 
   defp binding_config(attrs),
     do: map_value(attrs, :default_bindings) || map_value(attrs, :bindings) || %{}
+
+  defp external_system_groups(binding_config) when is_map(binding_config) do
+    binding_config
+    |> Enum.flat_map(&binding_entries/1)
+    |> Enum.group_by(& &1.external_system_ref)
+    |> Enum.map(fn {external_system_ref, entries} ->
+      first = hd(entries)
+
+      %{
+        external_system_ref: external_system_ref,
+        external_system: first.external_system,
+        operator_owner: first.operator_owner,
+        binding_count: length(entries),
+        credential_refs:
+          entries
+          |> Enum.map(& &1.credential_ref)
+          |> Enum.reject(&is_nil/1)
+          |> Enum.uniq()
+          |> Enum.sort(),
+        bindings:
+          entries
+          |> Enum.map(fn entry ->
+            %{
+              binding_key: entry.binding_key,
+              attachment: entry.attachment,
+              contract: entry.contract,
+              runbook_ref: entry.runbook_ref,
+              staleness_class: entry.staleness_class,
+              on_unavailable: entry.on_unavailable,
+              on_timeout: entry.on_timeout,
+              credential_ref: entry.credential_ref
+            }
+          end)
+          |> Enum.sort_by(& &1.binding_key)
+      }
+    end)
+    |> Enum.sort_by(& &1.external_system_ref)
+  end
+
+  defp external_system_groups(_binding_config), do: []
+
+  defp binding_entries({group_key, bindings}) when is_map(bindings) do
+    if String.ends_with?(to_string(group_key), "_bindings") do
+      bindings
+      |> Enum.map(fn {binding_key, binding} ->
+        descriptor = descriptor_map(binding)
+
+        ownership = map_value(descriptor, :ownership) || %{}
+        envelope = map_value(descriptor, :envelope) || %{}
+        failure = map_value(descriptor, :failure) || %{}
+
+        if is_binary(map_value(ownership, :external_system_ref)) do
+          %{
+            binding_key: to_string(binding_key),
+            external_system: map_value(ownership, :external_system),
+            external_system_ref: map_value(ownership, :external_system_ref),
+            operator_owner: map_value(ownership, :operator_owner),
+            attachment: map_value(descriptor, :attachment),
+            contract: map_value(descriptor, :contract),
+            runbook_ref: map_value(envelope, :runbook_ref),
+            staleness_class: map_value(envelope, :staleness_class),
+            on_unavailable: map_value(failure, :on_unavailable),
+            on_timeout: map_value(failure, :on_timeout),
+            credential_ref: map_value(binding, :credential_ref)
+          }
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+    else
+      []
+    end
+  end
+
+  defp binding_entries(_entry), do: []
+
+  defp descriptor_map(binding) do
+    map_value(binding, :descriptor) || %{}
+  end
 
   defp installation_metadata(attrs) do
     metadata = map_value(attrs, :metadata) || %{}

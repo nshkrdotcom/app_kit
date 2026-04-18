@@ -3,6 +3,7 @@ defmodule AppKit.Bridges.DomainBridge do
   App-facing bridge for typed `citadel_domain_surface` calls.
   """
 
+  alias AppKit.Core.{Telemetry, TraceIdentity}
   alias AppKit.ScopeObjects.HostScope
   alias Citadel.DomainSurface.{Command, Error, Query}
 
@@ -67,28 +68,131 @@ defmodule AppKit.Bridges.DomainBridge do
       |> Map.new()
       |> Map.merge(scope_context_overrides(scope, opts))
 
-    {:ok,
-     [
-       context: context,
-       metadata: Keyword.get(opts, :metadata, scope.metadata)
-     ] ++ extra_opts}
+    metadata =
+      opts
+      |> Keyword.get(:metadata, scope.metadata)
+      |> normalize_optional_map()
+      |> sanitize_control_metadata()
+
+    with {:ok, resolution} <- resolve_trace(scope, opts, context) do
+      emit_trace_resolution(scope.tenant_id, :domain_bridge, resolution)
+
+      {:ok,
+       [
+         context: put_trace_id(context, resolution.trace_id),
+         metadata: maybe_put_client_trace_id(metadata, resolution.client_trace_id),
+         trace_id: resolution.trace_id
+       ] ++ extra_opts}
+    else
+      {:error, :invalid_trace_id} = error ->
+        Telemetry.trace_rejected(%{
+          reason: :invalid_format,
+          tenant_id: scope.tenant_id,
+          source: :request_edge,
+          surface: :domain_bridge
+        })
+
+        error
+    end
   end
 
   defp scope_context_overrides(%HostScope{metadata: metadata}, opts) do
     scope_context =
-      case Map.get(metadata, :context, Map.get(metadata, "context")) do
-        %{} = value -> value
-        _other -> %{}
-      end
+      metadata
+      |> Map.get(:context, Map.get(metadata, "context"))
+      |> normalize_optional_map()
 
     opts_context =
-      case Keyword.get(opts, :context, %{}) do
-        %{} = value -> value
-        _other -> %{}
-      end
+      opts
+      |> Keyword.get(:context, %{})
+      |> normalize_optional_map()
 
     Map.merge(scope_context, opts_context)
+    |> drop_trace_controls()
   end
+
+  defp resolve_trace(%HostScope{} = scope, opts, context) do
+    TraceIdentity.resolve_edge_trace(
+      edge_trace_candidate(opts, context),
+      trust: trace_trust(scope, opts, context)
+    )
+  end
+
+  defp edge_trace_candidate(opts, context) do
+    Keyword.get(opts, :trace_id) ||
+      Map.get(context, :trace_id) ||
+      Map.get(context, "trace_id")
+  end
+
+  defp trace_trust(%HostScope{metadata: metadata}, opts, context) do
+    [
+      Keyword.get(opts, :trace_trust),
+      Map.get(context, :trace_trust),
+      Map.get(context, "trace_trust"),
+      Map.get(metadata, :trace_trust),
+      Map.get(metadata, "trace_trust"),
+      Keyword.get(opts, :trusted_trace_id?),
+      Map.get(context, :trusted_trace_id?),
+      Map.get(context, "trusted_trace_id?"),
+      Map.get(metadata, :trusted_trace_id?),
+      Map.get(metadata, "trusted_trace_id?")
+    ]
+    |> Enum.find(fn value -> not is_nil(value) end)
+  end
+
+  defp drop_trace_controls(context) do
+    context
+    |> Map.delete(:trace_trust)
+    |> Map.delete("trace_trust")
+    |> Map.delete(:trusted_trace_id?)
+    |> Map.delete("trusted_trace_id?")
+  end
+
+  defp sanitize_control_metadata(metadata) when is_map(metadata) do
+    metadata
+    |> Map.delete(:context)
+    |> Map.delete("context")
+    |> Map.delete(:trace_trust)
+    |> Map.delete("trace_trust")
+    |> Map.delete(:trusted_trace_id?)
+    |> Map.delete("trusted_trace_id?")
+  end
+
+  defp normalize_optional_map(value) when is_map(value), do: value
+  defp normalize_optional_map(value) when is_list(value), do: Map.new(value)
+  defp normalize_optional_map(_value), do: %{}
+
+  defp put_trace_id(context, trace_id) do
+    context
+    |> Map.put(:trace_id, trace_id)
+    |> Map.delete("trace_id")
+  end
+
+  defp maybe_put_client_trace_id(metadata, nil), do: metadata
+
+  defp maybe_put_client_trace_id(metadata, trace_id),
+    do: Map.put(metadata, :client_trace_id, trace_id)
+
+  defp emit_trace_resolution(tenant_id, surface, %{disposition: :minted, trace_id: trace_id}) do
+    Telemetry.trace_minted(%{
+      trace_id: trace_id,
+      tenant_id: tenant_id,
+      source: :request_edge,
+      surface: surface
+    })
+  end
+
+  defp emit_trace_resolution(tenant_id, surface, %{disposition: :replaced, trace_id: trace_id}) do
+    Telemetry.trace_replaced(%{
+      trace_id: trace_id,
+      tenant_id: tenant_id,
+      reason: :untrusted_caller,
+      source: :request_edge,
+      surface: surface
+    })
+  end
+
+  defp emit_trace_resolution(_tenant_id, _surface, _resolution), do: :ok
 
   defp apply_domain_route(domain_module, route_name, params, request_opts) do
     if Code.ensure_loaded?(domain_module) and function_exported?(domain_module, route_name, 2) do

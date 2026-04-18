@@ -1,9 +1,16 @@
 defmodule AppKit.Bridges.OuterBrainBridgeTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias AppKit.Bridges.OuterBrainBridge
+  alias AppKit.Core.{Telemetry, TraceIdentity}
   alias AppKit.ScopeObjects
   alias Citadel.DomainSurface.Adapters.CitadelAdapter.Accepted
+
+  defmodule TelemetryForwarder do
+    def handle_event(event, measurements, metadata, test_pid) do
+      send(test_pid, {:telemetry, event, measurements, metadata})
+    end
+  end
 
   defmodule FakeKernelRuntime do
     @moduledoc false
@@ -22,6 +29,8 @@ defmodule AppKit.Bridges.OuterBrainBridgeTest do
   end
 
   test "submits a semantic turn through the outer_brain seam" do
+    attach_telemetry(self(), [:trace_minted])
+
     assert {:ok, scope} =
              ScopeObjects.host_scope(%{
                scope_id: "workspace/main",
@@ -46,5 +55,44 @@ defmodule AppKit.Bridges.OuterBrainBridgeTest do
 
     assert turn.action_request.route == "compile_workspace"
     assert turn.dispatch_result.request_id == "turn-outer-brain-1"
+    assert TraceIdentity.valid?(turn.dispatch_result.trace_id)
+
+    assert_event(
+      :trace_minted,
+      %{count: 1},
+      %{
+        trace_id: turn.dispatch_result.trace_id,
+        tenant_id: "tenant-1",
+        source: :request_edge,
+        surface: :outer_brain_bridge
+      }
+    )
+  end
+
+  defp attach_telemetry(test_pid, event_keys) do
+    handler_id = "outer-brain-bridge-test-#{System.unique_integer([:positive])}"
+
+    :telemetry.attach_many(
+      handler_id,
+      Enum.map(event_keys, &Telemetry.event_name/1),
+      &TelemetryForwarder.handle_event/4,
+      test_pid
+    )
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+  end
+
+  defp assert_event(event_key, measurements, metadata) do
+    event_name = Telemetry.event_name(event_key)
+    assert_receive {:telemetry, ^event_name, ^measurements, ^metadata}
+    assert_contract_shape(event_key, measurements, metadata)
+  end
+
+  defp assert_contract_shape(event_key, measurements, metadata) do
+    assert Enum.sort(Map.keys(measurements)) ==
+             event_key |> Telemetry.measurement_keys() |> Enum.sort()
+
+    assert Enum.sort(Map.keys(metadata)) ==
+             event_key |> Telemetry.metadata_keys() |> Enum.sort()
   end
 end

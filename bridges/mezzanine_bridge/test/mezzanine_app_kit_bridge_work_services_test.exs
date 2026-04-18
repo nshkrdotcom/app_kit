@@ -1,8 +1,11 @@
 defmodule Mezzanine.AppKitBridge.WorkServicesTest do
   use ExUnit.Case, async: false
 
-  alias AppKit.Core.{RequestContext, RunRef, RunRequest}
+  alias AppKit.Core.{RequestContext, RunRef, RunRequest, TraceIdentity}
   alias Ecto.Adapters.SQL.Sandbox
+
+  alias Mezzanine.Archival.ArchivalManifest
+  alias Mezzanine.Archival.Repo, as: ArchivalRepo
 
   alias Mezzanine.AppKitBridge.{
     ProgramContextService,
@@ -11,13 +14,19 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     WorkQueryService
   }
 
-  alias Mezzanine.OpsDomain.Repo
+  alias Mezzanine.OpsDomain.Repo, as: OpsRepo
   alias Mezzanine.Programs.{PolicyBundle, Program}
   alias Mezzanine.Work.{WorkClass, WorkObject}
 
   setup do
-    pid = Sandbox.start_owner!(Repo, shared: false)
-    on_exit(fn -> Sandbox.stop_owner(pid) end)
+    ops_owner = Sandbox.start_owner!(OpsRepo, shared: false)
+    archival_owner = Sandbox.start_owner!(ArchivalRepo, shared: false)
+
+    on_exit(fn ->
+      Sandbox.stop_owner(archival_owner)
+      Sandbox.stop_owner(ops_owner)
+    end)
+
     :ok
   end
 
@@ -64,16 +73,50 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert is_map(detail.gate_status)
     assert is_list(detail.pending_review_ids)
 
+    assert [%{obligation_id: obligation_id, obligation_kind: "review", status: "pending"}] =
+             detail.pending_obligations
+
+    assert String.starts_with?(obligation_id, "obligation:review:")
+    assert detail.blocking_conditions == []
+    assert detail.next_step_preview.step_kind == "start_run"
+    assert detail.next_step_preview.status == "ready"
+
     assert {:ok, projection} =
              WorkQueryService.get_subject_projection(tenant_id, second_subject.subject_id)
 
     assert projection.subject_id == second_subject.subject_id
     assert projection.subject_kind == :work_object
     assert projection.work_status == :planned
+    assert projection.next_step_preview.step_kind == "start_run"
+    assert projection.blocking_conditions == []
 
     assert {:ok, stats} = WorkQueryService.queue_stats(tenant_id, program.id)
     assert stats.program_id == program.id
     assert stats.active_count >= 1
+  end
+
+  test "work query service returns explicit archived errors once a subject manifest is archived" do
+    %{tenant_id: tenant_id, program: program, work_class: work_class} =
+      fixture_stack("tenant-bridge-archived-work")
+
+    assert {:ok, subject} =
+             WorkQueryService.ingest_subject(%{
+               tenant_id: tenant_id,
+               program_id: program.id,
+               work_class_id: work_class.id,
+               external_ref: "linear:ENG-701",
+               title: "Archived work item",
+               payload: %{"issue_id" => "ENG-701"},
+               source_kind: "linear"
+             })
+
+    manifest_ref = archive_subject_manifest!(tenant_id, subject.subject_id)
+
+    assert {:error, :archived, ^manifest_ref} =
+             WorkQueryService.get_subject_detail(tenant_id, subject.subject_id)
+
+    assert {:error, :archived, ^manifest_ref} =
+             WorkQueryService.get_subject_projection(tenant_id, subject.subject_id)
   end
 
   test "work control service returns the same app-kit compatible run result through the extracted service layer" do
@@ -140,6 +183,10 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert detail.active_run_id == result.payload.run_ref.run_id
     assert detail.active_run_status == :scheduled
     assert result.payload.review_unit_id in detail.pending_review_ids
+    assert hd(detail.pending_obligations).decision_ref_id == result.payload.review_unit_id
+    assert hd(detail.blocking_conditions).blocker_kind == "review_pending"
+    assert detail.next_step_preview.step_kind == "record_review_decision"
+    assert detail.next_step_preview.status == "blocked"
 
     assert {:ok, pending_reviews} = ReviewQueryService.list_pending_reviews(tenant_id, program.id)
     assert Enum.any?(pending_reviews, &(&1.decision_ref.id == result.payload.review_unit_id))
@@ -234,7 +281,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
   defp request_context(tenant_id, program_id, work_class_id) do
     {:ok, context} =
       RequestContext.new(%{
-        trace_id: "trace-work-control-typed-#{System.unique_integer([:positive])}",
+        trace_id: TraceIdentity.mint(),
         actor_ref: %{id: "ops_lead", kind: :human},
         tenant_ref: %{id: tenant_id},
         metadata: %{program_id: program_id, work_class_id: work_class_id}
@@ -287,5 +334,35 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     ---
     # Operator Prompt
     """
+  end
+
+  defp archive_subject_manifest!(installation_id, subject_id) do
+    terminal_at = ~U[2026-04-16 12:00:00Z]
+
+    manifest_ref =
+      "archive/#{installation_id}/#{subject_id}/#{System.unique_integer([:positive])}"
+
+    {:ok, manifest} =
+      ArchivalManifest.stage(%{
+        manifest_ref: manifest_ref,
+        installation_id: installation_id,
+        subject_id: subject_id,
+        subject_state: "completed",
+        execution_states: [],
+        trace_ids: [],
+        execution_ids: [],
+        decision_ids: [],
+        evidence_ids: [],
+        audit_fact_ids: [],
+        projection_names: [],
+        terminal_at: terminal_at,
+        due_at: terminal_at,
+        retention_seconds: 0,
+        storage_kind: "filesystem",
+        metadata: %{"source" => "work_services_test"}
+      })
+
+    {:ok, _archived} = ArchivalManifest.mark_archived(manifest, %{archived_at: terminal_at})
+    manifest_ref
   end
 end

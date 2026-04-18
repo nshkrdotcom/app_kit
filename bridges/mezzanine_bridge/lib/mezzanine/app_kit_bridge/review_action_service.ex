@@ -8,7 +8,7 @@ defmodule Mezzanine.AppKitBridge.ReviewActionService do
 
   alias AppKit.Core.RunRef
   alias AppKit.RunGovernance
-  alias Mezzanine.AppKitBridge.AdapterSupport
+  alias Mezzanine.AppKitBridge.{AdapterSupport, ReviewDecisionLedger}
   alias Mezzanine.Reviews
 
   @supported_decisions [:accept, :reject, :waive, :escalate]
@@ -23,13 +23,25 @@ defmodule Mezzanine.AppKitBridge.ReviewActionService do
     with {:ok, program_id} <- fetch_string(attrs, opts, :program_id),
          {:ok, decision} <- normalize_decision(map_value(attrs, :decision)),
          {:ok, bridge_result} <-
-           dispatch_decision(tenant_id, review_unit_id, decision, attrs, opts, program_id) do
+           dispatch_decision(tenant_id, review_unit_id, decision, attrs, opts, program_id),
+         {:ok, decision_record} <-
+           ReviewDecisionLedger.resolve_review_decision(
+             decision,
+             bridge_result,
+             reason: map_value(attrs, :reason),
+             actor_ref: actor_ref(attrs, opts)
+           ) do
+      metadata =
+        bridge_result
+        |> Map.put(:decision_record, decision_record)
+        |> normalize_value()
+
       {:ok,
        %{
          status: :completed,
          action_ref: action_ref(review_unit_id, decision, bridge_result),
          message: action_message(decision),
-         metadata: normalize_value(bridge_result)
+         metadata: metadata
        }}
     else
       {:error, reason} -> {:error, normalize_error(reason)}

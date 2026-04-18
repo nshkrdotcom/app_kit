@@ -1,7 +1,10 @@
 defmodule Mezzanine.AppKitBridge.SemanticFailureRecoveryServiceTest do
   use ExUnit.Case, async: false
 
+  alias AppKit.Core.TraceIdentity
   alias Ecto.Adapters.SQL.Sandbox
+
+  alias Mezzanine.Archival.Repo, as: ArchivalRepo
 
   alias Mezzanine.AppKitBridge.{
     OperatorQueryService,
@@ -11,7 +14,8 @@ defmodule Mezzanine.AppKitBridge.SemanticFailureRecoveryServiceTest do
   }
 
   alias Mezzanine.Control.ControlSession
-  alias Mezzanine.Execution.{Dispatcher, ExecutionRecord}
+  alias Mezzanine.Decisions.Repo, as: DecisionsRepo
+  alias Mezzanine.Execution.ExecutionRecord
   alias Mezzanine.Execution.Repo, as: ExecutionRepo
   alias Mezzanine.OpsDomain.Repo, as: OpsDomainRepo
   alias Mezzanine.Programs.{PolicyBundle, Program}
@@ -21,8 +25,12 @@ defmodule Mezzanine.AppKitBridge.SemanticFailureRecoveryServiceTest do
   setup do
     ops_domain_owner = Sandbox.start_owner!(OpsDomainRepo, shared: false)
     execution_owner = Sandbox.start_owner!(ExecutionRepo, shared: false)
+    decision_owner = Sandbox.start_owner!(DecisionsRepo, shared: false)
+    archival_owner = Sandbox.start_owner!(ArchivalRepo, shared: false)
 
     on_exit(fn ->
+      Sandbox.stop_owner(archival_owner)
+      Sandbox.stop_owner(decision_owner)
       Sandbox.stop_owner(execution_owner)
       Sandbox.stop_owner(ops_domain_owner)
     end)
@@ -39,19 +47,19 @@ defmodule Mezzanine.AppKitBridge.SemanticFailureRecoveryServiceTest do
       execution: execution
     } = fixture_stack("tenant-semantic-failure-recovery")
 
-    assert {:ok, %{classification: :semantic_failure, execution: failed_execution}} =
-             Dispatcher.reconcile_result(
-               execution.id,
-               {:semantic_failure,
-                %{
-                  "lower_receipt" => %{"run_id" => "lower-run-semantic"},
-                  "error" => %{
-                    "kind" => "semantic_failure",
-                    "reason" => "model_confused"
-                  }
-                }},
+    assert {:ok, failed_execution} =
+             ExecutionRecord.record_semantic_failure(execution, %{
+               lower_receipt: %{"run_id" => "lower-run-semantic"},
+               last_dispatch_error_payload: %{
+                 "error" => %{
+                   "kind" => "semantic_failure",
+                   "reason" => "model_confused"
+                 }
+               },
+               trace_id: execution.trace_id,
+               causation_id: "semantic-failure:#{execution.id}",
                actor_ref: %{kind: :reconciler}
-             )
+             })
 
     assert failed_execution.dispatch_state == :failed
     assert failed_execution.failure_kind == :semantic_failure
@@ -69,6 +77,11 @@ defmodule Mezzanine.AppKitBridge.SemanticFailureRecoveryServiceTest do
     assert recovery.review_created?
     assert recovery.review_unit.decision_profile["recovery_kind"] == "semantic_failure"
     assert recovery.review_unit.decision_profile["execution_id"] == failed_execution.id
+
+    pending_decision = recovery.decision_record
+    refute is_nil(pending_decision)
+    assert pending_decision.lifecycle_state == "pending"
+    assert pending_decision.trace_id == execution.trace_id
 
     assert {:ok, detail} = WorkQueryService.get_subject_detail(tenant_id, work_object.id)
     assert detail.status == :awaiting_review
@@ -96,21 +109,42 @@ defmodule Mezzanine.AppKitBridge.SemanticFailureRecoveryServiceTest do
     assert review_detail.payload.review_unit.decision_profile["recovery_kind"] ==
              "semantic_failure"
 
+    assert {:ok, resolved_review} =
+             Mezzanine.AppKitBridge.ReviewActionService.record_decision(
+               tenant_id,
+               recovery.review_unit.id,
+               %{
+                 program_id: program.id,
+                 decision: :accept,
+                 actor_ref: "ops_lead",
+                 reason: "approved recovery"
+               }
+             )
+
+    assert resolved_review.status == :completed
+
+    resolved_decision = resolved_review.metadata.decision_record
+    refute is_nil(resolved_decision)
+    assert resolved_decision.lifecycle_state == "resolved"
+    assert resolved_decision.decision_value == "accept"
+    assert resolved_decision.trace_id == execution.trace_id
+
     assert {:ok, second_recovery} =
              SemanticFailureRecoveryService.recover_execution(tenant_id, failed_execution.id)
 
     refute second_recovery.review_created?
     assert second_recovery.review_unit.id == recovery.review_unit.id
+    assert second_recovery.review_unit.status == :accepted
 
     assert {:ok, detail_after_second_pass} =
              WorkQueryService.get_subject_detail(tenant_id, work_object.id)
 
-    assert detail_after_second_pass.pending_review_ids == [recovery.review_unit.id]
+    assert detail_after_second_pass.pending_review_ids == []
   end
 
   defp fixture_stack(tenant_id) do
     actor = %{tenant_id: tenant_id}
-    trace_id = "trace-semantic-failure-#{System.unique_integer([:positive])}"
+    trace_id = TraceIdentity.mint()
 
     {:ok, program} =
       Program.create_program(
@@ -210,21 +244,19 @@ defmodule Mezzanine.AppKitBridge.SemanticFailureRecoveryServiceTest do
     {:ok, work_object} = WorkObject.mark_running(work_object, actor: actor, tenant: tenant_id)
 
     {:ok, execution} =
-      ExecutionRecord.dispatch(
-        %{
-          installation_id: tenant_id,
-          subject_id: work_object.id,
-          recipe_ref: "triage_ticket",
-          compiled_pack_revision: 1,
-          binding_snapshot: %{"placement_ref" => "workspace_runtime"},
-          dispatch_envelope: %{"capability" => "linear.issue.execute"},
-          submission_dedupe_key: "#{tenant_id}:#{work_object.id}:triage_ticket:1",
-          trace_id: trace_id,
-          causation_id: "cause:#{trace_id}",
-          actor_ref: %{kind: :scheduler}
-        },
-        actor: actor
-      )
+      ExecutionRecord.dispatch(%{
+        tenant_id: tenant_id,
+        installation_id: tenant_id,
+        subject_id: work_object.id,
+        recipe_ref: "triage_ticket",
+        compiled_pack_revision: 1,
+        binding_snapshot: %{"placement_ref" => "workspace_runtime"},
+        dispatch_envelope: %{"capability" => "linear.issue.execute"},
+        submission_dedupe_key: "#{tenant_id}:#{work_object.id}:triage_ticket:1",
+        trace_id: trace_id,
+        causation_id: "cause:#{trace_id}",
+        actor_ref: %{kind: :scheduler}
+      })
 
     {:ok, execution} =
       ExecutionRecord.record_accepted(

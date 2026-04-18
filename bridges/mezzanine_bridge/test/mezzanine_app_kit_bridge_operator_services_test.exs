@@ -1,8 +1,13 @@
 defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
   use ExUnit.Case, async: false
 
-  alias AppKit.Core.RunRef
+  alias AppKit.Core.{RunRef, TraceIdentity}
+  alias Ecto.Adapters.SQL
   alias Ecto.Adapters.SQL.Sandbox
+
+  alias Mezzanine.Archival.ArchivalManifest
+  alias Mezzanine.Archival.FileSystemColdStore
+  alias Mezzanine.Archival.Repo, as: ArchivalRepo
 
   alias Mezzanine.AppKitBridge.{
     OperatorActionService,
@@ -17,6 +22,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
   alias Mezzanine.EvidenceLedger.Repo, as: EvidenceRepo
   alias Mezzanine.Execution.Repo, as: ExecutionRepo
   alias Mezzanine.OpsDomain.Repo, as: OpsDomainRepo
+  alias Mezzanine.ReadLease
   alias Mezzanine.Programs.{PolicyBundle, Program}
   alias Mezzanine.Review.ReviewUnit
   alias Mezzanine.Runs.{Run, RunArtifact, RunSeries}
@@ -83,8 +89,10 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     execution_owner = Sandbox.start_owner!(ExecutionRepo, shared: false)
     decisions_owner = Sandbox.start_owner!(DecisionsRepo, shared: false)
     evidence_owner = Sandbox.start_owner!(EvidenceRepo, shared: false)
+    archival_owner = Sandbox.start_owner!(ArchivalRepo, shared: false)
 
     on_exit(fn ->
+      Sandbox.stop_owner(archival_owner)
       Sandbox.stop_owner(evidence_owner)
       Sandbox.stop_owner(decisions_owner)
       Sandbox.stop_owner(execution_owner)
@@ -96,14 +104,26 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
   end
 
   test "operator query service exposes subject status, timeline, alerts, reviews, and health without the deprecated operator surface" do
-    %{tenant_id: tenant_id, program: program, work_object: work_object, run: run} =
+    %{tenant_id: tenant_id, program: program, work_object: work_object} =
       fixture_stack("tenant-operator-services")
+
+    %{execution: execution} =
+      seed_trace_ledger(tenant_id, work_object.id, "operator-services-status")
 
     assert {:ok, status} = OperatorQueryService.subject_status(tenant_id, work_object.id)
     assert status.subject_ref.id == work_object.id
     assert status.subject_ref.subject_kind == "work_object"
-    assert status.current_execution_ref.id == run.id
+    assert status.current_execution_ref.id == execution.id
     assert Enum.any?(status.available_actions, &(&1.action_kind == "pause"))
+
+    assert [%{obligation_id: obligation_id, decision_ref_id: decision_ref_id}] =
+             status.payload.pending_obligations
+
+    assert String.starts_with?(obligation_id, "obligation:review:")
+    assert is_binary(decision_ref_id)
+    assert [%{blocker_kind: "review_pending"}] = status.payload.blocking_conditions
+    assert status.payload.next_step_preview.step_kind == "record_review_decision"
+    assert status.payload.next_step_preview.status == "blocked"
 
     assert {:ok, timeline} = OperatorQueryService.timeline(tenant_id, work_object.id)
     assert timeline.subject_ref.id == work_object.id
@@ -123,7 +143,37 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     assert health.pending_review_count >= 1
   end
 
-  test "operator action service applies control actions and keeps adapter compatibility for review decisions" do
+  test "operator timeline self-heals when an empty projection was materialized before later audit events" do
+    %{tenant_id: tenant_id, work_object: work_object, run: run, program: program} =
+      fixture_stack("tenant-operator-timeline-staleness", seed_run_event?: false)
+
+    assert {:ok, status_before_event} =
+             OperatorQueryService.subject_status(tenant_id, work_object.id)
+
+    assert status_before_event.payload.timeline == []
+
+    assert {:ok, _audit} =
+             WorkAudit.record_event(tenant_id, %{
+               program_id: program.id,
+               work_object_id: work_object.id,
+               run_id: run.id,
+               event_kind: :run_scheduled,
+               actor_kind: :system,
+               actor_ref: "planner",
+               payload: %{"attempt" => 1},
+               occurred_at: ~U[2026-04-15 09:59:00Z]
+             })
+
+    assert {:ok, timeline} = OperatorQueryService.timeline(tenant_id, work_object.id)
+    assert Enum.any?(timeline.entries, &(&1.event_kind == "run_scheduled"))
+
+    assert {:ok, status_after_event} =
+             OperatorQueryService.subject_status(tenant_id, work_object.id)
+
+    assert Enum.any?(status_after_event.payload.timeline, &(&1.event_kind == "run_scheduled"))
+  end
+
+  test "operator action service applies control actions and preserves review decision coverage" do
     %{
       tenant_id: tenant_id,
       program: program,
@@ -189,7 +239,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
       fixture_stack("tenant-operator-unified-trace")
 
     %{execution: execution, trace_id: trace_id} =
-      seed_trace_ledger(tenant_id, work_object.id, "trace-operator-services")
+      seed_trace_ledger(tenant_id, work_object.id, "operator-services")
 
     assert {:ok, trace} =
              OperatorQueryService.get_unified_trace(
@@ -222,8 +272,22 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     assert lower_step.freshness == :lower_authoritative_unreconciled
     refute lower_step.operator_actionable?
 
-    assert_received {:fetch_run, ["lower-run-trace-operator-services"]}
-    assert_received {:events, ["lower-run-trace-operator-services"]}
+    [read_lease] = ExecutionRepo.all(ReadLease)
+    assert read_lease.execution_id == execution.id
+    assert read_lease.allowed_family == "unified_trace"
+
+    assert Enum.sort(read_lease.allowed_operations) == [
+             "attempts",
+             "events",
+             "fetch_run",
+             "run_artifacts"
+           ]
+
+    assert_received {:fetch_run, ["lower-run-operator-services"]}
+    assert_received {:events, ["lower-run-operator-services"]}
+    assert_received {:attempts, ["lower-run-operator-services"]}
+    assert_received {:run_artifacts, ["lower-run-operator-services"]}
+    refute_received {:fetch_submission_receipt, _args}
   end
 
   test "operator query service returns explicit auth denial for unauthorized lower-enriched trace reads" do
@@ -231,7 +295,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
       fixture_stack("tenant-operator-unified-trace-denied")
 
     %{execution: execution, trace_id: trace_id} =
-      seed_trace_ledger(tenant_id, work_object.id, "trace-operator-services-denied")
+      seed_trace_ledger(tenant_id, work_object.id, "operator-services-denied")
 
     assert {:error, :unauthorized_lower_read} =
              OperatorQueryService.get_unified_trace(
@@ -246,7 +310,61 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
              )
   end
 
-  defp fixture_stack(tenant_id) do
+  test "operator query service reconstructs archived unified trace by trace_id after hot rows are removed" do
+    %{tenant_id: tenant_id, work_object: work_object} =
+      fixture_stack("tenant-operator-archived-trace")
+
+    %{
+      execution: execution,
+      trace_id: trace_id,
+      decision_id: decision_id,
+      evidence_id: evidence_id,
+      audit_fact_id: audit_fact_id
+    } = seed_trace_ledger(tenant_id, work_object.id, "operator-services-archived")
+
+    manifest_ref =
+      archive_trace_ledger!(
+        tenant_id,
+        work_object.id,
+        execution.id,
+        decision_id,
+        evidence_id,
+        audit_fact_id,
+        trace_id,
+        "operator-services-archived"
+      )
+
+    assert {:error, :archived, ^manifest_ref} =
+             OperatorQueryService.subject_status(tenant_id, work_object.id)
+
+    assert {:ok, lineage} = OperatorQueryService.execution_trace_lineage(execution.id)
+    assert lineage.execution_id == execution.id
+    assert lineage.installation_id == tenant_id
+    assert lineage.trace_id == trace_id
+
+    assert {:ok, trace} =
+             OperatorQueryService.get_unified_trace(
+               %{
+                 tenant_id: tenant_id,
+                 actor_id: "ops_lead",
+                 installation_id: tenant_id,
+                 execution_id: execution.id,
+                 trace_id: trace_id
+               },
+               lower_facts: LowerFactsStub
+             )
+
+    assert trace.trace_id == trace_id
+    assert trace.metadata.archived_manifest_ref == manifest_ref
+    assert Enum.any?(trace.steps, &(&1.source == :audit_fact))
+    assert Enum.any?(trace.steps, &(&1.source == :execution_record))
+    assert Enum.any?(trace.steps, &(&1.source == :decision_record))
+    assert Enum.any?(trace.steps, &(&1.source == :evidence_record))
+    refute Enum.any?(trace.steps, &(&1.source == :lower_run_status))
+    refute_received {:fetch_run, _args}
+  end
+
+  defp fixture_stack(tenant_id, opts \\ []) do
     actor = %{tenant_id: tenant_id}
 
     {:ok, program} =
@@ -365,17 +483,19 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
         tenant: tenant_id
       )
 
-    {:ok, _audit} =
-      WorkAudit.record_event(tenant_id, %{
-        program_id: program.id,
-        work_object_id: work_object.id,
-        run_id: run.id,
-        event_kind: :run_scheduled,
-        actor_kind: :system,
-        actor_ref: "planner",
-        payload: %{"attempt" => 1},
-        occurred_at: ~U[2026-04-15 09:59:00Z]
-      })
+    if Keyword.get(opts, :seed_run_event?, true) do
+      {:ok, _audit} =
+        WorkAudit.record_event(tenant_id, %{
+          program_id: program.id,
+          work_object_id: work_object.id,
+          run_id: run.id,
+          event_kind: :run_scheduled,
+          actor_kind: :system,
+          actor_ref: "planner",
+          payload: %{"attempt" => 1},
+          occurred_at: ~U[2026-04-15 09:59:00Z]
+        })
+    end
 
     %{
       tenant_id: tenant_id,
@@ -391,13 +511,17 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
 
   defp seed_trace_ledger(installation_id, subject_id, suffix) do
     execution_id = Ecto.UUID.generate()
-    trace_id = "#{suffix}-#{System.unique_integer([:positive])}"
+    decision_id = Ecto.UUID.generate()
+    evidence_id = Ecto.UUID.generate()
+    audit_fact_id = Ecto.UUID.generate()
+    trace_id = TraceIdentity.mint()
     now = ~U[2026-04-15 10:00:00Z]
 
     assert {1, _} =
              ExecutionRepo.insert_all("execution_records", [
                %{
                  id: dump_uuid!(execution_id),
+                 tenant_id: installation_id,
                  installation_id: installation_id,
                  subject_id: dump_uuid!(subject_id),
                  recipe_ref: "triage_ticket",
@@ -420,7 +544,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     assert {1, _} =
              AuditRepo.insert_all("audit_facts", [
                %{
-                 id: dump_uuid!(Ecto.UUID.generate()),
+                 id: dump_uuid!(audit_fact_id),
                  installation_id: installation_id,
                  subject_id: subject_id,
                  execution_id: execution_id,
@@ -444,7 +568,6 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
                  installation_id: installation_id,
                  subject_id: subject_id,
                  execution_id: execution_id,
-                 dispatch_outbox_entry_id: Ecto.UUID.generate(),
                  ji_submission_key: "submission-#{suffix}",
                  lower_run_id: "lower-run-#{suffix}",
                  lower_attempt_id: "attempt-#{suffix}",
@@ -457,7 +580,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     assert {1, _} =
              DecisionsRepo.insert_all("decision_records", [
                %{
-                 id: dump_uuid!(Ecto.UUID.generate()),
+                 id: dump_uuid!(decision_id),
                  installation_id: installation_id,
                  subject_id: dump_uuid!(subject_id),
                  execution_id: dump_uuid!(execution_id),
@@ -475,7 +598,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     assert {1, _} =
              EvidenceRepo.insert_all("evidence_records", [
                %{
-                 id: dump_uuid!(Ecto.UUID.generate()),
+                 id: dump_uuid!(evidence_id),
                  installation_id: installation_id,
                  subject_id: dump_uuid!(subject_id),
                  execution_id: dump_uuid!(execution_id),
@@ -493,7 +616,158 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
                }
              ])
 
-    %{execution: %{id: execution_id}, trace_id: trace_id}
+    %{
+      execution: %{id: execution_id},
+      trace_id: trace_id,
+      decision_id: decision_id,
+      evidence_id: evidence_id,
+      audit_fact_id: audit_fact_id
+    }
+  end
+
+  defp archive_trace_ledger!(
+         installation_id,
+         subject_id,
+         execution_id,
+         decision_id,
+         evidence_id,
+         audit_fact_id,
+         trace_id,
+         suffix
+       ) do
+    terminal_at = ~U[2026-04-16 12:00:00Z]
+
+    manifest_ref =
+      "archive/#{installation_id}/#{subject_id}/#{System.unique_integer([:positive])}"
+
+    archive_root = Path.expand("../tmp/operator_services_archival", __DIR__)
+    File.rm_rf!(archive_root)
+
+    bundle = %{
+      "manifest_ref" => manifest_ref,
+      "subject" => %{"id" => subject_id},
+      "trace_views" => %{
+        trace_id => %{
+          "audit_facts" => [
+            %{
+              "id" => audit_fact_id,
+              "trace_id" => trace_id,
+              "causation_id" => "cause-#{suffix}",
+              "occurred_at" => "2026-04-15T10:00:00Z",
+              "fact_kind" => "execution_dispatched",
+              "actor_ref" => %{"kind" => "scheduler"},
+              "payload" => %{"dispatch_state" => "accepted"}
+            }
+          ],
+          "executions" => [
+            %{
+              "id" => execution_id,
+              "trace_id" => trace_id,
+              "causation_id" => "cause-#{suffix}",
+              "subject_id" => subject_id,
+              "dispatch_state" => "accepted",
+              "recipe_ref" => "triage_ticket",
+              "compiled_pack_revision" => 7,
+              "barrier_id" => nil,
+              "last_reconcile_wave_id" => nil,
+              "supersedes_execution_id" => nil,
+              "failure_kind" => nil,
+              "terminal_rejection_reason" => nil,
+              "inserted_at" => "2026-04-15T09:59:00Z",
+              "updated_at" => "2026-04-15T10:00:00Z"
+            }
+          ],
+          "decisions" => [
+            %{
+              "id" => decision_id,
+              "trace_id" => trace_id,
+              "causation_id" => execution_id,
+              "subject_id" => subject_id,
+              "execution_id" => execution_id,
+              "decision_kind" => "human_review_required",
+              "lifecycle_state" => "pending",
+              "decision_value" => nil,
+              "reason" => nil,
+              "resolved_at" => "2026-04-15T10:01:00Z",
+              "inserted_at" => "2026-04-15T10:00:30Z"
+            }
+          ],
+          "evidence" => [
+            %{
+              "id" => evidence_id,
+              "trace_id" => trace_id,
+              "causation_id" => execution_id,
+              "subject_id" => subject_id,
+              "execution_id" => execution_id,
+              "evidence_kind" => "run_log",
+              "status" => "collected",
+              "collector_ref" => "jido_run_output",
+              "content_ref" => "artifact://#{suffix}",
+              "metadata" => %{"size" => 128},
+              "collected_at" => "2026-04-15T10:02:00Z",
+              "inserted_at" => "2026-04-15T10:01:30Z"
+            }
+          ]
+        }
+      }
+    }
+
+    bundle =
+      Map.put(bundle, "checksum", Mezzanine.Archival.BundleChecksum.generate(bundle))
+
+    {:ok, cold_result} =
+      FileSystemColdStore.write_bundle(manifest_ref, bundle, root: archive_root)
+
+    {:ok, manifest} =
+      ArchivalManifest.stage(%{
+        manifest_ref: manifest_ref,
+        installation_id: installation_id,
+        subject_id: subject_id,
+        subject_state: "completed",
+        execution_states: ["accepted"],
+        trace_ids: [trace_id],
+        execution_ids: [execution_id],
+        decision_ids: [decision_id],
+        evidence_ids: [evidence_id],
+        audit_fact_ids: [audit_fact_id],
+        projection_names: [],
+        terminal_at: terminal_at,
+        due_at: terminal_at,
+        retention_seconds: 0,
+        storage_kind: "filesystem",
+        metadata: %{"test" => "operator_services_archived_trace"}
+      })
+
+    {:ok, verified} =
+      ArchivalManifest.mark_verified(manifest, %{
+        storage_uri: cold_result.storage_uri,
+        checksum: cold_result.checksum,
+        verified_at: terminal_at,
+        metadata: %{
+          "cold_store_checksum" => cold_result.checksum,
+          "cold_store_uri" => cold_result.storage_uri
+        }
+      })
+
+    {:ok, archived} = ArchivalManifest.mark_archived(verified, %{archived_at: terminal_at})
+
+    SQL.query!(AuditRepo, "DELETE FROM audit_facts WHERE id = $1::uuid", [
+      dump_uuid!(audit_fact_id)
+    ])
+
+    SQL.query!(EvidenceRepo, "DELETE FROM evidence_records WHERE id = $1::uuid", [
+      dump_uuid!(evidence_id)
+    ])
+
+    SQL.query!(DecisionsRepo, "DELETE FROM decision_records WHERE id = $1::uuid", [
+      dump_uuid!(decision_id)
+    ])
+
+    SQL.query!(ExecutionRepo, "DELETE FROM execution_records WHERE id = $1::uuid", [
+      dump_uuid!(execution_id)
+    ])
+
+    archived.manifest_ref
   end
 
   defp workflow_body do

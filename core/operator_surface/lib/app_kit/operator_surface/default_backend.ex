@@ -13,8 +13,10 @@ defmodule AppKit.OperatorSurface.DefaultBackend do
     OperatorAction,
     OperatorActionRequest,
     OperatorProjection,
+    ReadLease,
     RequestContext,
     RunRef,
+    StreamAttachLease,
     SubjectRef,
     SurfaceError,
     TimelineEvent,
@@ -84,7 +86,51 @@ defmodule AppKit.OperatorSurface.DefaultBackend do
               payload: %{"execution_id" => execution_ref.id}
             }
           ]
-        )
+      )
+    })
+  end
+
+  @impl true
+  @spec issue_read_lease(RequestContext.t(), ExecutionRef.t(), keyword()) ::
+          {:ok, ReadLease.t()} | {:error, SurfaceError.t()}
+  def issue_read_lease(%RequestContext{} = context, %ExecutionRef{} = execution_ref, opts)
+      when is_list(opts) do
+    ReadLease.new(%{
+      lease_ref: %{
+        id: Keyword.get(opts, :lease_id, "#{execution_ref.id}:read"),
+        allowed_family: Keyword.get(opts, :allowed_family, "unified_trace"),
+        execution_ref: execution_ref
+      },
+      trace_id: context.trace_id,
+      expires_at: Keyword.get(opts, :expires_at, DateTime.utc_now()),
+      lease_token: Keyword.get(opts, :lease_token, "read-lease-token"),
+      allowed_operations: Keyword.get(opts, :allowed_operations, ["fetch_run"]),
+      scope: Keyword.get(opts, :scope, %{}),
+      lineage_anchor: Keyword.get(opts, :lineage_anchor, %{"execution_id" => execution_ref.id}),
+      invalidation_cursor: Keyword.get(opts, :invalidation_cursor, 0),
+      invalidation_channel: Keyword.get(opts, :invalidation_channel, "read:default")
+    })
+  end
+
+  @impl true
+  @spec issue_stream_attach_lease(RequestContext.t(), ExecutionRef.t(), keyword()) ::
+          {:ok, StreamAttachLease.t()} | {:error, SurfaceError.t()}
+  def issue_stream_attach_lease(%RequestContext{} = context, %ExecutionRef{} = execution_ref, opts)
+      when is_list(opts) do
+    StreamAttachLease.new(%{
+      lease_ref: %{
+        id: Keyword.get(opts, :lease_id, "#{execution_ref.id}:stream"),
+        allowed_family: Keyword.get(opts, :allowed_family, "runtime_stream"),
+        execution_ref: execution_ref
+      },
+      trace_id: context.trace_id,
+      expires_at: Keyword.get(opts, :expires_at, DateTime.utc_now()),
+      attach_token: Keyword.get(opts, :attach_token, "stream-attach-token"),
+      scope: Keyword.get(opts, :scope, %{}),
+      lineage_anchor: Keyword.get(opts, :lineage_anchor, %{"execution_id" => execution_ref.id}),
+      reconnect_cursor: Keyword.get(opts, :reconnect_cursor, 0),
+      invalidation_channel: Keyword.get(opts, :invalidation_channel, "stream:default"),
+      poll_interval_ms: Keyword.get(opts, :poll_interval_ms, 2_000)
     })
   end
 

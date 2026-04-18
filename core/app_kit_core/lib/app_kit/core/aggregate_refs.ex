@@ -172,6 +172,81 @@ defmodule AppKit.Core.OperatorActionRef do
   end
 end
 
+defmodule AppKit.Core.ReadLeaseRef do
+  @moduledoc """
+  Stable northbound read-lease reference.
+  """
+
+  alias AppKit.Core.{ExecutionRef, Support}
+
+  @enforce_keys [:id, :allowed_family]
+  defstruct [:id, :allowed_family, execution_ref: nil]
+
+  @type t :: %__MODULE__{
+          id: String.t(),
+          allowed_family: String.t(),
+          execution_ref: ExecutionRef.t() | nil
+        }
+
+  @spec new(map() | keyword()) :: {:ok, t()} | {:error, :invalid_read_lease_ref}
+  def new(attrs) do
+    with {:ok, attrs} <- Support.normalize_attrs(attrs),
+         id <- Map.get(attrs, :id),
+         true <- Support.present_binary?(id),
+         allowed_family <- Map.get(attrs, :allowed_family),
+         true <- Support.present_binary?(allowed_family),
+         {:ok, execution_ref} <-
+           Support.nested_struct(Map.get(attrs, :execution_ref), ExecutionRef) do
+      {:ok,
+       %__MODULE__{
+         id: id,
+         allowed_family: allowed_family,
+         execution_ref: execution_ref
+       }}
+    else
+      _ -> {:error, :invalid_read_lease_ref}
+    end
+  end
+end
+
+defmodule AppKit.Core.StreamAttachLeaseRef do
+  @moduledoc """
+  Stable northbound stream-attach lease reference.
+  """
+
+  alias AppKit.Core.{ExecutionRef, Support}
+
+  @enforce_keys [:id, :allowed_family]
+  defstruct [:id, :allowed_family, execution_ref: nil]
+
+  @type t :: %__MODULE__{
+          id: String.t(),
+          allowed_family: String.t(),
+          execution_ref: ExecutionRef.t() | nil
+        }
+
+  @spec new(map() | keyword()) ::
+          {:ok, t()} | {:error, :invalid_stream_attach_lease_ref}
+  def new(attrs) do
+    with {:ok, attrs} <- Support.normalize_attrs(attrs),
+         id <- Map.get(attrs, :id),
+         true <- Support.present_binary?(id),
+         allowed_family <- Map.get(attrs, :allowed_family),
+         true <- Support.present_binary?(allowed_family),
+         {:ok, execution_ref} <-
+           Support.nested_struct(Map.get(attrs, :execution_ref), ExecutionRef) do
+      {:ok,
+       %__MODULE__{
+         id: id,
+         allowed_family: allowed_family,
+         execution_ref: execution_ref
+       }}
+    else
+      _ -> {:error, :invalid_stream_attach_lease_ref}
+    end
+  end
+end
+
 defmodule AppKit.Core.SubjectSummary do
   @moduledoc """
   Stable northbound subject summary aggregate.
@@ -248,7 +323,16 @@ defmodule AppKit.Core.SubjectDetail do
   Stable northbound subject detail aggregate.
   """
 
-  alias AppKit.Core.{DecisionRef, ExecutionRef, OperatorActionRef, SubjectRef, Support}
+  alias AppKit.Core.{
+    BlockingCondition,
+    DecisionRef,
+    ExecutionRef,
+    NextStepPreview,
+    OperatorActionRef,
+    PendingObligation,
+    SubjectRef,
+    Support
+  }
 
   @enforce_keys [:subject_ref, :lifecycle_state]
   defstruct [
@@ -259,6 +343,9 @@ defmodule AppKit.Core.SubjectDetail do
     current_execution_ref: nil,
     pending_decision_refs: [],
     available_actions: [],
+    pending_obligations: [],
+    blocking_conditions: [],
+    next_step_preview: nil,
     schema_ref: nil,
     schema_version: nil,
     payload: %{}
@@ -272,6 +359,9 @@ defmodule AppKit.Core.SubjectDetail do
           current_execution_ref: ExecutionRef.t() | nil,
           pending_decision_refs: [DecisionRef.t()],
           available_actions: [OperatorActionRef.t()],
+          pending_obligations: [PendingObligation.t()],
+          blocking_conditions: [BlockingCondition.t()],
+          next_step_preview: NextStepPreview.t() | nil,
           schema_ref: String.t() | nil,
           schema_version: non_neg_integer() | nil,
           payload: map()
@@ -294,6 +384,18 @@ defmodule AppKit.Core.SubjectDetail do
            Support.nested_structs(Map.get(attrs, :pending_decision_refs, []), DecisionRef),
          {:ok, available_actions} <-
            Support.nested_structs(Map.get(attrs, :available_actions, []), OperatorActionRef),
+         {:ok, pending_obligations} <-
+           Support.nested_structs(
+             Map.get(attrs, :pending_obligations, []),
+             PendingObligation
+           ),
+         {:ok, blocking_conditions} <-
+           Support.nested_structs(
+             Map.get(attrs, :blocking_conditions, []),
+             BlockingCondition
+           ),
+         {:ok, next_step_preview} <-
+           Support.nested_struct(Map.get(attrs, :next_step_preview), NextStepPreview),
          schema_ref <- Map.get(attrs, :schema_ref),
          true <- Support.optional_binary?(schema_ref),
          schema_version <- Map.get(attrs, :schema_version),
@@ -309,6 +411,9 @@ defmodule AppKit.Core.SubjectDetail do
          current_execution_ref: current_execution_ref,
          pending_decision_refs: pending_decision_refs,
          available_actions: available_actions,
+         pending_obligations: pending_obligations,
+         blocking_conditions: blocking_conditions,
+         next_step_preview: next_step_preview,
          schema_ref: schema_ref,
          schema_version: schema_version,
          payload: payload

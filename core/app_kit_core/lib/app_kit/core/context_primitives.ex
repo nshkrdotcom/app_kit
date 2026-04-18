@@ -135,7 +135,7 @@ defmodule AppKit.Core.RequestContext do
   Stable request envelope shared by northbound AppKit surfaces.
   """
 
-  alias AppKit.Core.{ActorRef, InstallationRef, Support, TenantRef}
+  alias AppKit.Core.{ActorRef, InstallationRef, Support, TenantRef, TraceIdentity}
 
   @enforce_keys [:trace_id, :actor_ref, :tenant_ref]
   defstruct [
@@ -165,8 +165,7 @@ defmodule AppKit.Core.RequestContext do
   @spec new(map() | keyword()) :: {:ok, t()} | {:error, :invalid_request_context}
   def new(attrs) do
     with {:ok, attrs} <- Support.normalize_attrs(attrs),
-         trace_id <- Map.get(attrs, :trace_id),
-         true <- Support.present_binary?(trace_id),
+         {:ok, trace_id} <- TraceIdentity.ensure(Map.get(attrs, :trace_id)),
          {:ok, actor_ref} <- Support.nested_struct(Map.get(attrs, :actor_ref), ActorRef),
          false <- is_nil(actor_ref),
          {:ok, tenant_ref} <- Support.nested_struct(Map.get(attrs, :tenant_ref), TenantRef),

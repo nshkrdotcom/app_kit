@@ -5,7 +5,7 @@ AppKit composes lower layers without swallowing their ownership:
 - `outer_brain` remains the semantic runtime
 - `citadel_domain_surface` remains the typed capability and route boundary
 - Citadel remains the policy kernel
-- `jido_integration` remains the durable lower truth owner
+- `jido_integration` remains the lower acceptance gateway
 - `ground_plane` remains primitive and lower-level
 - `execution_plane` stays behind gateways instead of becoming a public app API
 
@@ -41,4 +41,4 @@ That split is deliberate:
 - `DomainBridge` and `OuterBrainBridge` stay thin and translate only between
   app-safe inputs and the lower owner seams
 - `reference_host` proves both paths against the real lower stack instead of
-  faking the kernel or the durable Spine
+  faking the kernel or the lower acceptance gateway

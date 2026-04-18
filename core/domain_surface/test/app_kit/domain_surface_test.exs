@@ -23,6 +23,8 @@ defmodule AppKit.DomainSurfaceTest do
   end
 
   test "submits real typed domain commands and queries through the app surface" do
+    trace_id = "0123456789abcdef0123456789abcdef"
+
     assert {:ok, scope} =
              ScopeObjects.host_scope(%{
                scope_id: "workspace/main",
@@ -36,7 +38,8 @@ defmodule AppKit.DomainSurfaceTest do
       domain_module: Citadel.DomainSurface.Examples.ProvingGround,
       kernel_runtime: {FakeKernelRuntime, []},
       idempotency_key: "cmd-1",
-      context: %{trace_id: "trace/app-kit-1"}
+      trace_trust: :trusted,
+      context: %{trace_id: trace_id}
     ]
 
     assert {:ok, command_result} =

@@ -7,6 +7,7 @@ defmodule Mezzanine.AppKitBridge do
 
   alias Mezzanine.AppKitBridge.{
     InstallationService,
+    LeaseService,
     OperatorProjectionAdapter,
     ProgramContextService,
     ReviewActionService,
@@ -45,6 +46,12 @@ defmodule Mezzanine.AppKitBridge do
 
   @spec get_installation(Ecto.UUID.t(), keyword()) :: {:ok, map()} | {:error, term()}
   defdelegate get_installation(installation_id, opts \\ []), to: InstallationService
+
+  @spec issue_read_lease(map(), keyword()) :: {:ok, map()} | {:error, term()}
+  defdelegate issue_read_lease(attrs, opts \\ []), to: LeaseService
+
+  @spec issue_stream_attach_lease(map(), keyword()) :: {:ok, map()} | {:error, term()}
+  defdelegate issue_stream_attach_lease(attrs, opts \\ []), to: LeaseService
 
   @spec list_installations(String.t(), map(), keyword()) :: {:ok, [map()]} | {:error, term()}
   defdelegate list_installations(tenant_id, filters \\ %{}, opts \\ []), to: InstallationService

@@ -131,7 +131,7 @@ defmodule AppKit.WorkSurfaceTest do
   defp request_context do
     {:ok, context} =
       RequestContext.new(%{
-        trace_id: "trace-work-surface",
+        trace_id: "22222222222222222222222222222222",
         actor_ref: %{id: "user-1", kind: :human},
         tenant_ref: %{id: "tenant-1"},
         installation_ref: %{id: "inst-1", pack_slug: "expense_approval"},

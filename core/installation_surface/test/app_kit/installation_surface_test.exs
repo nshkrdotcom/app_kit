@@ -185,7 +185,7 @@ defmodule AppKit.InstallationSurfaceTest do
   defp request_context do
     {:ok, context} =
       RequestContext.new(%{
-        trace_id: "trace-install-surface",
+        trace_id: "44444444444444444444444444444444",
         actor_ref: %{id: "installer-1", kind: :human},
         tenant_ref: %{id: "tenant-1"}
       })

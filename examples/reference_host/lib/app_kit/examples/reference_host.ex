@@ -68,8 +68,7 @@ defmodule AppKit.Examples.ReferenceHost do
         %{workspace_id: "workspace/main"},
         domain_module: domain_module,
         kernel_runtime: kernel_runtime,
-        idempotency_key: "cmd-reference-host",
-        context: %{trace_id: "trace/reference-host"}
+        idempotency_key: "cmd-reference-host"
       )
 
     {:ok, run_ref} = RunRef.new(%{run_id: "run-1", scope_id: scope.scope_id})

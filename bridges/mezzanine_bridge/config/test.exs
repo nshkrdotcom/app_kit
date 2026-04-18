@@ -36,6 +36,16 @@ config :mezzanine_execution_engine, Mezzanine.Execution.Repo,
   pool_size: 2,
   show_sensitive_data_on_connection_error: true
 
+config :mezzanine_execution_engine, Oban,
+  name: Mezzanine.Execution.Oban,
+  repo: Mezzanine.Execution.Repo,
+  engine: Oban.Engines.Basic,
+  notifier: Oban.Notifiers.Postgres,
+  peer: false,
+  queues: false,
+  plugins: false,
+  testing: :manual
+
 config :mezzanine_decision_engine, Mezzanine.Decisions.Repo,
   username: "postgres",
   password: "postgres",
@@ -46,6 +56,15 @@ config :mezzanine_decision_engine, Mezzanine.Decisions.Repo,
   show_sensitive_data_on_connection_error: true
 
 config :mezzanine_evidence_engine, Mezzanine.EvidenceLedger.Repo,
+  username: "postgres",
+  password: "postgres",
+  hostname: "localhost",
+  database: "mezzanine_app_kit_bridge_substrate_test",
+  pool: Ecto.Adapters.SQL.Sandbox,
+  pool_size: 2,
+  show_sensitive_data_on_connection_error: true
+
+config :mezzanine_archival_engine, Mezzanine.Archival.Repo,
   username: "postgres",
   password: "postgres",
   hostname: "localhost",

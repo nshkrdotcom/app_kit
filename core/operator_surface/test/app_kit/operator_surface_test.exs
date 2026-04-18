@@ -8,8 +8,10 @@ defmodule AppKit.OperatorSurfaceTest do
       ActionResult,
       OperatorAction,
       OperatorProjection,
+      ReadLease,
       RequestContext,
       RunRef,
+      StreamAttachLease,
       SubjectRef,
       TimelineEvent,
       UnifiedTrace
@@ -81,6 +83,44 @@ defmodule AppKit.OperatorSurfaceTest do
             payload: %{"dispatch_state" => "dispatching"}
           }
         ]
+      })
+    end
+
+    @impl true
+    def issue_read_lease(%RequestContext{} = context, execution_ref, _opts) do
+      ReadLease.new(%{
+        lease_ref: %{
+          id: "lease-read-1",
+          allowed_family: "unified_trace",
+          execution_ref: execution_ref
+        },
+        trace_id: context.trace_id,
+        expires_at: ~U[2026-04-18 12:10:00Z],
+        lease_token: "read-token-1",
+        allowed_operations: ["fetch_run", "events"],
+        scope: %{"include_lower" => true},
+        lineage_anchor: %{"submission_ref" => "sub-1"},
+        invalidation_cursor: 7,
+        invalidation_channel: "read:unified_trace"
+      })
+    end
+
+    @impl true
+    def issue_stream_attach_lease(%RequestContext{} = context, execution_ref, _opts) do
+      StreamAttachLease.new(%{
+        lease_ref: %{
+          id: "lease-stream-1",
+          allowed_family: "runtime_stream",
+          execution_ref: execution_ref
+        },
+        trace_id: context.trace_id,
+        expires_at: ~U[2026-04-18 12:10:00Z],
+        attach_token: "stream-token-1",
+        scope: %{"transport" => "sse"},
+        lineage_anchor: %{"submission_ref" => "sub-1"},
+        reconnect_cursor: 7,
+        invalidation_channel: "stream:runtime_stream",
+        poll_interval_ms: 2_000
       })
     end
 
@@ -204,17 +244,33 @@ defmodule AppKit.OperatorSurfaceTest do
                operator_backend: FakeOperatorBackend
              )
 
+    assert {:ok, read_lease} =
+             OperatorSurface.issue_read_lease(
+               context,
+               projection.current_execution_ref,
+               operator_backend: FakeOperatorBackend
+             )
+
+    assert {:ok, stream_lease} =
+             OperatorSurface.issue_stream_attach_lease(
+               context,
+               projection.current_execution_ref,
+               operator_backend: FakeOperatorBackend
+             )
+
     assert projection.payload.trace_id == context.trace_id
     assert hd(timeline).event_kind == "run_scheduled"
     assert hd(actions).action_ref.action_kind == "cancel"
     assert action_result.action_ref.action_kind == "cancel"
     assert hd(trace.steps).source == "execution_record"
+    assert read_lease.lease_ref.allowed_family == "unified_trace"
+    assert stream_lease.lease_ref.allowed_family == "runtime_stream"
   end
 
   defp request_context do
     {:ok, context} =
       RequestContext.new(%{
-        trace_id: "trace-operator-surface",
+        trace_id: "33333333333333333333333333333333",
         actor_ref: %{id: "user-1", kind: :human},
         tenant_ref: %{id: "tenant-1"},
         installation_ref: %{id: "inst-1", pack_slug: "expense_approval", status: :active}

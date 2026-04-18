@@ -67,6 +67,21 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
 
     assert {:ok, bridge_detail} = AppKitBridge.get_review_detail(tenant_id, review_unit.id)
     assert bridge_detail.decision_ref.id == review_unit.id
+
+    %{tenant_id: reject_tenant_id, program: reject_program, review_unit: reject_review_unit} =
+      review_fixture_stack("tenant-bridge-review-reject")
+
+    assert {:ok, reject_result} =
+             ReviewActionService.record_decision(reject_tenant_id, reject_review_unit.id, %{
+               program_id: reject_program.id,
+               decision: :reject,
+               actor_ref: "ops_lead",
+               reason: "needs changes"
+             })
+
+    assert reject_result.status == :completed
+    assert reject_result.action_ref.action_kind == "review_reject"
+    assert reject_result.metadata.review_unit.status == :rejected
   end
 
   test "installation service creates, lists, updates, suspends, and reactivates active pack installations" do
@@ -138,7 +153,7 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
     assert bridge_installation.installation_ref.id == installation_id
   end
 
-  test "installation service provisions and updates legacy runtime routing profile metadata" do
+  test "installation service provisions and updates current runtime routing profile metadata" do
     activate_fixture_registration!("1.0.0")
 
     attrs = %{
@@ -191,6 +206,89 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
     assert placement_profile.runtime_preferences["topology"] == "dual_node"
   end
 
+  test "installation detail aggregates external binding posture by external_system_ref" do
+    activate_fixture_registration!("1.0.0")
+
+    assert {:ok, install_result} =
+             InstallationService.create_installation(%{
+               tenant_id: "tenant-binding-groups",
+               environment: "prod",
+               pack_slug: "expense_approval",
+               pack_version: "1.0.0",
+               default_bindings: %{
+                 "execution_bindings" => %{
+                   "expense_capture" => %{
+                     "placement_ref" => "remote_runner",
+                     "descriptor" => %{
+                       "attachment" => "mezzanine.execution_recipe",
+                       "contract" => "contributing",
+                       "envelope" => %{
+                         "staleness_class" => "diagnostic_only",
+                         "trace_propagation" => "required",
+                         "tenant_scope" => "installation_scoped",
+                         "blast_radius" => "installation",
+                         "timeout_ms" => 1_000,
+                         "runbook_ref" => "runbooks/memory_runtime"
+                       },
+                       "failure" => %{
+                         "on_unavailable" => "retry_background",
+                         "on_timeout" => "fail_execution"
+                       },
+                       "ownership" => %{
+                         "external_system" => "Hindsight",
+                         "external_system_ref" => "hindsight.primary",
+                         "operator_owner" => "agent-platform"
+                       }
+                     },
+                     "credential_ref" => "cred-hindsight"
+                   }
+                 },
+                 "context_bindings" => %{
+                   "workspace_memory" => %{
+                     "adapter_key" => "hindsight_context",
+                     "config" => %{"workspace" => "default"},
+                     "timeout_ms" => 500,
+                     "credential_ref" => "cred-hindsight",
+                     "descriptor" => %{
+                       "attachment" => "outer_brain.context_adapter",
+                       "contract" => "contributing",
+                       "envelope" => %{
+                         "staleness_class" => "diagnostic_only",
+                         "trace_propagation" => "required",
+                         "tenant_scope" => "installation_scoped",
+                         "blast_radius" => "installation",
+                         "timeout_ms" => 500,
+                         "runbook_ref" => "runbooks/context_adapter"
+                       },
+                       "failure" => %{
+                         "on_unavailable" => "proceed_without",
+                         "on_timeout" => "proceed_without"
+                       },
+                       "ownership" => %{
+                         "external_system" => "Hindsight",
+                         "external_system_ref" => "hindsight.primary",
+                         "operator_owner" => "agent-platform"
+                       }
+                     }
+                   }
+                 }
+               }
+             })
+
+    assert {:ok, detail} =
+             InstallationService.get_installation(install_result.installation_ref.id)
+
+    assert [external_system] = detail.external_systems
+    assert external_system.external_system_ref == "hindsight.primary"
+    assert external_system.binding_count == 2
+    assert external_system.credential_refs == ["cred-hindsight"]
+
+    assert Enum.map(external_system.bindings, & &1.attachment) == [
+             "mezzanine.execution_recipe",
+             "outer_brain.context_adapter"
+           ]
+  end
+
   test "adapter services normalize missing lookups to bridge-safe not-found errors" do
     %{tenant_id: tenant_id} = review_fixture_stack("tenant-bridge-missing")
     missing_id = Ecto.UUID.generate()
@@ -211,6 +309,40 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
                tenant_id: "tenant-install-inactive",
                pack_slug: "expense_approval",
                pack_version: "2.0.0"
+             })
+  end
+
+  test "installation service rejects bindings whose connector capability misses required lifecycle hints" do
+    activate_fixture_registration!("1.1.0", required_lifecycle_hints: [:ticket_status])
+
+    assert {:error,
+            {:lifecycle_hint_contract_violation,
+             [
+               %{
+                 recipe_ref: "expense_capture",
+                 required_lifecycle_hints: ["ticket_status"],
+                 missing_hints: ["ticket_status"],
+                 capability_id: "expense.capture",
+                 capability_version: "2026.04"
+               }
+             ]}} =
+             InstallationService.create_installation(%{
+               tenant_id: "tenant-install-hints",
+               environment: "prod",
+               pack_slug: "expense_approval",
+               pack_version: "1.1.0",
+               default_bindings: %{
+                 "execution_bindings" => %{
+                   "expense_capture" => %{
+                     "placement_ref" => "local_docker",
+                     "connector_capability" => %{
+                       "capability_id" => "expense.capture",
+                       "version" => "2026.04",
+                       "produces_lifecycle_hints" => []
+                     }
+                   }
+                 }
+               }
              })
   end
 
@@ -365,8 +497,8 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
     }
   end
 
-  defp activate_fixture_registration!(version) do
-    compiled_pack_fixture(version)
+  defp activate_fixture_registration!(version, opts \\ []) do
+    compiled_pack_fixture(version, opts)
     |> MezzanineConfigRegistry.register_pack!()
     |> PackRegistration.activate()
     |> case do
@@ -375,7 +507,9 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
     end
   end
 
-  defp compiled_pack_fixture(version) do
+  defp compiled_pack_fixture(version, opts \\ []) do
+    required_lifecycle_hints = Keyword.get(opts, :required_lifecycle_hints, [])
+
     manifest = %Manifest{
       pack_slug: :expense_approval,
       version: version,
@@ -401,7 +535,8 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
         %ExecutionRecipeSpec{
           recipe_ref: :expense_capture,
           runtime_class: :session,
-          placement_ref: :local_runner
+          placement_ref: :local_runner,
+          required_lifecycle_hints: required_lifecycle_hints
         }
       ],
       projection_specs: [

@@ -1,0 +1,77 @@
+{
+  "checksum": "sha256:74f678a4219709f05bbb30508d2b4be15aba6719c53562b86a9f0dcd2dcdc243",
+  "manifest_ref": "archive/tenant-operator-archived-trace/77a14721-a64a-4a34-b258-e1457d9a36e0/5699",
+  "subject": {
+    "id": "77a14721-a64a-4a34-b258-e1457d9a36e0"
+  },
+  "trace_views": {
+    "de6f9770810f079a7a9c29320f746986": {
+      "audit_facts": [
+        {
+          "actor_ref": {
+            "kind": "scheduler"
+          },
+          "causation_id": "cause-operator-services-archived",
+          "fact_kind": "execution_dispatched",
+          "id": "136e06db-c614-4bea-82c5-a095682a302c",
+          "occurred_at": "2026-04-15T10:00:00Z",
+          "payload": {
+            "dispatch_state": "accepted"
+          },
+          "trace_id": "de6f9770810f079a7a9c29320f746986"
+        }
+      ],
+      "decisions": [
+        {
+          "causation_id": "d1274130-d361-4c33-9b87-1600f8add81f",
+          "decision_kind": "human_review_required",
+          "decision_value": null,
+          "execution_id": "d1274130-d361-4c33-9b87-1600f8add81f",
+          "id": "3f3f72e5-4ba3-4ccd-9b3a-15eeeb120b06",
+          "inserted_at": "2026-04-15T10:00:30Z",
+          "lifecycle_state": "pending",
+          "reason": null,
+          "resolved_at": "2026-04-15T10:01:00Z",
+          "subject_id": "77a14721-a64a-4a34-b258-e1457d9a36e0",
+          "trace_id": "de6f9770810f079a7a9c29320f746986"
+        }
+      ],
+      "evidence": [
+        {
+          "causation_id": "d1274130-d361-4c33-9b87-1600f8add81f",
+          "collected_at": "2026-04-15T10:02:00Z",
+          "collector_ref": "jido_run_output",
+          "content_ref": "artifact://operator-services-archived",
+          "evidence_kind": "run_log",
+          "execution_id": "d1274130-d361-4c33-9b87-1600f8add81f",
+          "id": "363c9c4b-d287-456c-8f50-a82f6a086b43",
+          "inserted_at": "2026-04-15T10:01:30Z",
+          "metadata": {
+            "size": 128
+          },
+          "status": "collected",
+          "subject_id": "77a14721-a64a-4a34-b258-e1457d9a36e0",
+          "trace_id": "de6f9770810f079a7a9c29320f746986"
+        }
+      ],
+      "executions": [
+        {
+          "barrier_id": null,
+          "causation_id": "cause-operator-services-archived",
+          "compiled_pack_revision": 7,
+          "dispatch_state": "accepted",
+          "failure_kind": null,
+          "id": "d1274130-d361-4c33-9b87-1600f8add81f",
+          "inserted_at": "2026-04-15T09:59:00Z",
+          "last_reconcile_wave_id": null,
+          "recipe_ref": "triage_ticket",
+          "subject_id": "77a14721-a64a-4a34-b258-e1457d9a36e0",
+          "supersedes_execution_id": null,
+          "terminal_rejection_reason": null,
+          "trace_id": "de6f9770810f079a7a9c29320f746986",
+          "updated_at": "2026-04-15T10:00:00Z"
+        }
+      ]
+    }
+  }
+}
