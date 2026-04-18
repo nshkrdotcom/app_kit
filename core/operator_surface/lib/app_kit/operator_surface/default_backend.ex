@@ -86,7 +86,7 @@ defmodule AppKit.OperatorSurface.DefaultBackend do
               payload: %{"execution_id" => execution_ref.id}
             }
           ]
-      )
+        )
     })
   end
 
@@ -115,7 +115,11 @@ defmodule AppKit.OperatorSurface.DefaultBackend do
   @impl true
   @spec issue_stream_attach_lease(RequestContext.t(), ExecutionRef.t(), keyword()) ::
           {:ok, StreamAttachLease.t()} | {:error, SurfaceError.t()}
-  def issue_stream_attach_lease(%RequestContext{} = context, %ExecutionRef{} = execution_ref, opts)
+  def issue_stream_attach_lease(
+        %RequestContext{} = context,
+        %ExecutionRef{} = execution_ref,
+        opts
+      )
       when is_list(opts) do
     StreamAttachLease.new(%{
       lease_ref: %{

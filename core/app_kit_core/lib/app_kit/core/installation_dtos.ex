@@ -50,10 +50,12 @@ defmodule AppKit.Core.InstallationBinding do
 
   alias AppKit.Core.{BindingDescriptor, Support}
 
-  @binding_kinds [:execution, :connector, :evidence, :actor, :context]
+  @binding_kinds [:execution, :connector, :evidence, :actor, :context, :subject, :observer]
   @attachment_by_binding_kind %{
     execution: "mezzanine.execution_recipe",
-    context: "outer_brain.context_adapter"
+    context: "outer_brain.context_adapter",
+    subject: "mezzanine.subject_kind",
+    observer: "jido_integration.audit_subscriber"
   }
 
   @enforce_keys [:binding_key, :binding_kind]
@@ -66,7 +68,8 @@ defmodule AppKit.Core.InstallationBinding do
     metadata: %{}
   ]
 
-  @type binding_kind :: :execution | :connector | :evidence | :actor | :context
+  @type binding_kind ::
+          :execution | :connector | :evidence | :actor | :context | :subject | :observer
 
   @type t :: %__MODULE__{
           binding_key: String.t(),
@@ -108,7 +111,9 @@ defmodule AppKit.Core.InstallationBinding do
     end
   end
 
-  defp descriptor_requirement(:context, nil), do: {:error, :missing_descriptor}
+  defp descriptor_requirement(binding_kind, nil)
+       when binding_kind in [:context, :subject, :observer],
+       do: {:error, :missing_descriptor}
 
   defp descriptor_requirement(binding_kind, %BindingDescriptor{} = descriptor) do
     case Map.get(@attachment_by_binding_kind, binding_kind) do
@@ -145,7 +150,51 @@ defmodule AppKit.Core.InstallationBinding do
     end
   end
 
+  defp binding_config_requirement(:subject, config) do
+    subject_kind = Map.get(config, :subject_kind) || Map.get(config, "subject_kind")
+    recipe_refs = Map.get(config, :recipe_refs) || Map.get(config, "recipe_refs")
+
+    cond do
+      not Support.present_binary?(subject_kind) ->
+        {:error, :invalid_subject_binding_config}
+
+      not valid_string_list?(recipe_refs) ->
+        {:error, :invalid_subject_binding_config}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp binding_config_requirement(:observer, config) do
+    subscriber_key = Map.get(config, :subscriber_key) || Map.get(config, "subscriber_key")
+    event_types = Map.get(config, :event_types) || Map.get(config, "event_types", [])
+
+    cond do
+      not Support.present_binary?(subscriber_key) ->
+        {:error, :invalid_observer_binding_config}
+
+      not valid_optional_string_list?(event_types) ->
+        {:error, :invalid_observer_binding_config}
+
+      true ->
+        :ok
+    end
+  end
+
   defp binding_config_requirement(_binding_kind, _config), do: :ok
+
+  defp valid_string_list?(values) when is_list(values) do
+    values != [] and Enum.all?(values, &Support.present_binary?/1)
+  end
+
+  defp valid_string_list?(_values), do: false
+
+  defp valid_optional_string_list?(values) when is_list(values) do
+    Enum.all?(values, &Support.present_binary?/1)
+  end
+
+  defp valid_optional_string_list?(_values), do: false
 end
 
 defmodule AppKit.Core.InstallResult do

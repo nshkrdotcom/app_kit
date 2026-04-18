@@ -271,6 +271,58 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
                        }
                      }
                    }
+                 },
+                 "subject_bindings" => %{
+                   "turn_consolidation" => %{
+                     "subject_kind" => "turn_consolidation",
+                     "recipe_refs" => ["belief_consolidation_runtime"],
+                     "descriptor" => %{
+                       "attachment" => "mezzanine.subject_kind",
+                       "contract" => "authoritative",
+                       "envelope" => %{
+                         "staleness_class" => "substrate_authoritative",
+                         "trace_propagation" => "required",
+                         "tenant_scope" => "installation_scoped",
+                         "blast_radius" => "installation",
+                         "runbook_ref" => "runbooks/consolidation_subject"
+                       },
+                       "failure" => %{
+                         "on_unavailable" => "retry_background",
+                         "on_timeout" => "retry_background"
+                       },
+                       "ownership" => %{
+                         "external_system" => "Hindsight",
+                         "external_system_ref" => "hindsight.primary",
+                         "operator_owner" => "agent-platform"
+                       }
+                     }
+                   }
+                 },
+                 "observer_bindings" => %{
+                   "hindsight_observer" => %{
+                     "subscriber_key" => "hindsight_audit_export",
+                     "event_types" => ["run.accepted", "event.appended"],
+                     "descriptor" => %{
+                       "attachment" => "jido_integration.audit_subscriber",
+                       "contract" => "advisory",
+                       "envelope" => %{
+                         "staleness_class" => "diagnostic_only",
+                         "trace_propagation" => "required",
+                         "tenant_scope" => "installation_scoped",
+                         "blast_radius" => "installation",
+                         "runbook_ref" => "runbooks/audit_export"
+                       },
+                       "failure" => %{
+                         "on_unavailable" => "fail_installation_health",
+                         "on_timeout" => "retry_background"
+                       },
+                       "ownership" => %{
+                         "external_system" => "Hindsight",
+                         "external_system_ref" => "hindsight.primary",
+                         "operator_owner" => "agent-platform"
+                       }
+                     }
+                   }
                  }
                }
              })
@@ -280,11 +332,13 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
 
     assert [external_system] = detail.external_systems
     assert external_system.external_system_ref == "hindsight.primary"
-    assert external_system.binding_count == 2
+    assert external_system.binding_count == 4
     assert external_system.credential_refs == ["cred-hindsight"]
 
-    assert Enum.map(external_system.bindings, & &1.attachment) == [
+    assert Enum.sort(Enum.map(external_system.bindings, & &1.attachment)) == [
+             "jido_integration.audit_subscriber",
              "mezzanine.execution_recipe",
+             "mezzanine.subject_kind",
              "outer_brain.context_adapter"
            ]
   end

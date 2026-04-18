@@ -74,16 +74,17 @@ defmodule AppKit.Bridges.DomainBridge do
       |> normalize_optional_map()
       |> sanitize_control_metadata()
 
-    with {:ok, resolution} <- resolve_trace(scope, opts, context) do
-      emit_trace_resolution(scope.tenant_id, :domain_bridge, resolution)
+    case resolve_trace(scope, opts, context) do
+      {:ok, resolution} ->
+        emit_trace_resolution(scope.tenant_id, :domain_bridge, resolution)
 
-      {:ok,
-       [
-         context: put_trace_id(context, resolution.trace_id),
-         metadata: maybe_put_client_trace_id(metadata, resolution.client_trace_id),
-         trace_id: resolution.trace_id
-       ] ++ extra_opts}
-    else
+        {:ok,
+         [
+           context: put_trace_id(context, resolution.trace_id),
+           metadata: maybe_put_client_trace_id(metadata, resolution.client_trace_id),
+           trace_id: resolution.trace_id
+         ] ++ extra_opts}
+
       {:error, :invalid_trace_id} = error ->
         Telemetry.trace_rejected(%{
           reason: :invalid_format,

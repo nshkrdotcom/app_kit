@@ -16,7 +16,6 @@ defmodule Mezzanine.AppKitBridge.ReviewDecisionLedger do
          {:ok, decision} <- fetch_or_create_pending_decision(context, opts) do
       {:ok, decision}
     else
-      {:ok, nil} -> {:ok, nil}
       {:error, :missing_execution_context} -> {:ok, nil}
       {:error, reason} -> {:error, reason}
     end
@@ -33,7 +32,6 @@ defmodule Mezzanine.AppKitBridge.ReviewDecisionLedger do
          {:ok, pending_decision} <- fetch_or_create_pending_decision(context, opts) do
       apply_resolution(decision, pending_decision, context, opts)
     else
-      {:ok, nil} -> {:ok, nil}
       {:error, :missing_execution_context} -> {:ok, nil}
       {:error, reason} -> {:error, reason}
     end

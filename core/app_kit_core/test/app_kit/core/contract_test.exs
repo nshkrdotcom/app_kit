@@ -17,17 +17,17 @@ defmodule AppKit.Core.ContractTest do
     InstallationRef,
     InstallResult,
     InstallTemplate,
-    ReadLease,
-    ReadLeaseRef,
+    NextStepPreview,
     OperatorAction,
     OperatorActionRef,
     OperatorActionRequest,
     OperatorProjection,
-    NextStepPreview,
     PageRequest,
     PageResult,
     PendingObligation,
     ProjectionRef,
+    ReadLease,
+    ReadLeaseRef,
     RequestContext,
     RunRequest,
     SortSpec,
@@ -425,6 +425,50 @@ defmodule AppKit.Core.ContractTest do
                }
              })
 
+    assert {:ok, subject_descriptor} =
+             BindingDescriptor.new(%{
+               attachment: "mezzanine.subject_kind",
+               contract: :authoritative,
+               envelope: %{
+                 staleness_class: :substrate_authoritative,
+                 trace_propagation: :required,
+                 tenant_scope: :installation_scoped,
+                 blast_radius: :installation,
+                 runbook_ref: "runbooks/consolidation_subject"
+               },
+               failure: %{
+                 on_unavailable: :retry_background,
+                 on_timeout: :retry_background
+               },
+               ownership: %{
+                 external_system: "Hindsight",
+                 external_system_ref: "hindsight.primary",
+                 operator_owner: "memory-platform"
+               }
+             })
+
+    assert {:ok, observer_descriptor} =
+             BindingDescriptor.new(%{
+               attachment: "jido_integration.audit_subscriber",
+               contract: :advisory,
+               envelope: %{
+                 staleness_class: :diagnostic_only,
+                 trace_propagation: :required,
+                 tenant_scope: :installation_scoped,
+                 blast_radius: :installation,
+                 runbook_ref: "runbooks/audit_export"
+               },
+               failure: %{
+                 on_unavailable: :fail_installation_health,
+                 on_timeout: :retry_background
+               },
+               ownership: %{
+                 external_system: "Hindsight",
+                 external_system_ref: "hindsight.primary",
+                 operator_owner: "memory-platform"
+               }
+             })
+
     assert {:ok, install_template} =
              InstallTemplate.new(%{
                template_key: "expense/default",
@@ -454,6 +498,28 @@ defmodule AppKit.Core.ContractTest do
                credential_ref: "cred-memory-1"
              })
 
+    assert {:ok, subject_binding} =
+             InstallationBinding.new(%{
+               binding_key: "turn_consolidation",
+               binding_kind: :subject,
+               descriptor: subject_descriptor,
+               config: %{
+                 "subject_kind" => "turn_consolidation",
+                 "recipe_refs" => ["belief_consolidation_runtime"]
+               }
+             })
+
+    assert {:ok, observer_binding} =
+             InstallationBinding.new(%{
+               binding_key: "hindsight_audit",
+               binding_kind: :observer,
+               descriptor: observer_descriptor,
+               config: %{
+                 "subscriber_key" => "hindsight_audit_export",
+                 "event_types" => ["run.accepted", "event.appended"]
+               }
+             })
+
     assert {:ok, install_result} =
              InstallResult.new(%{
                installation_ref: %{id: "inst-1", pack_slug: "expense_approval"},
@@ -468,7 +534,89 @@ defmodule AppKit.Core.ContractTest do
     assert %BindingOwnership{external_system_ref: "mem0.primary"} = descriptor.ownership
     assert context_binding.binding_kind == :context
     assert context_binding.descriptor.attachment == "outer_brain.context_adapter"
+    assert subject_binding.binding_kind == :subject
+    assert subject_binding.descriptor.attachment == "mezzanine.subject_kind"
+    assert observer_binding.binding_kind == :observer
+    assert observer_binding.descriptor.attachment == "jido_integration.audit_subscriber"
     assert %InstallationRef{id: "inst-1"} = install_result.installation_ref
+  end
+
+  test "rejects subject and observer bindings with missing descriptor or invalid config" do
+    assert {:error, :invalid_installation_binding} =
+             InstallationBinding.new(%{
+               binding_key: "turn_consolidation",
+               binding_kind: :subject,
+               config: %{
+                 "subject_kind" => "turn_consolidation",
+                 "recipe_refs" => ["belief_consolidation_runtime"]
+               }
+             })
+
+    assert {:ok, subject_descriptor} =
+             BindingDescriptor.new(%{
+               attachment: "mezzanine.subject_kind",
+               contract: :authoritative,
+               envelope: %{
+                 staleness_class: :substrate_authoritative,
+                 trace_propagation: :required,
+                 tenant_scope: :installation_scoped,
+                 blast_radius: :installation,
+                 runbook_ref: "runbooks/consolidation_subject"
+               },
+               failure: %{
+                 on_unavailable: :retry_background,
+                 on_timeout: :retry_background
+               },
+               ownership: %{
+                 external_system: "Hindsight",
+                 external_system_ref: "hindsight.primary"
+               }
+             })
+
+    assert {:error, :invalid_installation_binding} =
+             InstallationBinding.new(%{
+               binding_key: "turn_consolidation",
+               binding_kind: :subject,
+               descriptor: subject_descriptor,
+               config: %{"subject_kind" => "turn_consolidation", "recipe_refs" => []}
+             })
+
+    assert {:error, :invalid_installation_binding} =
+             InstallationBinding.new(%{
+               binding_key: "hindsight_audit",
+               binding_kind: :observer,
+               descriptor: subject_descriptor,
+               config: %{"subscriber_key" => "hindsight_audit_export"}
+             })
+
+    assert {:ok, observer_descriptor} =
+             BindingDescriptor.new(%{
+               attachment: "jido_integration.audit_subscriber",
+               contract: :advisory,
+               envelope: %{
+                 staleness_class: :diagnostic_only,
+                 trace_propagation: :required,
+                 tenant_scope: :installation_scoped,
+                 blast_radius: :installation,
+                 runbook_ref: "runbooks/audit_export"
+               },
+               failure: %{
+                 on_unavailable: :fail_installation_health,
+                 on_timeout: :retry_background
+               },
+               ownership: %{
+                 external_system: "Hindsight",
+                 external_system_ref: "hindsight.primary"
+               }
+             })
+
+    assert {:error, :invalid_installation_binding} =
+             InstallationBinding.new(%{
+               binding_key: "hindsight_audit",
+               binding_kind: :observer,
+               descriptor: observer_descriptor,
+               config: %{"subscriber_key" => "", "event_types" => ["run.accepted"]}
+             })
   end
 
   test "builds leased read and stream attach envelopes" do

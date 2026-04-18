@@ -695,7 +695,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
                config: %{"placement_ref" => "local_runner"}
              })
 
-    assert {:ok, descriptor} =
+    assert {:ok, context_descriptor} =
              BindingDescriptor.new(%{
                attachment: "outer_brain.context_adapter",
                contract: :contributing,
@@ -718,11 +718,55 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
                }
              })
 
+    assert {:ok, subject_descriptor} =
+             BindingDescriptor.new(%{
+               attachment: "mezzanine.subject_kind",
+               contract: :authoritative,
+               envelope: %{
+                 staleness_class: :substrate_authoritative,
+                 trace_propagation: :required,
+                 tenant_scope: :installation_scoped,
+                 blast_radius: :installation,
+                 runbook_ref: "runbooks/consolidation_subject"
+               },
+               failure: %{
+                 on_unavailable: :retry_background,
+                 on_timeout: :retry_background
+               },
+               ownership: %{
+                 external_system: "Mem0",
+                 external_system_ref: "mem0.primary",
+                 operator_owner: "memory-ops"
+               }
+             })
+
+    assert {:ok, observer_descriptor} =
+             BindingDescriptor.new(%{
+               attachment: "jido_integration.audit_subscriber",
+               contract: :advisory,
+               envelope: %{
+                 staleness_class: :diagnostic_only,
+                 trace_propagation: :required,
+                 tenant_scope: :installation_scoped,
+                 blast_radius: :installation,
+                 runbook_ref: "runbooks/audit_export"
+               },
+               failure: %{
+                 on_unavailable: :fail_installation_health,
+                 on_timeout: :retry_background
+               },
+               ownership: %{
+                 external_system: "Mem0",
+                 external_system_ref: "mem0.primary",
+                 operator_owner: "memory-ops"
+               }
+             })
+
     assert {:ok, context_binding} =
              InstallationBinding.new(%{
                binding_key: "workspace_memory",
                binding_kind: :context,
-               descriptor: descriptor,
+               descriptor: context_descriptor,
                config: %{
                  "adapter_key" => "mem0_context",
                  "config" => %{"workspace" => "default"},
@@ -731,11 +775,33 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
                credential_ref: "cred-memory-1"
              })
 
+    assert {:ok, subject_binding} =
+             InstallationBinding.new(%{
+               binding_key: "turn_consolidation",
+               binding_kind: :subject,
+               descriptor: subject_descriptor,
+               config: %{
+                 "subject_kind" => "turn_consolidation",
+                 "recipe_refs" => ["belief_consolidation_runtime"]
+               }
+             })
+
+    assert {:ok, observer_binding} =
+             InstallationBinding.new(%{
+               binding_key: "hindsight_audit",
+               binding_kind: :observer,
+               descriptor: observer_descriptor,
+               config: %{
+                 "subscriber_key" => "mem0_audit_export",
+                 "event_types" => ["run.accepted", "event.appended"]
+               }
+             })
+
     assert {:ok, update_result} =
              MezzanineBridge.update_bindings(
                context,
                installation_ref,
-               [execution_binding, context_binding],
+               [execution_binding, context_binding, subject_binding, observer_binding],
                installation_service: FakeInstallationService
              )
 
@@ -756,6 +822,17 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
              "ownership",
              "external_system_ref"
            ]) == "mem0.primary"
+
+    assert update_result.metadata.binding_config["subject_bindings"]["turn_consolidation"][
+             "subject_kind"
+           ] == "turn_consolidation"
+
+    assert get_in(update_result.metadata.binding_config, [
+             "observer_bindings",
+             "hindsight_audit",
+             "descriptor",
+             "attachment"
+           ]) == "jido_integration.audit_subscriber"
 
     assert {:ok, list_result} =
              MezzanineBridge.list_installations(

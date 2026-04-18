@@ -53,7 +53,6 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
          gate_status: Map.get(payload, :gate_status, %{})
        }}
     else
-      {:error, :archived, manifest_ref} -> {:error, :archived, manifest_ref}
       {:error, reason} -> {:error, normalize_error(reason)}
     end
   end
