@@ -113,45 +113,59 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
 
   @spec timeline(String.t(), Ecto.UUID.t()) :: {:ok, map()} | {:error, term()}
   def timeline(tenant_id, subject_id) when is_binary(tenant_id) and is_binary(subject_id) do
-    with {:ok, detail} <- WorkQueryService.get_subject_detail(tenant_id, subject_id) do
-      payload = Map.get(detail, :timeline, [])
+    case WorkQueryService.get_subject_detail(tenant_id, subject_id) do
+      {:ok, detail} ->
+        payload = Map.get(detail, :timeline, [])
 
-      {:ok,
-       %{
-         subject_ref: subject_ref(subject_id),
-         entries: Enum.map(payload, &timeline_entry/1),
-         last_event_at: detail.last_event_at
-       }}
-    else
-      {:error, :archived, manifest_ref} -> {:error, :archived, manifest_ref}
-      {:error, reason} -> {:error, reason}
+        {:ok,
+         %{
+           subject_ref: subject_ref(subject_id),
+           entries: Enum.map(payload, &timeline_entry/1),
+           last_event_at: detail.last_event_at
+         }}
+
+      {:error, :archived, manifest_ref} ->
+        {:error, :archived, manifest_ref}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
   @spec available_actions(String.t(), Ecto.UUID.t()) :: {:ok, [map()]} | {:error, term()}
   def available_actions(tenant_id, subject_id)
       when is_binary(tenant_id) and is_binary(subject_id) do
-    with {:ok, detail} <- WorkQueryService.get_subject_detail(tenant_id, subject_id) do
-      {:ok, available_actions_from_detail(detail, subject_ref(subject_id))}
-    else
-      {:error, :archived, manifest_ref} -> {:error, :archived, manifest_ref}
-      {:error, reason} -> {:error, reason}
+    case WorkQueryService.get_subject_detail(tenant_id, subject_id) do
+      {:ok, detail} ->
+        {:ok, available_actions_from_detail(detail, subject_ref(subject_id))}
+
+      {:error, :archived, manifest_ref} ->
+        {:error, :archived, manifest_ref}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
   @spec execution_trace_lineage(Ecto.UUID.t()) :: {:ok, map()} | {:error, term()}
   def execution_trace_lineage(execution_id) when is_binary(execution_id) do
-    with {:ok, lineage} <- ExecutionLineageStore.fetch(execution_id) do
-      {:ok,
-       %{
-         execution_id: lineage.execution_id,
-         installation_id: lineage.installation_id,
-         trace_id: lineage.trace_id
-       }}
-    else
-      {:error, %Ash.Error.Query.NotFound{}} -> {:error, :execution_not_found}
-      {:error, %Ash.Error.Invalid{}} -> {:error, :execution_not_found}
-      {:error, reason} -> {:error, reason}
+    case ExecutionLineageStore.fetch(execution_id) do
+      {:ok, lineage} ->
+        {:ok,
+         %{
+           execution_id: lineage.execution_id,
+           installation_id: lineage.installation_id,
+           trace_id: lineage.trace_id
+         }}
+
+      {:error, %Ash.Error.Query.NotFound{}} ->
+        {:error, :execution_not_found}
+
+      {:error, %Ash.Error.Invalid{}} ->
+        {:error, :execution_not_found}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -429,14 +443,20 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
     operations = Keyword.get(opts, :lower_operations, @default_lower_operations)
     now = Keyword.get(opts, :now, DateTime.utc_now())
 
-    with {:ok, read_lease} <- issue_lower_trace_read_lease(attrs, opts, query, execution_id) do
-      Enum.reduce_while(operations, {:ok, []}, fn operation, {:ok, acc} ->
-        accumulate_lower_fact(operation, acc, attrs, opts, query, execution_id, now, read_lease)
-      end)
-    else
-      {:error, :bridge_not_found} -> {:ok, []}
-      {:error, :execution_not_found} -> {:ok, []}
-      {:error, reason} -> {:error, reason}
+    case issue_lower_trace_read_lease(attrs, opts, query, execution_id) do
+      {:ok, read_lease} ->
+        Enum.reduce_while(operations, {:ok, []}, fn operation, {:ok, acc} ->
+          accumulate_lower_fact(operation, acc, attrs, opts, query, execution_id, now, read_lease)
+        end)
+
+      {:error, :bridge_not_found} ->
+        {:ok, []}
+
+      {:error, :execution_not_found} ->
+        {:ok, []}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -548,12 +568,18 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   end
 
   defp fetch_lineage(execution_id) do
-    with {:ok, lineage} <- ExecutionLineageStore.fetch(execution_id) do
-      {:ok, lineage}
-    else
-      {:error, %Ash.Error.Query.NotFound{}} -> {:error, :unknown_execution_lineage}
-      {:error, %Ash.Error.Invalid{}} -> {:error, :unknown_execution_lineage}
-      {:error, reason} -> {:error, reason}
+    case ExecutionLineageStore.fetch(execution_id) do
+      {:ok, lineage} ->
+        {:ok, lineage}
+
+      {:error, %Ash.Error.Query.NotFound{}} ->
+        {:error, :unknown_execution_lineage}
+
+      {:error, %Ash.Error.Invalid{}} ->
+        {:error, :unknown_execution_lineage}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

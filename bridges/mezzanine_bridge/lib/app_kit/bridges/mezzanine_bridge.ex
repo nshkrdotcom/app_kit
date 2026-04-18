@@ -21,6 +21,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
     BindingEnvelope,
     BindingFailurePosture,
     BindingOwnership,
+    BlockingCondition,
     DecisionRef,
     DecisionSummary,
     ExecutionRef,
@@ -29,7 +30,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
     InstallationRef,
     InstallResult,
     InstallTemplate,
-    BlockingCondition,
     NextStepPreview,
     OperatorAction,
     OperatorActionRef,
@@ -677,33 +677,23 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp public_action_message(message, _action_kind), do: message
 
   defp operator_projection_from_row(row, %RequestContext{} = context) do
+    payload = operator_projection_payload(row)
+
     with {:ok, subject_ref} <-
-           subject_ref_from_any(fetch_value(row, :subject_ref), context),
-         false <- is_nil(subject_ref),
+           operator_projection_subject_ref(row, context),
          {:ok, current_execution_ref} <-
            execution_ref_from_bridge(fetch_value(row, :current_execution_ref)),
          {:ok, pending_decision_refs} <-
            pending_decision_refs_from_maps(fetch_value(row, :pending_decision_refs) || []),
          {:ok, available_actions} <-
            operator_actions_from_maps(fetch_value(row, :available_actions) || []),
-         payload <- fetch_value(row, :payload) || %{},
          {:ok, pending_obligations} <-
-           pending_obligations_from_maps(
-             fetch_value(row, :pending_obligations) || fetch_value(payload, :pending_obligations) ||
-               []
-           ),
+           operator_projection_pending_obligations(row, payload),
          {:ok, blocking_conditions} <-
-           blocking_conditions_from_maps(
-             fetch_value(row, :blocking_conditions) ||
-               fetch_value(payload, :blocking_conditions) ||
-               []
-           ),
+           operator_projection_blocking_conditions(row, payload),
          {:ok, next_step_preview} <-
-           next_step_preview_from_map(
-             fetch_value(row, :next_step_preview) || fetch_value(payload, :next_step_preview)
-           ),
-         timeline_rows <- fetch_value(payload, :timeline) || fetch_value(row, :timeline) || [],
-         {:ok, timeline} <- map_each(timeline_rows, &timeline_event_from_map/1) do
+           operator_projection_next_step_preview(row, payload),
+         {:ok, timeline} <- operator_projection_timeline(row, payload) do
       OperatorProjection.new(%{
         subject_ref: subject_ref,
         lifecycle_state:
@@ -722,9 +712,45 @@ defmodule AppKit.Bridges.MezzanineBridge do
         payload: payload
       })
     else
-      true -> {:error, :invalid_subject_ref}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp operator_projection_payload(row), do: fetch_value(row, :payload) || %{}
+
+  defp operator_projection_subject_ref(row, %RequestContext{} = context) do
+    case subject_ref_from_any(fetch_value(row, :subject_ref), context) do
+      {:ok, nil} -> {:error, :invalid_subject_ref}
+      other -> other
+    end
+  end
+
+  defp operator_projection_pending_obligations(row, payload) do
+    pending_obligations_from_maps(
+      fetch_value(row, :pending_obligations) || fetch_value(payload, :pending_obligations) || []
+    )
+  end
+
+  defp operator_projection_blocking_conditions(row, payload) do
+    blocking_conditions_from_maps(
+      fetch_value(row, :blocking_conditions) || fetch_value(payload, :blocking_conditions) || []
+    )
+  end
+
+  defp operator_projection_next_step_preview(row, payload) do
+    next_step_preview_from_map(
+      fetch_value(row, :next_step_preview) || fetch_value(payload, :next_step_preview)
+    )
+  end
+
+  defp operator_projection_timeline(row, payload) do
+    row
+    |> operator_projection_timeline_rows(payload)
+    |> map_each(&timeline_event_from_map/1)
+  end
+
+  defp operator_projection_timeline_rows(row, payload) do
+    fetch_value(payload, :timeline) || fetch_value(row, :timeline) || []
   end
 
   defp pending_decision_refs_from_maps(rows) when is_list(rows) do

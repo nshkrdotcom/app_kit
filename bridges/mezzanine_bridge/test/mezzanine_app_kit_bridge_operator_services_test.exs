@@ -6,6 +6,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
   alias Ecto.Adapters.SQL.Sandbox
 
   alias Mezzanine.Archival.ArchivalManifest
+  alias Mezzanine.Archival.BundleChecksum
   alias Mezzanine.Archival.FileSystemColdStore
   alias Mezzanine.Archival.Repo, as: ArchivalRepo
 
@@ -22,8 +23,8 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
   alias Mezzanine.EvidenceLedger.Repo, as: EvidenceRepo
   alias Mezzanine.Execution.Repo, as: ExecutionRepo
   alias Mezzanine.OpsDomain.Repo, as: OpsDomainRepo
-  alias Mezzanine.ReadLease
   alias Mezzanine.Programs.{PolicyBundle, Program}
+  alias Mezzanine.ReadLease
   alias Mezzanine.Review.ReviewUnit
   alias Mezzanine.Runs.{Run, RunArtifact, RunSeries}
   alias Mezzanine.Work.{WorkClass, WorkObject}
@@ -712,8 +713,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
       }
     }
 
-    bundle =
-      Map.put(bundle, "checksum", Mezzanine.Archival.BundleChecksum.generate(bundle))
+    bundle = Map.put(bundle, "checksum", BundleChecksum.generate(bundle))
 
     {:ok, cold_result} =
       FileSystemColdStore.write_bundle(manifest_ref, bundle, root: archive_root)

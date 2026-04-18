@@ -368,29 +368,7 @@ defmodule Mezzanine.AppKitBridge.InstallationService do
   defp binding_entries({group_key, bindings}) when is_map(bindings) do
     if String.ends_with?(to_string(group_key), "_bindings") do
       bindings
-      |> Enum.map(fn {binding_key, binding} ->
-        descriptor = descriptor_map(binding)
-
-        ownership = map_value(descriptor, :ownership) || %{}
-        envelope = map_value(descriptor, :envelope) || %{}
-        failure = map_value(descriptor, :failure) || %{}
-
-        if is_binary(map_value(ownership, :external_system_ref)) do
-          %{
-            binding_key: to_string(binding_key),
-            external_system: map_value(ownership, :external_system),
-            external_system_ref: map_value(ownership, :external_system_ref),
-            operator_owner: map_value(ownership, :operator_owner),
-            attachment: map_value(descriptor, :attachment),
-            contract: map_value(descriptor, :contract),
-            runbook_ref: map_value(envelope, :runbook_ref),
-            staleness_class: map_value(envelope, :staleness_class),
-            on_unavailable: map_value(failure, :on_unavailable),
-            on_timeout: map_value(failure, :on_timeout),
-            credential_ref: map_value(binding, :credential_ref)
-          }
-        end
-      end)
+      |> Enum.map(fn {binding_key, binding} -> binding_entry(binding_key, binding) end)
       |> Enum.reject(&is_nil/1)
     else
       []
@@ -398,6 +376,31 @@ defmodule Mezzanine.AppKitBridge.InstallationService do
   end
 
   defp binding_entries(_entry), do: []
+
+  defp binding_entry(binding_key, binding) do
+    descriptor = descriptor_map(binding)
+    ownership = map_value(descriptor, :ownership) || %{}
+    external_system_ref = map_value(ownership, :external_system_ref)
+
+    if is_binary(external_system_ref) do
+      envelope = map_value(descriptor, :envelope) || %{}
+      failure = map_value(descriptor, :failure) || %{}
+
+      %{
+        binding_key: to_string(binding_key),
+        external_system: map_value(ownership, :external_system),
+        external_system_ref: external_system_ref,
+        operator_owner: map_value(ownership, :operator_owner),
+        attachment: map_value(descriptor, :attachment),
+        contract: map_value(descriptor, :contract),
+        runbook_ref: map_value(envelope, :runbook_ref),
+        staleness_class: map_value(envelope, :staleness_class),
+        on_unavailable: map_value(failure, :on_unavailable),
+        on_timeout: map_value(failure, :on_timeout),
+        credential_ref: map_value(binding, :credential_ref)
+      }
+    end
+  end
 
   defp descriptor_map(binding) do
     map_value(binding, :descriptor) || %{}

@@ -8,6 +8,7 @@ defmodule Mezzanine.AppKitBridge.SemanticFailureRecoveryServiceTest do
 
   alias Mezzanine.AppKitBridge.{
     OperatorQueryService,
+    ReviewActionService,
     ReviewQueryService,
     SemanticFailureRecoveryService,
     WorkQueryService
@@ -110,7 +111,7 @@ defmodule Mezzanine.AppKitBridge.SemanticFailureRecoveryServiceTest do
              "semantic_failure"
 
     assert {:ok, resolved_review} =
-             Mezzanine.AppKitBridge.ReviewActionService.record_decision(
+             ReviewActionService.record_decision(
                tenant_id,
                recovery.review_unit.id,
                %{
