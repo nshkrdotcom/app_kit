@@ -105,6 +105,8 @@ defmodule AppKit.OperatorSurface.DefaultBackend do
       expires_at: Keyword.get(opts, :expires_at, DateTime.utc_now()),
       lease_token: Keyword.get(opts, :lease_token, "read-lease-token"),
       allowed_operations: Keyword.get(opts, :allowed_operations, ["fetch_run"]),
+      authorization_scope:
+        Keyword.get(opts, :authorization_scope, authorization_scope(context, execution_ref)),
       scope: Keyword.get(opts, :scope, %{}),
       lineage_anchor: Keyword.get(opts, :lineage_anchor, %{"execution_id" => execution_ref.id}),
       invalidation_cursor: Keyword.get(opts, :invalidation_cursor, 0),
@@ -130,6 +132,8 @@ defmodule AppKit.OperatorSurface.DefaultBackend do
       trace_id: context.trace_id,
       expires_at: Keyword.get(opts, :expires_at, DateTime.utc_now()),
       attach_token: Keyword.get(opts, :attach_token, "stream-attach-token"),
+      authorization_scope:
+        Keyword.get(opts, :authorization_scope, authorization_scope(context, execution_ref)),
       scope: Keyword.get(opts, :scope, %{}),
       lineage_anchor: Keyword.get(opts, :lineage_anchor, %{"execution_id" => execution_ref.id}),
       reconnect_cursor: Keyword.get(opts, :reconnect_cursor, 0),
@@ -213,5 +217,18 @@ defmodule AppKit.OperatorSurface.DefaultBackend do
         })
       ]
     end)
+  end
+
+  defp authorization_scope(%RequestContext{} = context, %ExecutionRef{} = execution_ref) do
+    %{
+      tenant_id: context.tenant_ref.id,
+      installation_id: context.installation_ref && context.installation_ref.id,
+      subject_id: execution_ref.subject_ref && execution_ref.subject_ref.id,
+      execution_id: execution_ref.id,
+      trace_id: context.trace_id,
+      actor_ref: Map.from_struct(context.actor_ref),
+      authorized_at: DateTime.utc_now()
+    }
+    |> Map.reject(fn {_key, value} -> is_nil(value) end)
   end
 end

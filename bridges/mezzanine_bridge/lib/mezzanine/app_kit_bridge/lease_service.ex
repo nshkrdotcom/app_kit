@@ -108,6 +108,7 @@ defmodule Mezzanine.AppKitBridge.LeaseService do
       expires_at: lease.expires_at,
       lease_token: lease.lease_token,
       allowed_operations: lease.allowed_operations,
+      authorization_scope: authorization_scope(lease, execution),
       scope: lease.scope,
       lineage_anchor: lease.lineage_anchor,
       invalidation_cursor: lease.issued_invalidation_cursor,
@@ -125,6 +126,7 @@ defmodule Mezzanine.AppKitBridge.LeaseService do
       trace_id: lease.trace_id,
       expires_at: lease.expires_at,
       attach_token: lease.attach_token,
+      authorization_scope: authorization_scope(lease, execution),
       scope: lease.scope,
       lineage_anchor: lease.lineage_anchor,
       reconnect_cursor: lease.last_invalidation_cursor,
@@ -134,6 +136,18 @@ defmodule Mezzanine.AppKitBridge.LeaseService do
   end
 
   defp lease_repo(opts), do: Keyword.get(opts, :lease_repo, Mezzanine.Execution.Repo)
+
+  defp authorization_scope(lease, execution) do
+    %{
+      tenant_id: lease.tenant_id,
+      installation_id: lease.installation_id,
+      subject_id: execution.subject_id,
+      execution_id: execution.id,
+      trace_id: lease.trace_id,
+      authorized_at: DateTime.utc_now()
+    }
+    |> Map.reject(fn {_key, value} -> is_nil(value) end)
+  end
 
   defp map_value(map, key) when is_map(map) do
     Map.get(map, key) || Map.get(map, Atom.to_string(key))

@@ -26,6 +26,7 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   alias Mezzanine.IntegrationBridge
   alias Mezzanine.Intent.ReadIntent
   alias Mezzanine.Leasing
+  alias Mezzanine.Leasing.AuthorizationScope
   alias Mezzanine.WorkControl
   alias Mezzanine.WorkQueries
 
@@ -477,6 +478,7 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   defp dispatch_lower_fact(operation, attrs, opts, installation_id, execution_id, now, read_lease) do
     with {:ok, _lease} <-
            Leasing.authorize_read(
+             lease_authorization_scope(read_lease, attrs, installation_id, execution_id),
              read_lease.lease_ref.id,
              read_lease.lease_token,
              operation,
@@ -488,6 +490,7 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
           read_type: :lower_fact,
           subject: %{
             actor_id: Map.get(attrs, :actor_id, "operator"),
+            tenant_id: map_get(attrs, :tenant_id),
             installation_id: installation_id,
             execution_id: execution_id
           },
@@ -501,8 +504,7 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
         end
 
       with {:ok, response} <- IntegrationBridge.dispatch_read(read_intent, lower_opts) do
-        {:ok,
-         normalize_lower_records(response, execution_id, now, attrs.trace_id || attrs["trace_id"])}
+        {:ok, normalize_lower_records(response, execution_id, now, map_get(attrs, :trace_id))}
       end
     end
   end
@@ -852,6 +854,28 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   defp coerce_datetime(_value), do: nil
 
   defp normalize_value(value), do: AdapterSupport.normalize_value(value)
+
+  defp lease_authorization_scope(read_lease, attrs, installation_id, execution_id) do
+    scope =
+      read_lease
+      |> Map.get(:authorization_scope, %{})
+      |> Map.merge(
+        %{
+          tenant_id: map_get(attrs, :tenant_id),
+          installation_id: installation_id,
+          execution_id: execution_id,
+          trace_id: map_get(attrs, :trace_id),
+          actor_ref: %{id: Map.get(attrs, :actor_id, "operator")},
+          authorized_at: DateTime.utc_now()
+        }
+        |> Map.reject(fn {_key, value} -> is_nil(value) end)
+      )
+
+    AuthorizationScope.new!(scope)
+  end
+
+  defp map_get(map, key) when is_map(map),
+    do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
 
   defp severity_rank(:critical), do: 3
   defp severity_rank(:warning), do: 2

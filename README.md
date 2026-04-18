@@ -49,6 +49,11 @@ Runtime proof output must stay out of tracked paths. Bridge packages that need
 mutable archival or trace artifacts write to OS temp roots or ignored generated
 directories, and `mix ci` should leave the worktree clean.
 
+Lower-backed operator reads must stay behind AppKit surfaces. The Mezzanine
+bridge carries read and stream-attach `authorization_scope` in public DTOs so
+product callers cannot bypass tenant-scoped lease checks or call lower-facts
+stores with only a raw token.
+
 The welded `app_kit_core` artifact is tracked through the prepared bundle flow:
 
 ```bash

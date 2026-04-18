@@ -4,11 +4,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
   alias AppKit.Core.{RunRef, TraceIdentity}
   alias Ecto.Adapters.SQL
   alias Ecto.Adapters.SQL.Sandbox
-
-  alias Mezzanine.Archival.ArchivalManifest
-  alias Mezzanine.Archival.BundleChecksum
-  alias Mezzanine.Archival.FileSystemColdStore
-  alias Mezzanine.Archival.Repo, as: ArchivalRepo
+  alias Jido.Integration.V2.TenantScope
 
   alias Mezzanine.AppKitBridge.{
     OperatorActionService,
@@ -16,6 +12,10 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     OperatorQueryService
   }
 
+  alias Mezzanine.Archival.ArchivalManifest
+  alias Mezzanine.Archival.BundleChecksum
+  alias Mezzanine.Archival.FileSystemColdStore
+  alias Mezzanine.Archival.Repo, as: ArchivalRepo
   alias Mezzanine.Audit.Repo, as: AuditRepo
   alias Mezzanine.Audit.WorkAudit
   alias Mezzanine.Control.ControlSession
@@ -33,8 +33,8 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     def operation_supported?(operation),
       do: operation in [:fetch_run, :events, :attempts, :run_artifacts]
 
-    def fetch_run(run_id) do
-      send(self(), {:fetch_run, [run_id]})
+    def fetch_run(%TenantScope{} = scope, run_id) do
+      send(self(), {:fetch_run, [scope.tenant_id, run_id]})
 
       {:ok,
        %{
@@ -44,8 +44,8 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
        }}
     end
 
-    def events(run_id) do
-      send(self(), {:events, [run_id]})
+    def events(%TenantScope{} = scope, run_id) do
+      send(self(), {:events, [scope.tenant_id, run_id]})
 
       [
         %{
@@ -57,8 +57,8 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
       ]
     end
 
-    def attempts(run_id) do
-      send(self(), {:attempts, [run_id]})
+    def attempts(%TenantScope{} = scope, run_id) do
+      send(self(), {:attempts, [scope.tenant_id, run_id]})
 
       [
         %{
@@ -70,8 +70,8 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
       ]
     end
 
-    def run_artifacts(run_id) do
-      send(self(), {:run_artifacts, [run_id]})
+    def run_artifacts(%TenantScope{} = scope, run_id) do
+      send(self(), {:run_artifacts, [scope.tenant_id, run_id]})
 
       [
         %{
@@ -284,10 +284,10 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
              "run_artifacts"
            ]
 
-    assert_received {:fetch_run, ["lower-run-operator-services"]}
-    assert_received {:events, ["lower-run-operator-services"]}
-    assert_received {:attempts, ["lower-run-operator-services"]}
-    assert_received {:run_artifacts, ["lower-run-operator-services"]}
+    assert_received {:fetch_run, [^tenant_id, "lower-run-operator-services"]}
+    assert_received {:events, [^tenant_id, "lower-run-operator-services"]}
+    assert_received {:attempts, [^tenant_id, "lower-run-operator-services"]}
+    assert_received {:run_artifacts, [^tenant_id, "lower-run-operator-services"]}
     refute_received {:fetch_submission_receipt, _args}
   end
 
