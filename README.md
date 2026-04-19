@@ -20,6 +20,13 @@ It exists so product applications can consume stable chat, domain, operator,
 work-control, runtime-gateway, and conversation surfaces without stitching the
 lower stack manually.
 
+AppKit is also the product boundary enforcement point. Product repos must use
+AppKit surfaces for governed writes, operator reads, reviews, installation
+bootstrap, semantic assist, trace lookup, and leased lower read access. Direct
+product calls into Mezzanine, Citadel, Jido Integration, or Execution Plane are
+boundary violations unless the product is authoring a pure `Mezzanine.Pack`
+model contract.
+
 ## Scope
 
 - chat-facing surfaces
@@ -49,6 +56,28 @@ Runtime proof output must stay out of tracked paths. Bridge packages that need
 mutable archival or trace artifacts write to OS temp roots or ignored generated
 directories, and `mix ci` should leave the worktree clean.
 
+The AppKit-owned product-boundary scanner is part of the root CI gate:
+
+```bash
+mix app_kit.no_bypass --profile hazmat \
+  --include "core/**/*.ex" \
+  --include "bridges/**/*.ex" \
+  --include "examples/**/*.ex"
+```
+
+Product repos run the same task from this workspace with `--root` and both
+profiles. `product` blocks direct governed-write imports into Mezzanine,
+Citadel, Jido Integration, and Execution Plane while allowing the pure
+`Mezzanine.Pack` authoring contract. `hazmat` separately blocks direct
+Execution Plane usage so attach and stream behavior stays behind AppKit and
+Mezzanine leases.
+
+Default AppKit surface backends are configured under the real OTP application
+`:app_kit_core`, for example `:installation_backend`, `:work_query_backend`,
+`:review_backend`, `:operator_backend`, and `:work_backend`. Products may pass
+explicit backend options for tests, but product runtime configuration should
+not create a synthetic `:app_kit` config namespace.
+
 Lower-backed operator reads must stay behind AppKit surfaces. The Mezzanine
 bridge carries read and stream-attach `authorization_scope` in public DTOs so
 product callers cannot bypass tenant-scoped lease checks or call lower-facts
@@ -76,3 +105,9 @@ release boundary exists.
 
 This project is licensed under the MIT License.
 (c) 2026 nshkrdotcom. See `LICENSE`.
+
+## Temporal developer environment
+
+Temporal CLI is expected to be available as `temporal` on this developer workstation for local durable-workflow development. Current provisioning is machine-level dotfiles setup, not a repo-local dependency.
+
+TODO: make Temporal ergonomics explicit for developers by adding repo-local setup scripts, version expectations, and fallback instructions so the tool is not silently assumed from the workstation.
