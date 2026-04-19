@@ -388,13 +388,13 @@ defmodule AppKit.Core.ContractTest do
                staleness_started_at: ~U[2026-04-18 12:00:30Z],
                last_projection_event_ref: "projection-event://operator-signals/097",
                incident_bundle_ref: "incident://workflow-097/signal-097/stale",
-               raw_temporalex_result: :forbidden
+               raw_runtime_result: :forbidden
              })
 
     assert result.contract_name == "AppKit.OperatorSignalResult.v1"
     assert result.dispatch_state == :delivered_to_temporal
     assert result.workflow_effect_state == :pending
-    refute Map.has_key?(Map.from_struct(result), :raw_temporalex_result)
+    refute Map.has_key?(Map.from_struct(result), :raw_runtime_result)
 
     assert {:error, :invalid_operator_signal_result} =
              OperatorSignalResult.new(%{
