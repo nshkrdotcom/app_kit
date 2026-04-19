@@ -24,6 +24,7 @@ defmodule AppKit.Core.ContractTest do
     OperatorActionRef,
     OperatorActionRequest,
     OperatorProjection,
+    OperatorSignalResult,
     OperatorSurfaceProjection,
     PageRequest,
     PageResult,
@@ -357,6 +358,65 @@ defmodule AppKit.Core.ContractTest do
                produced_at: produced_at,
                dispatch_state: :delivered_to_temporal,
                workflow_effect_state: :pending
+             })
+  end
+
+  test "builds operator signal results without exposing Temporal internals" do
+    assert {:ok, result} =
+             OperatorSignalResult.new(%{
+               command_id: "cmd-097",
+               signal_id: "signal-097",
+               workflow_ref: "workflow://workflow-097/run-097",
+               tenant_ref: %{id: "tenant-1"},
+               installation_ref: %{id: "inst-1", pack_slug: "expense_approval"},
+               operator_ref: %{id: "ops-lead", kind: :human},
+               resource_ref: %{id: "workflow/expense-1", kind: "workflow"},
+               authority_packet_ref: "authz-packet-097",
+               permission_decision_ref: "decision-097",
+               idempotency_key: "operator-signal:cancel:097",
+               trace_id: "0123456789abcdef0123456789abcdef",
+               correlation_id: "corr-097",
+               release_manifest_version: "phase4.v6.milestone28",
+               authority_state: :authorized,
+               local_state: :accepted,
+               dispatch_state: :delivered_to_temporal,
+               workflow_effect_state: :pending,
+               projection_state: :stale,
+               operator_message:
+                 "workflow effect pending; awaiting workflow acknowledgement projection",
+               retry_after_ms: 5_000,
+               staleness_started_at: ~U[2026-04-18 12:00:30Z],
+               last_projection_event_ref: "projection-event://operator-signals/097",
+               incident_bundle_ref: "incident://workflow-097/signal-097/stale",
+               raw_temporalex_result: :forbidden
+             })
+
+    assert result.contract_name == "AppKit.OperatorSignalResult.v1"
+    assert result.dispatch_state == :delivered_to_temporal
+    assert result.workflow_effect_state == :pending
+    refute Map.has_key?(Map.from_struct(result), :raw_temporalex_result)
+
+    assert {:error, :invalid_operator_signal_result} =
+             OperatorSignalResult.new(%{
+               command_id: "cmd-097",
+               signal_id: "signal-097",
+               workflow_ref: "workflow://workflow-097/run-097",
+               tenant_ref: %{id: "tenant-1"},
+               installation_ref: %{id: "inst-1", pack_slug: "expense_approval"},
+               operator_ref: %{id: "ops-lead", kind: :human},
+               resource_ref: %{id: "workflow/expense-1", kind: "workflow"},
+               authority_packet_ref: "authz-packet-097",
+               permission_decision_ref: "decision-097",
+               idempotency_key: "operator-signal:cancel:097",
+               trace_id: "0123456789abcdef0123456789abcdef",
+               correlation_id: "corr-097",
+               release_manifest_version: "phase4.v6.milestone28",
+               authority_state: :authorized,
+               local_state: :accepted,
+               dispatch_state: :delivered_to_temporal,
+               workflow_effect_state: :processed,
+               projection_state: :fresh,
+               operator_message: "bad state"
              })
   end
 
