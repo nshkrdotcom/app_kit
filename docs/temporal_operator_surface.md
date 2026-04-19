@@ -9,8 +9,8 @@ Mezzanine owns the durable workflow boundary and the native local Temporal devel
 M31 cutover note: AppKit treats Oban as a Mezzanine-local implementation detail
 for workflow-start outbox dispatch, workflow-signal outbox dispatch where a
 local command must be durably paired with signal delivery, claim-check garbage
-collection, and bounded local jobs. AppKit never reads Oban rows as workflow
-truth and never renders an operator action complete until Mezzanine projections
+collection, and bounded local jobs. AppKit never reads Oban rows as workflow truth
+and never renders an operator action complete until Mezzanine projections
 show the workflow acknowledgement/effect state.
 
 ## Local development
