@@ -23,6 +23,7 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   alias Mezzanine.Decisions.DecisionRecord
   alias Mezzanine.EvidenceLedger.EvidenceRecord
   alias Mezzanine.Execution.ExecutionRecord
+  alias Mezzanine.Execution.LifecycleContinuation
   alias Mezzanine.IntegrationBridge
   alias Mezzanine.Intent.ReadIntent
   alias Mezzanine.Leasing
@@ -62,7 +63,8 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   def subject_status(tenant_id, subject_id)
       when is_binary(tenant_id) and is_binary(subject_id) do
     with {:ok, detail} <- WorkQueryService.get_subject_detail(tenant_id, subject_id),
-         {:ok, audit_report} <- WorkAudit.work_report(tenant_id, subject_id) do
+         {:ok, audit_report} <- WorkAudit.work_report(tenant_id, subject_id),
+         {:ok, continuations} <- LifecycleContinuation.list_for_subject(tenant_id, subject_id) do
       subject_ref = subject_ref(subject_id)
 
       {:ok,
@@ -97,6 +99,7 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
            audit_events: Enum.map(audit_report.audit_events, &normalize_value/1),
            evidence_bundles: normalize_value(audit_report.evidence_bundles),
            evidence_bundle_id: detail.evidence_bundle_id,
+           lifecycle_continuations: Enum.map(continuations, &continuation_summary/1),
            run_series_ids: detail.run_series_ids,
            obligation_ids: detail.obligation_ids,
            pending_obligations: normalize_value(detail.pending_obligations),
@@ -238,6 +241,40 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
     ArgumentError -> {:error, :invalid_trace_query}
   end
 
+  @spec get_archived_unified_trace_by_pivot(map(), keyword()) :: {:ok, map()} | {:error, term()}
+  def get_archived_unified_trace_by_pivot(attrs, opts \\ [])
+      when is_map(attrs) and is_list(opts) do
+    attrs = Map.new(attrs)
+
+    with {:ok, installation_id} <- fetch_string(attrs, opts, :installation_id),
+         {:ok, pivot} <- fetch_trace_pivot(attrs, opts),
+         {:ok, pivot_id} <- fetch_string(attrs, opts, :pivot_id),
+         {:ok, archived} <-
+           ArchivalQuery.archived_trace_sources_by_pivot(installation_id, pivot, pivot_id),
+         {:ok, query} <- build_unified_trace_query(attrs, installation_id, archived.trace_id),
+         {:ok, timeline} <-
+           UnifiedTrace.assemble(query, Map.put(archived.sources, :lower_facts, [])) do
+      {:ok,
+       %{
+         trace_id: timeline.trace_id,
+         installation_id: timeline.installation_id,
+         join_keys: %{
+           "trace_id" => timeline.trace_id,
+           "installation_id" => timeline.installation_id,
+           Atom.to_string(pivot) => pivot_id
+         },
+         metadata: %{
+           indexed_join_keys: Enum.map(timeline.join_keys, &Atom.to_string/1),
+           archived_manifest_ref: archived.manifest.manifest_ref,
+           archive_pivot: Atom.to_string(pivot)
+         },
+         steps: Enum.map(timeline.steps, &normalize_unified_step/1)
+       }}
+    end
+  rescue
+    ArgumentError -> {:error, :invalid_trace_query}
+  end
+
   defp build_unified_trace_query(attrs, installation_id, trace_id) do
     query =
       Query.new!(%{
@@ -248,6 +285,35 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
       })
 
     {:ok, query}
+  end
+
+  defp fetch_trace_pivot(attrs, opts) do
+    value = Keyword.get(opts, :pivot) || map_get(attrs, :pivot)
+
+    case value do
+      pivot
+      when pivot in [
+             :trace_id,
+             :subject_id,
+             :execution_id,
+             :decision_id,
+             :run_id,
+             :attempt_id,
+             :artifact_id,
+             :manifest_ref
+           ] ->
+        {:ok, pivot}
+
+      pivot when is_binary(pivot) ->
+        pivot
+        |> String.to_existing_atom()
+        |> then(&fetch_trace_pivot(%{pivot: &1}, []))
+
+      _other ->
+        {:error, :invalid_trace_query}
+    end
+  rescue
+    ArgumentError -> {:error, :invalid_trace_query}
   end
 
   defp fetch_trace_sources(attrs, opts, %Query{} = query, execution_id) do
@@ -755,6 +821,21 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
     |> Map.update(:event_kind, nil, &normalize_state/1)
   end
 
+  defp continuation_summary(%LifecycleContinuation{} = continuation) do
+    %{
+      continuation_id: continuation.continuation_id,
+      status: continuation.status,
+      from_state: continuation.from_state,
+      target_transition: continuation.target_transition,
+      attempt_count: continuation.attempt_count,
+      next_attempt_at: continuation.next_attempt_at,
+      last_error_class: continuation.last_error_class,
+      last_error_message: continuation.last_error_message,
+      trace_id: continuation.trace_id,
+      execution_id: continuation.execution_id
+    }
+  end
+
   defp normalize_unified_step(step) do
     %{
       ref: step.ref,
@@ -762,7 +843,7 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
       occurred_at: step.occurred_at,
       trace_id: step.trace_id,
       causation_id: step.causation_id,
-      freshness: step.freshness,
+      staleness_class: step.staleness_class,
       operator_actionable?: step.operator_actionable?,
       diagnostic?: step.diagnostic?,
       payload: normalize_value(step.payload)

@@ -232,7 +232,7 @@ defmodule AppKit.Core.UnifiedTraceStep do
     occurred_at: nil,
     trace_id: nil,
     causation_id: nil,
-    freshness: nil,
+    staleness_class: nil,
     operator_actionable?: false,
     diagnostic?: false,
     payload: %{}
@@ -244,7 +244,7 @@ defmodule AppKit.Core.UnifiedTraceStep do
           occurred_at: DateTime.t() | nil,
           trace_id: String.t() | nil,
           causation_id: String.t() | nil,
-          freshness: String.t() | nil,
+          staleness_class: String.t() | nil,
           operator_actionable?: boolean(),
           diagnostic?: boolean(),
           payload: map()
@@ -262,8 +262,8 @@ defmodule AppKit.Core.UnifiedTraceStep do
          {:ok, trace_id} <- TraceIdentity.ensure_optional(Map.get(attrs, :trace_id)),
          causation_id <- Map.get(attrs, :causation_id),
          true <- Support.optional_binary?(causation_id),
-         freshness <- Map.get(attrs, :freshness),
-         true <- Support.optional_binary?(freshness),
+         staleness_class <- Map.get(attrs, :staleness_class),
+         true <- Support.optional_binary?(staleness_class),
          operator_actionable? <- Map.get(attrs, :operator_actionable?, false),
          true <- is_boolean(operator_actionable?),
          diagnostic? <- Map.get(attrs, :diagnostic?, false),
@@ -277,7 +277,7 @@ defmodule AppKit.Core.UnifiedTraceStep do
          occurred_at: occurred_at,
          trace_id: trace_id,
          causation_id: causation_id,
-         freshness: freshness,
+         staleness_class: staleness_class,
          operator_actionable?: operator_actionable?,
          diagnostic?: diagnostic?,
          payload: payload

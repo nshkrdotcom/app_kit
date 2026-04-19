@@ -21,6 +21,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
   alias Mezzanine.Control.ControlSession
   alias Mezzanine.Decisions.Repo, as: DecisionsRepo
   alias Mezzanine.EvidenceLedger.Repo, as: EvidenceRepo
+  alias Mezzanine.Execution.LifecycleContinuation
   alias Mezzanine.Execution.Repo, as: ExecutionRepo
   alias Mezzanine.OpsDomain.Repo, as: OpsDomainRepo
   alias Mezzanine.Programs.{PolicyBundle, Program}
@@ -235,6 +236,52 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     assert updated_review_unit.status == :accepted
   end
 
+  test "operator services expose and retry lifecycle continuation dead letters" do
+    %{tenant_id: tenant_id, work_object: work_object} =
+      fixture_stack("tenant-operator-continuations")
+
+    {:ok, continuation} =
+      LifecycleContinuation.enqueue(%{
+        continuation_id: "continuation-operator-1",
+        tenant_id: tenant_id,
+        installation_id: tenant_id,
+        subject_id: work_object.id,
+        execution_id: Ecto.UUID.generate(),
+        from_state: "processing",
+        target_transition: "execution_completed:expense_capture",
+        next_attempt_at: ~U[2026-04-18 19:00:00Z],
+        trace_id: "trace-continuation-operator",
+        status: :pending
+      })
+
+    {:ok, dead_lettered} =
+      LifecycleContinuation.process(continuation.continuation_id,
+        now: ~U[2026-04-18 19:01:00Z],
+        handler: fn _continuation -> {:error, :invalid_transition} end
+      )
+
+    assert dead_lettered.status == :dead_lettered
+
+    assert {:ok, status} = OperatorQueryService.subject_status(tenant_id, work_object.id)
+    assert [operator_continuation] = status.payload.lifecycle_continuations
+    assert operator_continuation.continuation_id == continuation.continuation_id
+    assert operator_continuation.status == :dead_lettered
+    assert operator_continuation.last_error_class == "invalid_transition"
+
+    assert {:ok, retry_result} =
+             OperatorActionService.apply_action(
+               tenant_id,
+               work_object.id,
+               :retry_continuation,
+               %{continuation_id: continuation.continuation_id},
+               %{actor_ref: "ops_lead"}
+             )
+
+    assert retry_result.action_ref.action_kind == "retry_continuation"
+    assert retry_result.metadata.status == :pending
+    assert retry_result.metadata.continuation_id == continuation.continuation_id
+  end
+
   test "operator query service assembles unified trace through the substrate contract and lower read bridge" do
     %{tenant_id: tenant_id, work_object: work_object} =
       fixture_stack("tenant-operator-unified-trace")
@@ -270,7 +317,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     assert Enum.any?(trace.steps, &(&1.source == :evidence_record))
 
     lower_step = Enum.find(trace.steps, &(&1.source == :lower_run_status))
-    assert lower_step.freshness == :lower_authoritative_unreconciled
+    assert lower_step.staleness_class == :lower_fresh
     refute lower_step.operator_actionable?
 
     [read_lease] = ExecutionRepo.all(ReadLease)
@@ -361,8 +408,31 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     assert Enum.any?(trace.steps, &(&1.source == :execution_record))
     assert Enum.any?(trace.steps, &(&1.source == :decision_record))
     assert Enum.any?(trace.steps, &(&1.source == :evidence_record))
+    assert Enum.all?(trace.steps, &(&1.staleness_class == :authoritative_archived))
     refute Enum.any?(trace.steps, &(&1.source == :lower_run_status))
     refute_received {:fetch_run, _args}
+
+    for {pivot, pivot_id} <- [
+          subject_id: work_object.id,
+          execution_id: execution.id,
+          decision_id: decision_id,
+          run_id: "lower-run-operator-services-archived",
+          attempt_id: "attempt-operator-services-archived",
+          artifact_id: "artifact-operator-services-archived",
+          manifest_ref: manifest_ref
+        ] do
+      assert {:ok, pivot_trace} =
+               OperatorQueryService.get_archived_unified_trace_by_pivot(%{
+                 installation_id: tenant_id,
+                 pivot: pivot,
+                 pivot_id: pivot_id
+               })
+
+      assert pivot_trace.trace_id == trace_id
+      assert pivot_trace.metadata.archived_manifest_ref == manifest_ref
+      assert pivot_trace.metadata.archive_pivot == Atom.to_string(pivot)
+      assert Enum.all?(pivot_trace.steps, &(&1.staleness_class == :authoritative_archived))
+    end
   end
 
   test "operator services archive paths use disposable temp storage outside the bridge package" do
@@ -680,6 +750,11 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
               "dispatch_state" => "accepted",
               "recipe_ref" => "triage_ticket",
               "compiled_pack_revision" => 7,
+              "lower_receipt" => %{
+                "run_id" => "lower-run-#{suffix}",
+                "attempt_id" => "attempt-#{suffix}",
+                "artifact_ids" => ["artifact-#{suffix}"]
+              },
               "barrier_id" => nil,
               "last_reconcile_wave_id" => nil,
               "supersedes_execution_id" => nil,
@@ -714,7 +789,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
               "evidence_kind" => "run_log",
               "status" => "collected",
               "collector_ref" => "jido_run_output",
-              "content_ref" => "artifact://#{suffix}",
+              "content_ref" => "artifact-#{suffix}",
               "metadata" => %{"size" => 128},
               "collected_at" => "2026-04-15T10:02:00Z",
               "inserted_at" => "2026-04-15T10:01:30Z"

@@ -920,7 +920,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
       occurred_at: coerce_datetime(fetch_value(step, :occurred_at)),
       trace_id: fetch_value(step, :trace_id),
       causation_id: fetch_value(step, :causation_id),
-      freshness: normalize_string(fetch_value(step, :freshness)),
+      staleness_class: normalize_string(fetch_value(step, :staleness_class)),
       operator_actionable?: fetch_value(step, :operator_actionable?) || false,
       diagnostic?: fetch_value(step, :diagnostic?) || false,
       payload: fetch_value(step, :payload) || %{}

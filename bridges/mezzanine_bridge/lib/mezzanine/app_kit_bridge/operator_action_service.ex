@@ -6,9 +6,18 @@ defmodule Mezzanine.AppKitBridge.OperatorActionService do
   alias AppKit.Core.RunRef
   alias Mezzanine.AppKitBridge.AdapterSupport
   alias Mezzanine.AppKitBridge.ReviewActionService
+  alias Mezzanine.Execution.LifecycleContinuation
   alias Mezzanine.OperatorActions
 
-  @supported_actions [:pause, :resume, :cancel, :replan, :grant_override]
+  @supported_actions [
+    :pause,
+    :resume,
+    :cancel,
+    :replan,
+    :grant_override,
+    :retry_continuation,
+    :waive_continuation
+  ]
 
   @spec apply_action(String.t(), Ecto.UUID.t(), atom() | String.t(), map(), map()) ::
           {:ok, map()} | {:error, term()}
@@ -72,6 +81,20 @@ defmodule Mezzanine.AppKitBridge.OperatorActionService do
     )
   end
 
+  defp dispatch_action(:retry_continuation, _tenant_id, _subject_id, params, _actor) do
+    with {:ok, continuation_id} <- continuation_id(params) do
+      LifecycleContinuation.retry(continuation_id)
+    end
+  end
+
+  defp dispatch_action(:waive_continuation, _tenant_id, _subject_id, params, _actor) do
+    with {:ok, continuation_id} <- continuation_id(params) do
+      LifecycleContinuation.waive(continuation_id,
+        reason: Map.get(params, :reason, "operator waived")
+      )
+    end
+  end
+
   defp normalize_action(action) when action in @supported_actions, do: {:ok, action}
 
   defp normalize_action(action) when is_binary(action) do
@@ -88,6 +111,13 @@ defmodule Mezzanine.AppKitBridge.OperatorActionService do
       Map.get(params, :active_override_set) || Map.get(params, "active_override_set") || params
   end
 
+  defp continuation_id(params) do
+    case Map.get(params, :continuation_id) || Map.get(params, "continuation_id") do
+      value when is_binary(value) -> {:ok, value}
+      _other -> {:error, :missing_continuation_id}
+    end
+  end
+
   defp action_ref(subject_id, action) do
     %{
       id: "#{subject_id}:#{action}",
@@ -101,6 +131,8 @@ defmodule Mezzanine.AppKitBridge.OperatorActionService do
   defp action_message(:cancel), do: "Work cancelled"
   defp action_message(:replan), do: "Replan requested"
   defp action_message(:grant_override), do: "Grant override applied"
+  defp action_message(:retry_continuation), do: "Lifecycle continuation retry requested"
+  defp action_message(:waive_continuation), do: "Lifecycle continuation waived"
 
   defp actor_ref(attrs, opts), do: AdapterSupport.actor_ref(attrs, opts)
   defp normalize_value(value), do: AdapterSupport.normalize_value(value)

@@ -31,6 +31,23 @@ tenant boundary: a valid lease token alone is insufficient if the caller scope
 does not match the tenant, installation, subject, execution, and trace carried
 by the lease.
 
+## Phase-3 Operator Recovery
+
+The bridge exposes the release-readiness operator paths proven in Stack Lab:
+
+- `OperatorQueryService.get_archived_unified_trace_by_pivot/2` reconstructs an
+  archived trace from trace, subject, execution, decision, run, attempt,
+  artifact, or manifest pivots.
+- Unified trace DTOs carry source labels and phase-3 staleness classes so
+  operators can distinguish archived truth from hot, lower-fresh, stale
+  projection, diagnostic, or unavailable data.
+- `OperatorQueryService.subject_status/2` includes lifecycle continuation
+  summaries for pending, retry-scheduled, dead-lettered, and completed
+  continuations.
+- `OperatorActionService.apply_action/2` supports safe `:retry_continuation`
+  and `:waive_continuation` actions. Both target one continuation id and
+  preserve operator trace metadata.
+
 ## Product Boundary
 
 Products should see this bridge only as the configured backend behind AppKit

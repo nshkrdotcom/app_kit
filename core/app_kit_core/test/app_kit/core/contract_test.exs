@@ -369,7 +369,7 @@ defmodule AppKit.Core.ContractTest do
                occurred_at: occurred_at,
                trace_id: trace_id,
                causation_id: "cause-1",
-               freshness: "lower_authoritative_unreconciled",
+               staleness_class: "lower_fresh",
                operator_actionable?: false,
                diagnostic?: false,
                payload: %{"dispatch_state" => "dispatching"}

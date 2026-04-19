@@ -448,7 +448,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
              source: :execution_record,
              occurred_at: ~U[2026-04-18 13:05:00Z],
              trace_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-             freshness: :lower_authoritative_unreconciled,
+             staleness_class: :lower_fresh,
              operator_actionable?: false,
              diagnostic?: false,
              payload: %{"dispatch_state" => "dispatching"}

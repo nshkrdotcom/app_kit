@@ -80,7 +80,7 @@ defmodule AppKit.OperatorSurface.DefaultBackend do
               source: "operator_projection",
               occurred_at: DateTime.utc_now(),
               trace_id: context.trace_id,
-              freshness: "northbound_projection",
+              staleness_class: "projection_stale",
               operator_actionable?: false,
               diagnostic?: false,
               payload: %{"execution_id" => execution_ref.id}
