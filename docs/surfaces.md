@@ -29,6 +29,17 @@ Default surface backends are configured under `:app_kit_core`. The config keys
 match the surface families: `:installation_backend`, `:work_query_backend`,
 `:review_backend`, `:operator_backend`, and `:work_backend`.
 
+## Operator Projection Contracts
+
+Phase 4 operator projections are staleness-aware. Use
+`AppKit.Core.OperatorSurfaceProjection` when exposing control-room projection
+state across a product/operator boundary, and use
+`AppKit.Core.ObserverDescriptor` when exposing observer metadata. Both DTOs
+require tenant, authority, idempotency, trace, release-manifest, and redaction
+evidence so UI code can distinguish queued local intent from delivered signals,
+pending workflow acknowledgements, processed effects, failed dispatches, stale
+projections, and diagnostic-only observer data.
+
 ## Schema Registry
 
 Generated BFF and SDK shapes are recorded by

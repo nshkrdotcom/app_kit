@@ -19,10 +19,12 @@ defmodule AppKit.Core.ContractTest do
     InstallResult,
     InstallTemplate,
     NextStepPreview,
+    ObserverDescriptor,
     OperatorAction,
     OperatorActionRef,
     OperatorActionRequest,
     OperatorProjection,
+    OperatorSurfaceProjection,
     PageRequest,
     PageResult,
     PendingObligation,
@@ -296,6 +298,117 @@ defmodule AppKit.Core.ContractTest do
     assert [%PendingObligation{obligation_id: "ob-1"}] = projection.pending_obligations
     assert [%BlockingCondition{blocker_kind: "review_pending"}] = projection.blocking_conditions
     assert %NextStepPreview{step_kind: "record_review_decision"} = projection.next_step_preview
+  end
+
+  test "builds operator surface projections with explicit staleness and workflow effect state" do
+    observed_at = ~U[2026-04-18 12:00:00Z]
+    produced_at = ~U[2026-04-18 12:00:02Z]
+
+    assert {:ok, projection} =
+             OperatorSurfaceProjection.new(%{
+               projection_ref: %{
+                 name: "operator_signal_projection",
+                 subject_ref: %{id: "subj-1", subject_kind: "expense_request"},
+                 schema_ref: "AppKit.OperatorSurfaceProjection.v1",
+                 schema_version: 1
+               },
+               tenant_ref: %{id: "tenant-1"},
+               installation_ref: %{id: "inst-1", pack_slug: "expense_approval"},
+               operator_ref: %{id: "ops-lead", kind: :human},
+               target_ref: %{id: "workflow/expense-1", kind: "workflow"},
+               authority_packet_ref: "authz-packet-1",
+               permission_decision_ref: "decision-1",
+               idempotency_key: "operator-signal:cancel:1",
+               trace_id: "0123456789abcdef0123456789abcdef",
+               correlation_id: "corr-1",
+               release_manifest_ref: "phase4-v6-milestone3",
+               projection_version: 7,
+               source_event_position: 42,
+               observed_at: observed_at,
+               produced_at: produced_at,
+               staleness_class: :pending_workflow_ack,
+               dispatch_state: :delivered_to_temporal,
+               workflow_effect_state: :pending,
+               payload: %{"signal_ref" => "signal-1"}
+             })
+
+    assert projection.projection_ref.name == "operator_signal_projection"
+    assert projection.staleness_class == :pending_workflow_ack
+    assert projection.dispatch_state == :delivered_to_temporal
+    assert projection.workflow_effect_state == :pending
+    assert projection.source_event_position == 42
+
+    assert {:error, :invalid_operator_surface_projection} =
+             OperatorSurfaceProjection.new(%{
+               projection_ref: %{name: "operator_signal_projection"},
+               tenant_ref: %{id: "tenant-1"},
+               installation_ref: %{id: "inst-1", pack_slug: "expense_approval"},
+               operator_ref: %{id: "ops-lead", kind: :human},
+               target_ref: %{id: "workflow/expense-1", kind: "workflow"},
+               authority_packet_ref: "authz-packet-1",
+               permission_decision_ref: "decision-1",
+               idempotency_key: "operator-signal:cancel:1",
+               trace_id: "0123456789abcdef0123456789abcdef",
+               correlation_id: "corr-1",
+               release_manifest_ref: "phase4-v6-milestone3",
+               projection_version: 7,
+               source_event_position: 42,
+               observed_at: observed_at,
+               produced_at: produced_at,
+               dispatch_state: :delivered_to_temporal,
+               workflow_effect_state: :pending
+             })
+  end
+
+  test "builds observer descriptors that isolate tenant scope and redacted fields" do
+    assert {:ok, descriptor} =
+             ObserverDescriptor.new(%{
+               observer_ref: "observer:hindsight-audit",
+               projection_ref: %{
+                 name: "hindsight_audit",
+                 subject_ref: %{id: "subj-1", subject_kind: "expense_request"},
+                 schema_ref: "AppKit.ObserverDescriptor.v1",
+                 schema_version: 1
+               },
+               tenant_ref: %{id: "tenant-1"},
+               installation_ref: %{id: "inst-1", pack_slug: "expense_approval"},
+               principal_ref: %{id: "ops-lead", kind: :human},
+               resource_ref: %{id: "audit/subj-1", kind: "audit_stream"},
+               authority_packet_ref: "authz-packet-1",
+               permission_decision_ref: "decision-1",
+               idempotency_key: "observer:tenant-1:hindsight",
+               trace_id: "fedcba9876543210fedcba9876543210",
+               correlation_id: "corr-observer-1",
+               release_manifest_ref: "phase4-v6-milestone3",
+               staleness_class: :diagnostic_only,
+               redaction_policy_ref: "redaction/operator-observer-v1",
+               allowed_fields: ["observer_ref", "projection_ref", "staleness_class"],
+               blocked_fields: ["raw_provider_metadata", "cross_tenant_subject_id"]
+             })
+
+    assert descriptor.observer_ref == "observer:hindsight-audit"
+    assert descriptor.staleness_class == :diagnostic_only
+    assert "raw_provider_metadata" in descriptor.blocked_fields
+
+    assert {:error, :invalid_observer_descriptor} =
+             ObserverDescriptor.new(%{
+               observer_ref: "observer:hindsight-audit",
+               projection_ref: %{name: "hindsight_audit"},
+               tenant_ref: %{id: "tenant-1"},
+               installation_ref: %{id: "inst-1", pack_slug: "expense_approval"},
+               principal_ref: %{id: "ops-lead", kind: :human},
+               resource_ref: %{id: "audit/subj-1", kind: "audit_stream"},
+               authority_packet_ref: "authz-packet-1",
+               permission_decision_ref: "decision-1",
+               idempotency_key: "observer:tenant-1:hindsight",
+               trace_id: "fedcba9876543210fedcba9876543210",
+               correlation_id: "corr-observer-1",
+               release_manifest_ref: "phase4-v6-milestone3",
+               staleness_class: :diagnostic_only,
+               redaction_policy_ref: "redaction/operator-observer-v1",
+               allowed_fields: ["observer_ref"],
+               blocked_fields: []
+             })
   end
 
   test "builds action and error envelopes" do

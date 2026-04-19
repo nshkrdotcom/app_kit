@@ -102,6 +102,12 @@ bridge carries read and stream-attach `authorization_scope` in public DTOs so
 product callers cannot bypass tenant-scoped lease checks or call lower-facts
 stores with only a raw token.
 
+Operator-visible control-room projections use explicit Phase 4 DTOs:
+`AppKit.Core.OperatorSurfaceProjection` carries dispatch state, workflow effect
+state, source event position, and `staleness_class`; `AppKit.Core.ObserverDescriptor`
+carries redaction policy plus allow/blocked field lists for tenant-safe observer
+metadata.
+
 The welded `app_kit_core` artifact is tracked through the prepared bundle flow:
 
 ```bash

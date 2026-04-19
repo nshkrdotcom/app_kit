@@ -767,3 +767,390 @@ defmodule AppKit.Core.OperatorProjection do
     end
   end
 end
+
+defmodule AppKit.Core.OperatorSurfaceProjection do
+  @moduledoc """
+  Phase 4 operator-visible projection with explicit staleness semantics.
+
+  This DTO distinguishes local acceptance, signal dispatch, workflow effect
+  acknowledgement, stale projections, and failed dispatches without exposing
+  Temporal SDK details to AppKit consumers.
+  """
+
+  alias AppKit.Core.{ActorRef, InstallationRef, ProjectionRef, Support, TenantRef, TraceIdentity}
+
+  @staleness_classes [
+    :queued,
+    :dispatching,
+    :delivered_to_temporal,
+    :pending_workflow_ack,
+    :processed,
+    :dispatch_failed,
+    :stale,
+    :lower_fresh,
+    :projection_stale,
+    :diagnostic_only,
+    :authoritative_archived
+  ]
+  @contract_name "AppKit.OperatorSurfaceProjection.v1"
+  @dispatch_states [
+    :queued,
+    :dispatching,
+    :delivered_to_temporal,
+    :dispatch_failed,
+    :not_applicable
+  ]
+  @workflow_effect_states [:pending, :processed, :failed, :not_applicable]
+
+  @enforce_keys [
+    :projection_ref,
+    :tenant_ref,
+    :installation_ref,
+    :operator_ref,
+    :target_ref,
+    :authority_packet_ref,
+    :permission_decision_ref,
+    :idempotency_key,
+    :trace_id,
+    :correlation_id,
+    :release_manifest_ref,
+    :projection_version,
+    :source_event_position,
+    :observed_at,
+    :produced_at,
+    :staleness_class,
+    :dispatch_state,
+    :workflow_effect_state
+  ]
+  defstruct [
+    :contract_name,
+    :projection_ref,
+    :tenant_ref,
+    :installation_ref,
+    :operator_ref,
+    :target_ref,
+    :authority_packet_ref,
+    :permission_decision_ref,
+    :idempotency_key,
+    :trace_id,
+    :correlation_id,
+    :release_manifest_ref,
+    :projection_version,
+    :source_event_position,
+    :observed_at,
+    :produced_at,
+    :staleness_class,
+    :dispatch_state,
+    :workflow_effect_state,
+    payload: %{}
+  ]
+
+  @type t :: %__MODULE__{
+          projection_ref: ProjectionRef.t(),
+          tenant_ref: TenantRef.t(),
+          installation_ref: InstallationRef.t(),
+          operator_ref: ActorRef.t(),
+          target_ref: map(),
+          authority_packet_ref: String.t(),
+          permission_decision_ref: String.t(),
+          idempotency_key: String.t(),
+          trace_id: String.t(),
+          correlation_id: String.t(),
+          release_manifest_ref: String.t(),
+          projection_version: non_neg_integer(),
+          source_event_position: non_neg_integer(),
+          observed_at: DateTime.t(),
+          produced_at: DateTime.t(),
+          staleness_class: atom(),
+          dispatch_state: atom(),
+          workflow_effect_state: atom(),
+          payload: map()
+        }
+
+  @spec contract_name() :: String.t()
+  def contract_name, do: @contract_name
+
+  @spec new(map() | keyword()) :: {:ok, t()} | {:error, :invalid_operator_surface_projection}
+  def new(attrs) do
+    with {:ok, attrs} <- Support.normalize_attrs(attrs),
+         {:ok, projection_ref} <-
+           Support.nested_struct(Map.get(attrs, :projection_ref), ProjectionRef),
+         false <- is_nil(projection_ref),
+         {:ok, tenant_ref} <- Support.nested_struct(Map.get(attrs, :tenant_ref), TenantRef),
+         false <- is_nil(tenant_ref),
+         {:ok, installation_ref} <-
+           Support.nested_struct(Map.get(attrs, :installation_ref), InstallationRef),
+         false <- is_nil(installation_ref),
+         {:ok, operator_ref} <- Support.nested_struct(Map.get(attrs, :operator_ref), ActorRef),
+         false <- is_nil(operator_ref),
+         target_ref <- Map.get(attrs, :target_ref),
+         true <- scoped_ref?(target_ref),
+         authority_packet_ref <- Map.get(attrs, :authority_packet_ref),
+         true <- Support.present_binary?(authority_packet_ref),
+         permission_decision_ref <- Map.get(attrs, :permission_decision_ref),
+         true <- Support.present_binary?(permission_decision_ref),
+         idempotency_key <- Map.get(attrs, :idempotency_key),
+         true <- Support.present_binary?(idempotency_key),
+         {:ok, trace_id} <- TraceIdentity.ensure(Map.get(attrs, :trace_id)),
+         correlation_id <- Map.get(attrs, :correlation_id),
+         true <- Support.present_binary?(correlation_id),
+         release_manifest_ref <- Map.get(attrs, :release_manifest_ref),
+         true <- Support.present_binary?(release_manifest_ref),
+         projection_version <- Map.get(attrs, :projection_version),
+         true <- is_integer(projection_version) and projection_version >= 0,
+         source_event_position <- Map.get(attrs, :source_event_position),
+         true <- is_integer(source_event_position) and source_event_position >= 0,
+         observed_at <- Map.get(attrs, :observed_at),
+         true <- required_datetime?(observed_at),
+         produced_at <- Map.get(attrs, :produced_at),
+         true <- required_datetime?(produced_at),
+         {:ok, staleness_class} <-
+           normalize_enum(Map.get(attrs, :staleness_class), @staleness_classes),
+         {:ok, dispatch_state} <-
+           normalize_enum(Map.get(attrs, :dispatch_state), @dispatch_states),
+         {:ok, workflow_effect_state} <-
+           normalize_enum(Map.get(attrs, :workflow_effect_state), @workflow_effect_states),
+         payload <- Map.get(attrs, :payload, %{}),
+         true <- is_map(payload) do
+      {:ok,
+       %__MODULE__{
+         contract_name: @contract_name,
+         projection_ref: projection_ref,
+         tenant_ref: tenant_ref,
+         installation_ref: installation_ref,
+         operator_ref: operator_ref,
+         target_ref: target_ref,
+         authority_packet_ref: authority_packet_ref,
+         permission_decision_ref: permission_decision_ref,
+         idempotency_key: idempotency_key,
+         trace_id: trace_id,
+         correlation_id: correlation_id,
+         release_manifest_ref: release_manifest_ref,
+         projection_version: projection_version,
+         source_event_position: source_event_position,
+         observed_at: observed_at,
+         produced_at: produced_at,
+         staleness_class: staleness_class,
+         dispatch_state: dispatch_state,
+         workflow_effect_state: workflow_effect_state,
+         payload: payload
+       }}
+    else
+      _ -> {:error, :invalid_operator_surface_projection}
+    end
+  end
+
+  defp scoped_ref?(%{id: id, kind: kind}),
+    do: Support.present_binary?(id) and Support.present_binary?(kind)
+
+  defp scoped_ref?(%{"id" => id, "kind" => kind}),
+    do: Support.present_binary?(id) and Support.present_binary?(kind)
+
+  defp scoped_ref?(_value), do: false
+
+  defp required_datetime?(%DateTime{}), do: true
+  defp required_datetime?(_value), do: false
+
+  defp normalize_enum(value, allowed) when is_atom(value) do
+    if value in allowed do
+      {:ok, value}
+    else
+      :error
+    end
+  end
+
+  defp normalize_enum(value, allowed) when is_binary(value) do
+    normalized = String.to_existing_atom(value)
+
+    if normalized in allowed do
+      {:ok, normalized}
+    else
+      :error
+    end
+  rescue
+    ArgumentError -> :error
+  end
+
+  defp normalize_enum(_value, _allowed), do: :error
+end
+
+defmodule AppKit.Core.ObserverDescriptor do
+  @moduledoc """
+  Phase 4 observer descriptor DTO for tenant-safe operator/product projections.
+
+  Observer descriptors expose only redacted, allow-listed projection metadata.
+  Raw provider metadata and cross-tenant identifiers must remain blocked.
+  """
+
+  alias AppKit.Core.{ActorRef, InstallationRef, ProjectionRef, Support, TenantRef, TraceIdentity}
+
+  @staleness_classes [
+    :substrate_authoritative,
+    :lower_authoritative_unreconciled,
+    :diagnostic_only,
+    :projection_stale,
+    :authoritative_archived
+  ]
+  @contract_name "AppKit.ObserverDescriptor.v1"
+
+  @enforce_keys [
+    :observer_ref,
+    :projection_ref,
+    :tenant_ref,
+    :installation_ref,
+    :principal_ref,
+    :resource_ref,
+    :authority_packet_ref,
+    :permission_decision_ref,
+    :idempotency_key,
+    :trace_id,
+    :correlation_id,
+    :release_manifest_ref,
+    :staleness_class,
+    :redaction_policy_ref,
+    :allowed_fields,
+    :blocked_fields
+  ]
+  defstruct [
+    :contract_name,
+    :observer_ref,
+    :projection_ref,
+    :tenant_ref,
+    :installation_ref,
+    :principal_ref,
+    :resource_ref,
+    :authority_packet_ref,
+    :permission_decision_ref,
+    :idempotency_key,
+    :trace_id,
+    :correlation_id,
+    :release_manifest_ref,
+    :staleness_class,
+    :redaction_policy_ref,
+    :allowed_fields,
+    :blocked_fields,
+    metadata: %{}
+  ]
+
+  @type t :: %__MODULE__{
+          observer_ref: String.t(),
+          projection_ref: ProjectionRef.t(),
+          tenant_ref: TenantRef.t(),
+          installation_ref: InstallationRef.t(),
+          principal_ref: ActorRef.t(),
+          resource_ref: map(),
+          authority_packet_ref: String.t(),
+          permission_decision_ref: String.t(),
+          idempotency_key: String.t(),
+          trace_id: String.t(),
+          correlation_id: String.t(),
+          release_manifest_ref: String.t(),
+          staleness_class: atom(),
+          redaction_policy_ref: String.t(),
+          allowed_fields: [String.t()],
+          blocked_fields: [String.t()],
+          metadata: map()
+        }
+
+  @spec contract_name() :: String.t()
+  def contract_name, do: @contract_name
+
+  @spec new(map() | keyword()) :: {:ok, t()} | {:error, :invalid_observer_descriptor}
+  def new(attrs) do
+    with {:ok, attrs} <- Support.normalize_attrs(attrs),
+         observer_ref <- Map.get(attrs, :observer_ref),
+         true <- Support.present_binary?(observer_ref),
+         {:ok, projection_ref} <-
+           Support.nested_struct(Map.get(attrs, :projection_ref), ProjectionRef),
+         false <- is_nil(projection_ref),
+         {:ok, tenant_ref} <- Support.nested_struct(Map.get(attrs, :tenant_ref), TenantRef),
+         false <- is_nil(tenant_ref),
+         {:ok, installation_ref} <-
+           Support.nested_struct(Map.get(attrs, :installation_ref), InstallationRef),
+         false <- is_nil(installation_ref),
+         {:ok, principal_ref} <- Support.nested_struct(Map.get(attrs, :principal_ref), ActorRef),
+         false <- is_nil(principal_ref),
+         resource_ref <- Map.get(attrs, :resource_ref),
+         true <- scoped_ref?(resource_ref),
+         authority_packet_ref <- Map.get(attrs, :authority_packet_ref),
+         true <- Support.present_binary?(authority_packet_ref),
+         permission_decision_ref <- Map.get(attrs, :permission_decision_ref),
+         true <- Support.present_binary?(permission_decision_ref),
+         idempotency_key <- Map.get(attrs, :idempotency_key),
+         true <- Support.present_binary?(idempotency_key),
+         {:ok, trace_id} <- TraceIdentity.ensure(Map.get(attrs, :trace_id)),
+         correlation_id <- Map.get(attrs, :correlation_id),
+         true <- Support.present_binary?(correlation_id),
+         release_manifest_ref <- Map.get(attrs, :release_manifest_ref),
+         true <- Support.present_binary?(release_manifest_ref),
+         {:ok, staleness_class} <-
+           normalize_enum(Map.get(attrs, :staleness_class), @staleness_classes),
+         redaction_policy_ref <- Map.get(attrs, :redaction_policy_ref),
+         true <- Support.present_binary?(redaction_policy_ref),
+         allowed_fields <- Map.get(attrs, :allowed_fields),
+         true <- non_empty_string_list?(allowed_fields),
+         blocked_fields <- Map.get(attrs, :blocked_fields),
+         true <- non_empty_string_list?(blocked_fields),
+         metadata <- Map.get(attrs, :metadata, %{}),
+         true <- is_map(metadata) do
+      {:ok,
+       %__MODULE__{
+         contract_name: @contract_name,
+         observer_ref: observer_ref,
+         projection_ref: projection_ref,
+         tenant_ref: tenant_ref,
+         installation_ref: installation_ref,
+         principal_ref: principal_ref,
+         resource_ref: resource_ref,
+         authority_packet_ref: authority_packet_ref,
+         permission_decision_ref: permission_decision_ref,
+         idempotency_key: idempotency_key,
+         trace_id: trace_id,
+         correlation_id: correlation_id,
+         release_manifest_ref: release_manifest_ref,
+         staleness_class: staleness_class,
+         redaction_policy_ref: redaction_policy_ref,
+         allowed_fields: allowed_fields,
+         blocked_fields: blocked_fields,
+         metadata: metadata
+       }}
+    else
+      _ -> {:error, :invalid_observer_descriptor}
+    end
+  end
+
+  defp scoped_ref?(%{id: id, kind: kind}),
+    do: Support.present_binary?(id) and Support.present_binary?(kind)
+
+  defp scoped_ref?(%{"id" => id, "kind" => kind}),
+    do: Support.present_binary?(id) and Support.present_binary?(kind)
+
+  defp scoped_ref?(_value), do: false
+
+  defp non_empty_string_list?([_ | _] = values),
+    do: Enum.all?(values, &Support.present_binary?/1)
+
+  defp non_empty_string_list?(_values), do: false
+
+  defp normalize_enum(value, allowed) when is_atom(value) do
+    if value in allowed do
+      {:ok, value}
+    else
+      :error
+    end
+  end
+
+  defp normalize_enum(value, allowed) when is_binary(value) do
+    normalized = String.to_existing_atom(value)
+
+    if normalized in allowed do
+      {:ok, normalized}
+    else
+      :error
+    end
+  rescue
+    ArgumentError -> :error
+  end
+
+  defp normalize_enum(_value, _allowed), do: :error
+end
