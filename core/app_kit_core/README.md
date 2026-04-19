@@ -19,6 +19,8 @@ Current contract groups:
   revocation evidence
 - resource-pressure and retry-posture DTOs for operator-visible shedding,
   retry, and dead-letter evidence
+- archival restore DTOs for cold-index trace restore, artifact restore,
+  hot/cold conflict quarantine, and archival sweep retry evidence
 - northbound backend behaviours for work queries, reviews, and installations
 
 `AuthoringBundleImport` is intentionally separate from ordinary installation
@@ -46,6 +48,14 @@ principal-or-system-actor scope plus queue/budget/pressure/shed fields or
 operation/retry/backoff/idempotency/dead-letter fields so AppKit can render
 backpressure and retry state without importing lower-truth modules or runtime
 SDK structs.
+
+`ColdRestoreTraceProjection`, `ColdRestoreArtifactProjection`,
+`ArchivalConflictProjection`, and `ArchivalSweepProjection` are the Phase 4
+operator projection DTOs for archival restore and cold-index evidence. They
+preserve AppKit as a read-only projection consumer of Mezzanine archival truth
+while carrying the tenant, authority, trace, release-manifest, source-contract,
+hash, precedence, quarantine, and retry fields needed for incident export and
+restore operator flows.
 
 `AppKit.Core.Result` and `AppKit.Core.RunRef` remain part of the current
 northbound contract set and are not treated as temporary coexistence shims.
