@@ -19,6 +19,8 @@ Current contract groups:
   revocation evidence
 - resource-pressure and retry-posture DTOs for operator-visible shedding,
   retry, and dead-letter evidence
+- platform error-taxonomy DTOs for operator-visible error class, retry posture,
+  safe action, redaction, and runbook evidence
 - archival restore DTOs for cold-index trace restore, artifact restore,
   hot/cold conflict quarantine, and archival sweep retry evidence
 - evidence/audit DTOs for Citadel audit hash-chain projection and Mezzanine
@@ -52,6 +54,12 @@ principal-or-system-actor scope plus queue/budget/pressure/shed fields or
 operation/retry/backoff/idempotency/dead-letter fields so AppKit can render
 backpressure and retry state without importing lower-truth modules or runtime
 SDK structs.
+
+`ErrorTaxonomyProjection` is the Phase 4 northbound mirror for
+`Platform.ErrorTaxonomy.v1`. It carries owner, producer, consumer, error code,
+error class, retry posture, safe action, redaction class, runbook, tenant,
+authority, idempotency, trace, and release-manifest refs so AppKit can render
+operator-safe error handling without importing Citadel authority internals.
 
 `ColdRestoreTraceProjection`, `ColdRestoreArtifactProjection`,
 `ArchivalConflictProjection`, and `ArchivalSweepProjection` are the Phase 4
