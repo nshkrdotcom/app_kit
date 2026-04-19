@@ -108,6 +108,15 @@ state, source event position, and `staleness_class`; `AppKit.Core.ObserverDescri
 carries redaction policy plus allow/blocked field lists for tenant-safe observer
 metadata.
 
+Multi-product certification uses explicit Phase 4 product-fabric DTOs:
+`AppKit.Core.ProductTenantContext` proves atomic tenant-context switches,
+`AppKit.Core.ProductCertification` records AppKit-only product certification
+evidence, `AppKit.Core.ProductBoundaryNoBypassScan` records product no-bypass
+scan evidence, and `AppKit.Core.FullProductFabricSmoke` ties certified products,
+tenant refs, schema versions, authority refs, workflow refs, and proof bundles
+into release-manifest-ready smoke evidence. Product implementations still route
+through AppKit surfaces; these DTOs do not authorize direct lower-stack imports.
+
 The welded `app_kit_core` artifact is tracked through the prepared bundle flow:
 
 ```bash
