@@ -30,6 +30,12 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
   alias Mezzanine.Runs.{Run, RunArtifact, RunSeries}
   alias Mezzanine.Work.{WorkClass, WorkObject}
 
+  @revision_epoch_fields %{
+    installation_revision: 42,
+    activation_epoch: 7,
+    lease_epoch: 3
+  }
+
   defmodule LowerFactsStub do
     def operation_supported?(operation),
       do: operation in [:fetch_run, :events, :attempts, :run_artifacts]
@@ -297,7 +303,8 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
                  installation_id: tenant_id,
                  execution_id: execution.id,
                  trace_id: trace_id
-               },
+               }
+               |> Map.merge(@revision_epoch_fields),
                lower_facts: LowerFactsStub
              )
 
@@ -323,6 +330,9 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     [read_lease] = ExecutionRepo.all(ReadLease)
     assert read_lease.execution_id == execution.id
     assert read_lease.allowed_family == "unified_trace"
+    assert read_lease.installation_revision == 42
+    assert read_lease.activation_epoch == 7
+    assert read_lease.lease_epoch == 3
 
     assert Enum.sort(read_lease.allowed_operations) == [
              "attempts",
@@ -353,7 +363,8 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
                  installation_id: "inst-other",
                  execution_id: execution.id,
                  trace_id: trace_id
-               },
+               }
+               |> Map.merge(@revision_epoch_fields),
                lower_facts: LowerFactsStub
              )
   end

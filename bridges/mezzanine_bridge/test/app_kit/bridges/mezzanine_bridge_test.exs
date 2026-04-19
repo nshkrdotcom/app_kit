@@ -1184,7 +1184,19 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     end)
   end
 
-  defp request_context(metadata \\ %{program_id: "program-1", work_class_id: "work-class-1"}) do
+  defp request_context(metadata \\ %{}) do
+    metadata =
+      Map.merge(
+        %{
+          program_id: "program-1",
+          work_class_id: "work-class-1",
+          installation_revision: 42,
+          activation_epoch: 7,
+          lease_epoch: 3
+        },
+        metadata
+      )
+
     {:ok, context} =
       RequestContext.new(%{
         trace_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

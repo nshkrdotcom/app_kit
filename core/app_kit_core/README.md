@@ -15,6 +15,8 @@ Current contract groups:
   envelope for deterministic pack bundle import
 - product-fabric DTOs for tenant switching, product certification,
   no-bypass scan evidence, and full product fabric smoke proof
+- revision/epoch and lease-revocation DTOs for operator-visible fencing and
+  revocation evidence
 - northbound backend behaviours for work queries, reviews, and installations
 
 `AuthoringBundleImport` is intentionally separate from ordinary installation
@@ -27,6 +29,13 @@ and `FullProductFabricSmoke` are the Phase 4 product fabric contracts. They
 require tenant, installation, authority, idempotency, trace, release-manifest,
 and principal-or-system-actor scope before a product can claim tenant-switch,
 certification, no-bypass, or cross-product smoke evidence.
+
+`InstallationRevisionEpochFence` and `LeaseRevocationEvidence` are the Phase 4
+operator projection DTOs for revision fencing and lease revocation. They carry
+tenant, installation, authority, idempotency, trace, release-manifest,
+principal-or-system-actor scope plus the exact revision, epoch, fence,
+revocation, cache invalidation, and post-revocation attempt refs needed for
+operator-visible fail-closed evidence.
 
 `AppKit.Core.Result` and `AppKit.Core.RunRef` remain part of the current
 northbound contract set and are not treated as temporary coexistence shims.

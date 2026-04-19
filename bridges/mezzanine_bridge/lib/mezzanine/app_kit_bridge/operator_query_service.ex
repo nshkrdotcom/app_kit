@@ -531,6 +531,9 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
       %{
         tenant_id: Map.get(attrs, :tenant_id),
         installation_id: query.installation_id,
+        installation_revision: map_get(attrs, :installation_revision),
+        activation_epoch: map_get(attrs, :activation_epoch),
+        lease_epoch: map_get(attrs, :lease_epoch),
         execution_id: execution_id,
         trace_id: query.trace_id,
         allowed_family: "unified_trace",
@@ -944,6 +947,9 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
         %{
           tenant_id: map_get(attrs, :tenant_id),
           installation_id: installation_id,
+          installation_revision: map_get(read_lease, :installation_revision),
+          activation_epoch: map_get(read_lease, :activation_epoch),
+          lease_epoch: map_get(read_lease, :lease_epoch),
           execution_id: execution_id,
           trace_id: map_get(attrs, :trace_id),
           actor_ref: %{id: Map.get(attrs, :actor_id, "operator")},

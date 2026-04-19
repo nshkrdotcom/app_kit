@@ -393,13 +393,16 @@ defmodule AppKit.Bridges.MezzanineBridge do
       when is_list(opts) do
     with {:ok, tenant_id} <- tenant_id(context),
          {:ok, lineage} <- execution_trace_lineage(context, execution_ref, opts),
-         trace_attrs <- %{
-           tenant_id: tenant_id,
-           actor_id: context.actor_ref.id,
-           installation_id: lineage.installation_id,
-           execution_id: execution_ref.id,
-           trace_id: lineage.trace_id
-         },
+         {:ok, epoch_fields} <- revision_epoch_fields(context, opts),
+         trace_attrs <-
+           %{
+             tenant_id: tenant_id,
+             actor_id: context.actor_ref.id,
+             installation_id: lineage.installation_id,
+             execution_id: execution_ref.id,
+             trace_id: lineage.trace_id
+           }
+           |> Map.merge(epoch_fields),
          {:ok, trace} <- operator_query_service(opts).get_unified_trace(trace_attrs, opts),
          {:ok, unified_trace} <- unified_trace_from_map(trace, context) do
       Telemetry.unified_trace_assembled(
@@ -429,21 +432,24 @@ defmodule AppKit.Bridges.MezzanineBridge do
       when is_list(opts) do
     with {:ok, tenant_id} <- tenant_id(context),
          {:ok, lineage} <- execution_trace_lineage(context, execution_ref, opts),
-         attrs <- %{
-           tenant_id: tenant_id,
-           installation_id: lineage.installation_id,
-           execution_id: execution_ref.id,
-           trace_id: lineage.trace_id,
-           allowed_family: Keyword.get(opts, :allowed_family, "unified_trace"),
-           allowed_operations:
-             Keyword.get(opts, :allowed_operations, [
-               :fetch_run,
-               :events,
-               :attempts,
-               :run_artifacts
-             ]),
-           scope: Keyword.get(opts, :scope, %{})
-         },
+         {:ok, epoch_fields} <- revision_epoch_fields(context, opts),
+         attrs <-
+           %{
+             tenant_id: tenant_id,
+             installation_id: lineage.installation_id,
+             execution_id: execution_ref.id,
+             trace_id: lineage.trace_id,
+             allowed_family: Keyword.get(opts, :allowed_family, "unified_trace"),
+             allowed_operations:
+               Keyword.get(opts, :allowed_operations, [
+                 :fetch_run,
+                 :events,
+                 :attempts,
+                 :run_artifacts
+               ]),
+             scope: Keyword.get(opts, :scope, %{})
+           }
+           |> Map.merge(epoch_fields),
          {:ok, lease} <- lease_service(opts).issue_read_lease(attrs, opts),
          {:ok, read_lease} <- read_lease_from_map(lease) do
       {:ok, read_lease}
@@ -461,14 +467,17 @@ defmodule AppKit.Bridges.MezzanineBridge do
       when is_list(opts) do
     with {:ok, tenant_id} <- tenant_id(context),
          {:ok, lineage} <- execution_trace_lineage(context, execution_ref, opts),
-         attrs <- %{
-           tenant_id: tenant_id,
-           installation_id: lineage.installation_id,
-           execution_id: execution_ref.id,
-           trace_id: lineage.trace_id,
-           allowed_family: Keyword.get(opts, :allowed_family, "runtime_stream"),
-           scope: Keyword.get(opts, :scope, %{})
-         },
+         {:ok, epoch_fields} <- revision_epoch_fields(context, opts),
+         attrs <-
+           %{
+             tenant_id: tenant_id,
+             installation_id: lineage.installation_id,
+             execution_id: execution_ref.id,
+             trace_id: lineage.trace_id,
+             allowed_family: Keyword.get(opts, :allowed_family, "runtime_stream"),
+             scope: Keyword.get(opts, :scope, %{})
+           }
+           |> Map.merge(epoch_fields),
          {:ok, lease} <- lease_service(opts).issue_stream_attach_lease(attrs, opts),
          {:ok, stream_attach_lease} <- stream_attach_lease_from_map(lease) do
       {:ok, stream_attach_lease}
@@ -1117,6 +1126,40 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp context_metadata(%RequestContext{metadata: metadata}, key) do
     Map.get(metadata, key) || Map.get(metadata, Atom.to_string(key))
   end
+
+  defp revision_epoch_fields(%RequestContext{} = context, opts) do
+    with {:ok, installation_revision} <-
+           revision_epoch_value(context, opts, :installation_revision),
+         {:ok, activation_epoch} <- revision_epoch_value(context, opts, :activation_epoch),
+         {:ok, lease_epoch} <- revision_epoch_value(context, opts, :lease_epoch) do
+      {:ok,
+       %{
+         installation_revision: installation_revision,
+         activation_epoch: activation_epoch,
+         lease_epoch: lease_epoch
+       }}
+    end
+  end
+
+  defp revision_epoch_value(%RequestContext{} = context, opts, key) do
+    case Keyword.get(opts, key) || context_metadata(context, key) do
+      value when is_integer(value) and value >= 0 ->
+        {:ok, value}
+
+      value when is_binary(value) ->
+        case Integer.parse(value) do
+          {parsed, ""} when parsed >= 0 -> {:ok, parsed}
+          _ -> {:error, missing_revision_epoch_reason(key)}
+        end
+
+      _ ->
+        {:error, missing_revision_epoch_reason(key)}
+    end
+  end
+
+  defp missing_revision_epoch_reason(:installation_revision), do: :missing_installation_revision
+  defp missing_revision_epoch_reason(:activation_epoch), do: :missing_activation_epoch
+  defp missing_revision_epoch_reason(:lease_epoch), do: :missing_lease_epoch
 
   defp explicit_program_id(%RequestContext{} = context, opts) do
     case Keyword.get(opts, :program_id) || context_metadata(context, :program_id) do

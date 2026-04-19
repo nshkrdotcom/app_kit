@@ -28,6 +28,9 @@ defmodule Mezzanine.AppKitBridge.LeaseService do
                trace_id: Map.get(attrs, :trace_id, execution.trace_id),
                tenant_id: execution.tenant_id,
                installation_id: execution.installation_id,
+               installation_revision: required_non_neg_integer!(attrs, :installation_revision),
+               activation_epoch: required_non_neg_integer!(attrs, :activation_epoch),
+               lease_epoch: required_non_neg_integer!(attrs, :lease_epoch),
                subject_id: execution.subject_id,
                execution_id: execution.id,
                lineage_anchor: lineage_anchor(execution),
@@ -53,6 +56,9 @@ defmodule Mezzanine.AppKitBridge.LeaseService do
                trace_id: Map.get(attrs, :trace_id, execution.trace_id),
                tenant_id: execution.tenant_id,
                installation_id: execution.installation_id,
+               installation_revision: required_non_neg_integer!(attrs, :installation_revision),
+               activation_epoch: required_non_neg_integer!(attrs, :activation_epoch),
+               lease_epoch: required_non_neg_integer!(attrs, :lease_epoch),
                subject_id: execution.subject_id,
                execution_id: execution.id,
                lineage_anchor: lineage_anchor(execution),
@@ -141,6 +147,9 @@ defmodule Mezzanine.AppKitBridge.LeaseService do
     %{
       tenant_id: lease.tenant_id,
       installation_id: lease.installation_id,
+      installation_revision: lease.installation_revision,
+      activation_epoch: lease.activation_epoch,
+      lease_epoch: lease.lease_epoch,
       subject_id: execution.subject_id,
       execution_id: execution.id,
       trace_id: lease.trace_id,
@@ -154,4 +163,20 @@ defmodule Mezzanine.AppKitBridge.LeaseService do
   end
 
   defp map_value(_map, _key), do: nil
+
+  defp required_non_neg_integer!(attrs, key) do
+    case Map.get(attrs, key) || Map.get(attrs, Atom.to_string(key)) do
+      value when is_integer(value) and value >= 0 ->
+        value
+
+      value when is_binary(value) ->
+        case Integer.parse(value) do
+          {parsed, ""} when parsed >= 0 -> parsed
+          _ -> raise ArgumentError, "#{key} must be a non-negative integer"
+        end
+
+      _value ->
+        raise ArgumentError, "#{key} must be a non-negative integer"
+    end
+  end
 end
