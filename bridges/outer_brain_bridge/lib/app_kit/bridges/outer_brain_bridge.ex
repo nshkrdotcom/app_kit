@@ -6,6 +6,7 @@ defmodule AppKit.Bridges.OuterBrainBridge do
   alias AppKit.Core.{Telemetry, TraceIdentity}
   alias AppKit.ScopeObjects.HostScope
   alias OuterBrain.Bridges.DomainSubmission
+  alias OuterBrain.Contracts.SemanticFailure
 
   @spec submit_turn(HostScope.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def submit_turn(%HostScope{} = scope, text, opts \\ []) when is_binary(text) do
@@ -20,7 +21,8 @@ defmodule AppKit.Bridges.OuterBrainBridge do
          {:ok, resolution} <- resolve_trace(scope, opts) do
       emit_trace_resolution(scope.tenant_id, :outer_brain_bridge, resolution)
 
-      runtime_module.submit_turn(
+      runtime_module
+      |> submit_runtime_turn(
         trimmed,
         runtime_opts ++
           [
@@ -42,6 +44,7 @@ defmodule AppKit.Bridges.OuterBrainBridge do
             external_integration: Keyword.get(opts, :external_integration)
           ]
       )
+      |> normalize_runtime_result(scope, idempotency_key, resolution.trace_id)
     else
       {:error, :invalid_trace_id} = error ->
         Telemetry.trace_rejected(%{
@@ -90,6 +93,41 @@ defmodule AppKit.Bridges.OuterBrainBridge do
 
   defp normalize_runtime_ref(other),
     do: {:error, {:invalid_semantic_runtime, other}}
+
+  defp submit_runtime_turn(runtime_module, trimmed, opts) do
+    runtime_module.submit_turn(trimmed, opts)
+  end
+
+  defp normalize_runtime_result({:semantic_failure, payload}, scope, idempotency_key, trace_id) do
+    semantic_failure_result(payload, scope, idempotency_key, trace_id)
+  end
+
+  defp normalize_runtime_result(
+         {:error, {:semantic_failure, payload}},
+         scope,
+         idempotency_key,
+         trace_id
+       ) do
+    semantic_failure_result(payload, scope, idempotency_key, trace_id)
+  end
+
+  defp normalize_runtime_result(other, _scope, _idempotency_key, _trace_id), do: other
+
+  defp semantic_failure_result(payload, scope, idempotency_key, trace_id) do
+    defaults = %{
+      tenant_id: scope.tenant_id,
+      semantic_session_id: scope.session_id,
+      causal_unit_id: idempotency_key,
+      request_trace_id: trace_id,
+      provenance: [%{"surface" => "app_kit.outer_brain_bridge"}],
+      operator_message: "Semantic runtime reported a semantic failure."
+    }
+
+    case SemanticFailure.new(payload, defaults) do
+      {:ok, failure} -> {:error, {:semantic_failure, failure}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   defp context(%HostScope{} = scope, opts, trace_id) do
     scope.metadata

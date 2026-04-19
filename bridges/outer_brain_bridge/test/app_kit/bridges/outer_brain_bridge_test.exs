@@ -28,6 +28,19 @@ defmodule AppKit.Bridges.OuterBrainBridgeTest do
     end
   end
 
+  defmodule SemanticFailureRuntime do
+    @moduledoc false
+
+    def submit_turn(_text, _opts) do
+      {:semantic_failure,
+       %{
+         kind: :semantic_insufficient_context,
+         provenance: [%{"surface" => "outer_brain.test_runtime"}],
+         operator_message: "Need the workspace target before dispatch."
+       }}
+    end
+  end
+
   test "submits a semantic turn through the outer_brain seam" do
     attach_telemetry(self(), [:trace_minted])
 
@@ -67,6 +80,39 @@ defmodule AppKit.Bridges.OuterBrainBridgeTest do
         surface: :outer_brain_bridge
       }
     )
+  end
+
+  test "preserves provider-neutral semantic failure carrier fields across the AppKit bridge" do
+    assert {:ok, scope} =
+             ScopeObjects.host_scope(%{
+               scope_id: "workspace/main",
+               session_id: "sess-outer-brain-semantic-failure",
+               tenant_id: "tenant-1",
+               actor_id: "user-1",
+               environment: "dev",
+               metadata: %{workspace_root: "/workspace/main"}
+             })
+
+    assert {:error, {:semantic_failure, carrier}} =
+             OuterBrainBridge.submit_turn(
+               scope,
+               "compile it",
+               idempotency_key: "turn-outer-brain-semantic-failure",
+               domain_module: Citadel.DomainSurface.Examples.ProvingGround,
+               route_sources: [
+                 Citadel.DomainSurface.Examples.ProvingGround.Routes.CompileWorkspace
+               ],
+               semantic_runtime: SemanticFailureRuntime
+             )
+
+    assert carrier.kind == :semantic_insufficient_context
+    assert carrier.retry_class == :clarification_required
+    assert carrier.tenant_id == "tenant-1"
+    assert carrier.semantic_session_id == "sess-outer-brain-semantic-failure"
+    assert carrier.causal_unit_id == "turn-outer-brain-semantic-failure"
+    assert TraceIdentity.valid?(carrier.request_trace_id)
+    assert carrier.provenance == [%{"surface" => "outer_brain.test_runtime"}]
+    assert carrier.operator_message == "Need the workspace target before dispatch."
   end
 
   defp attach_telemetry(test_pid, event_keys) do
