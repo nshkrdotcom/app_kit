@@ -54,3 +54,16 @@ Products should see this bridge only as the configured backend behind AppKit
 surfaces. They should not import lower Mezzanine service modules directly for
 governed writes or lower reads. `mix app_kit.no_bypass` is the static gate that
 keeps product code on the AppKit side of this boundary.
+
+## Authoring Bundle Import
+
+The bridge implements `import_authoring_bundle/3` for
+`AppKit.InstallationSurface`. It derives the tenant from
+`AppKit.Core.RequestContext`, forwards `AppKit.Core.AuthoringBundleImport` to
+`MezzanineConfigRegistry.import_authoring_bundle/2`, and returns an AppKit
+installation result containing public bundle, installation, and pack
+registration summaries.
+
+The bridge does not expose connector loading, context-adapter code loading, or
+platform deployment fields. Those remain rejected by the AppKit DTO and by the
+Mezzanine authoring bundle validator before runtime activation.

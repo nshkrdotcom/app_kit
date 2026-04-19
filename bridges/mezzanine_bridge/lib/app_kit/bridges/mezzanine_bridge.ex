@@ -17,6 +17,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   alias AppKit.Core.{
     ActionResult,
     ActorRef,
+    AuthoringBundleImport,
     BindingDescriptor,
     BindingEnvelope,
     BindingFailurePosture,
@@ -197,6 +198,26 @@ defmodule AppKit.Bridges.MezzanineBridge do
            |> maybe_put_runtime_profile(context)
            |> Map.put_new(:metadata, %{}),
          {:ok, bridge_result} <- installation_service(opts).create_installation(attrs, opts),
+         {:ok, install_result} <- install_result_from_bridge(bridge_result) do
+      {:ok, install_result}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def import_authoring_bundle(
+        %RequestContext{} = context,
+        %AuthoringBundleImport{} = bundle_import,
+        opts
+      )
+      when is_list(opts) do
+    with {:ok, tenant_id} <- tenant_id(context),
+         attrs <-
+           bundle_import
+           |> Map.from_struct()
+           |> Map.put(:tenant_id, tenant_id),
+         {:ok, bridge_result} <- installation_service(opts).import_authoring_bundle(attrs, opts),
          {:ok, install_result} <- install_result_from_bridge(bridge_result) do
       {:ok, install_result}
     else

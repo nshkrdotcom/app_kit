@@ -5,6 +5,7 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
   alias Mezzanine.AppKitBridge
   alias Mezzanine.AppKitBridge.{InstallationService, ReviewActionService, ReviewQueryService}
   alias Mezzanine.Audit.WorkAudit
+  alias Mezzanine.Authoring.Bundle
   alias Mezzanine.ConfigRegistry.{PackRegistration, Repo}
   alias Mezzanine.Evidence.{EvidenceBundle, EvidenceItem}
   alias Mezzanine.OpsDomain.Repo, as: OpsRepo
@@ -15,6 +16,7 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
     LifecycleSpec,
     Manifest,
     ProjectionSpec,
+    Serializer,
     SubjectKindSpec
   }
 
@@ -151,6 +153,27 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
 
     assert {:ok, bridge_installation} = AppKitBridge.get_installation(installation_id)
     assert bridge_installation.installation_ref.id == installation_id
+  end
+
+  test "installation service imports an operator authoring bundle through a separate activation path" do
+    attrs =
+      signed_authoring_bundle_attrs(
+        "bundle-bridge-import",
+        compiled_pack_fixture("7.0.0")
+      )
+
+    assert {:ok, import_result} =
+             InstallationService.import_authoring_bundle(attrs,
+               signing_key: "bridge-signing-key",
+               allowed_policy_refs: ["policy.default"],
+               context_adapter_registry: %{}
+             )
+
+    assert import_result.status == :created
+    assert import_result.installation_ref.pack_slug == "expense_approval"
+    assert import_result.installation_ref.status == :active
+    assert import_result.metadata.bundle.bundle_id == "bundle-bridge-import"
+    assert import_result.metadata.installation.metadata["bundle_id"] == "bundle-bridge-import"
   end
 
   test "installation service provisions and updates current runtime routing profile metadata" do
@@ -559,6 +582,32 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
       {:ok, registration} -> registration
       {:error, error} -> raise "failed to activate fixture registration: #{inspect(error)}"
     end
+  end
+
+  defp signed_authoring_bundle_attrs(bundle_id, compiled_pack) do
+    manifest_payload = Serializer.serialize_manifest(compiled_pack.manifest)
+
+    unsigned = %{
+      "bundle_id" => bundle_id,
+      "tenant_id" => "tenant-authoring-bridge",
+      "installation_id" => "bridge-authoring-install",
+      "pack_manifest" => manifest_payload,
+      "lifecycle_specs" => manifest_payload["lifecycle_specs"],
+      "decision_specs" => manifest_payload["decision_specs"],
+      "binding_descriptors" => %{
+        "execution_bindings" => %{
+          "expense_capture" => %{"placement_ref" => "local_runner"}
+        }
+      },
+      "observer_descriptors" => [],
+      "context_adapter_descriptors" => [],
+      "policy_refs" => ["policy.default"],
+      "authored_by" => "operator:bridge"
+    }
+
+    unsigned
+    |> Map.put("checksum", Bundle.checksum_for(unsigned))
+    |> Map.put("signature", Bundle.signature_for(unsigned, "bridge-signing-key"))
   end
 
   defp compiled_pack_fixture(version, opts \\ []) do

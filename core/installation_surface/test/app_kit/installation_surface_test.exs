@@ -6,6 +6,7 @@ defmodule AppKit.InstallationSurfaceTest do
 
     alias AppKit.Core.{
       ActionResult,
+      AuthoringBundleImport,
       InstallationRef,
       InstallResult,
       PageRequest,
@@ -19,6 +20,20 @@ defmodule AppKit.InstallationSurfaceTest do
         installation_ref: %{id: "inst-1", pack_slug: template.pack_slug, status: :active},
         status: :created,
         message: "created"
+      })
+    end
+
+    @impl true
+    def import_authoring_bundle(%RequestContext{} = _context, bundle_import, _opts) do
+      InstallResult.new(%{
+        installation_ref: %{
+          id: bundle_import.installation_id,
+          pack_slug: bundle_import.pack_manifest["pack_slug"],
+          status: :active
+        },
+        status: :created,
+        message: "authoring bundle imported",
+        metadata: %{bundle_id: bundle_import.bundle_id, backend: :fake}
       })
     end
 
@@ -96,6 +111,7 @@ defmodule AppKit.InstallationSurfaceTest do
   end
 
   alias AppKit.Core.{
+    AuthoringBundleImport,
     InstallationBinding,
     InstallationRef,
     InstallTemplate,
@@ -119,6 +135,28 @@ defmodule AppKit.InstallationSurfaceTest do
              InstallationSurface.create_installation(
                context,
                template,
+               installation_backend: FakeInstallationBackend
+             )
+
+    assert {:ok, bundle_import} =
+             AuthoringBundleImport.new(%{
+               bundle_id: "bundle-phase3",
+               tenant_id: "tenant-1",
+               installation_id: "inst-authoring",
+               pack_manifest: %{"pack_slug" => "phase3_pack", "version" => "1.0.0"},
+               lifecycle_specs: [],
+               decision_specs: [],
+               binding_descriptors: %{},
+               observer_descriptors: [],
+               context_adapter_descriptors: [],
+               checksum: "sha256:abc",
+               authored_by: "operator:phase3"
+             })
+
+    assert {:ok, bundle_import_result} =
+             InstallationSurface.import_authoring_bundle(
+               context,
+               bundle_import,
                installation_backend: FakeInstallationBackend
              )
 
@@ -175,6 +213,8 @@ defmodule AppKit.InstallationSurfaceTest do
              )
 
     assert install_result.installation_ref.id == "inst-1"
+    assert bundle_import_result.installation_ref.id == "inst-authoring"
+    assert bundle_import_result.metadata.bundle_id == "bundle-phase3"
     assert fetched_ref.id == "inst-1"
     assert update_result.metadata.backend == :fake
     assert list_result.metadata.backend == :fake

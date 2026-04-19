@@ -4,6 +4,7 @@ defmodule AppKit.Core.ContractTest do
   alias AppKit.Core.{
     ActionResult,
     ActorRef,
+    AuthoringBundleImport,
     BindingDescriptor,
     BindingEnvelope,
     BindingFailurePosture,
@@ -539,6 +540,54 @@ defmodule AppKit.Core.ContractTest do
     assert observer_binding.binding_kind == :observer
     assert observer_binding.descriptor.attachment == "jido_integration.audit_subscriber"
     assert %InstallationRef{id: "inst-1"} = install_result.installation_ref
+  end
+
+  test "builds authoring bundle import DTOs separately from install templates" do
+    assert {:ok, bundle_import} =
+             AuthoringBundleImport.new(%{
+               bundle_id: "bundle-phase3",
+               tenant_id: "tenant-1",
+               installation_id: "install-phase3",
+               pack_manifest: %{"pack_slug" => "phase3_pack", "version" => "1.0.0"},
+               lifecycle_specs: [%{"subject_kind" => "phase3_request"}],
+               decision_specs: [],
+               binding_descriptors: %{
+                 "execution_bindings" => %{
+                   "phase3_capture" => %{"placement_ref" => "local_runner"}
+                 }
+               },
+               observer_descriptors: [
+                 %{"binding_key" => "hindsight_audit", "subscriber_key" => "audit_export"}
+               ],
+               context_adapter_descriptors: [
+                 %{"binding_key" => "memory_adapter", "adapter_key" => "memory_adapter"}
+               ],
+               checksum: "sha256:abc",
+               signature: "hmac-sha256:def",
+               authored_by: "operator:phase3",
+               expected_installation_revision: 1,
+               policy_refs: ["policy.default"]
+             })
+
+    assert bundle_import.bundle_id == "bundle-phase3"
+    assert bundle_import.expected_installation_revision == 1
+    assert bundle_import.policy_refs == ["policy.default"]
+
+    assert {:error, :invalid_authoring_bundle_import} =
+             AuthoringBundleImport.new(%{
+               bundle_id: "bundle-phase3",
+               tenant_id: "tenant-1",
+               installation_id: "install-phase3",
+               pack_manifest: %{"pack_slug" => "phase3_pack", "version" => "1.0.0"},
+               lifecycle_specs: [],
+               decision_specs: [],
+               binding_descriptors: %{},
+               observer_descriptors: [],
+               context_adapter_descriptors: [],
+               checksum: "sha256:abc",
+               authored_by: "operator:phase3",
+               platform_migrations: [%{"table" => "subjects"}]
+             })
   end
 
   test "rejects subject and observer bindings with missing descriptor or invalid config" do

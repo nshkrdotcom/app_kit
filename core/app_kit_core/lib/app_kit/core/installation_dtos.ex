@@ -43,6 +43,152 @@ defmodule AppKit.Core.InstallTemplate do
   end
 end
 
+defmodule AppKit.Core.AuthoringBundleImport do
+  @moduledoc """
+  Operator-only authoring bundle import envelope.
+
+  This DTO is intentionally separate from normal installation templates so pack
+  registration, descriptor validation, and activation payloads cannot be
+  smuggled through product install flows.
+  """
+
+  alias AppKit.Core.Support
+
+  @platform_migration_keys [:platform_migrations, :schema_migrations, :migrations]
+
+  @enforce_keys [
+    :bundle_id,
+    :tenant_id,
+    :installation_id,
+    :pack_manifest,
+    :lifecycle_specs,
+    :decision_specs,
+    :binding_descriptors,
+    :observer_descriptors,
+    :context_adapter_descriptors,
+    :checksum,
+    :authored_by
+  ]
+  defstruct [
+    :bundle_id,
+    :tenant_id,
+    :installation_id,
+    :pack_manifest,
+    :checksum,
+    :signature,
+    :authored_by,
+    lifecycle_specs: [],
+    decision_specs: [],
+    binding_descriptors: %{},
+    observer_descriptors: [],
+    context_adapter_descriptors: [],
+    policy_refs: [],
+    expected_installation_revision: nil,
+    metadata: %{}
+  ]
+
+  @type t :: %__MODULE__{
+          bundle_id: String.t(),
+          tenant_id: String.t(),
+          installation_id: String.t(),
+          pack_manifest: map(),
+          lifecycle_specs: [map()],
+          decision_specs: [map()],
+          binding_descriptors: map(),
+          observer_descriptors: [map()],
+          context_adapter_descriptors: [map()],
+          policy_refs: [String.t()],
+          expected_installation_revision: non_neg_integer() | nil,
+          checksum: String.t(),
+          signature: String.t() | nil,
+          authored_by: String.t(),
+          metadata: map()
+        }
+
+  @spec new(map() | keyword()) :: {:ok, t()} | {:error, :invalid_authoring_bundle_import}
+  def new(attrs) do
+    with {:ok, attrs} <- Support.normalize_attrs(attrs),
+         :ok <- reject_platform_migrations(attrs),
+         bundle_id <- value(attrs, :bundle_id),
+         true <- Support.present_binary?(bundle_id),
+         tenant_id <- value(attrs, :tenant_id),
+         true <- Support.present_binary?(tenant_id),
+         installation_id <- value(attrs, :installation_id),
+         true <- Support.present_binary?(installation_id),
+         pack_manifest <- value(attrs, :pack_manifest),
+         true <- is_map(pack_manifest),
+         lifecycle_specs <- value(attrs, :lifecycle_specs, []),
+         true <- list_of_maps?(lifecycle_specs),
+         decision_specs <- value(attrs, :decision_specs, []),
+         true <- list_of_maps?(decision_specs),
+         binding_descriptors <- value(attrs, :binding_descriptors, %{}),
+         true <- is_map(binding_descriptors),
+         observer_descriptors <- value(attrs, :observer_descriptors, []),
+         true <- list_of_maps?(observer_descriptors),
+         context_adapter_descriptors <- value(attrs, :context_adapter_descriptors, []),
+         true <- list_of_maps?(context_adapter_descriptors),
+         policy_refs <- value(attrs, :policy_refs, []),
+         true <- string_list?(policy_refs),
+         expected_installation_revision <- value(attrs, :expected_installation_revision),
+         true <- Support.optional_non_neg_integer?(expected_installation_revision),
+         checksum <- value(attrs, :checksum),
+         true <- Support.present_binary?(checksum),
+         signature <- value(attrs, :signature),
+         true <- Support.optional_binary?(signature),
+         authored_by <- value(attrs, :authored_by),
+         true <- Support.present_binary?(authored_by),
+         metadata <- value(attrs, :metadata, %{}),
+         true <- is_map(metadata) do
+      {:ok,
+       %__MODULE__{
+         bundle_id: bundle_id,
+         tenant_id: tenant_id,
+         installation_id: installation_id,
+         pack_manifest: pack_manifest,
+         lifecycle_specs: lifecycle_specs,
+         decision_specs: decision_specs,
+         binding_descriptors: binding_descriptors,
+         observer_descriptors: observer_descriptors,
+         context_adapter_descriptors: context_adapter_descriptors,
+         policy_refs: policy_refs,
+         expected_installation_revision: expected_installation_revision,
+         checksum: checksum,
+         signature: signature,
+         authored_by: authored_by,
+         metadata: metadata
+       }}
+    else
+      _ -> {:error, :invalid_authoring_bundle_import}
+    end
+  end
+
+  defp reject_platform_migrations(attrs) do
+    if Enum.any?(@platform_migration_keys, &has_key?(attrs, &1)) do
+      {:error, :pack_authored_platform_migration}
+    else
+      :ok
+    end
+  end
+
+  defp has_key?(attrs, key),
+    do: Map.has_key?(attrs, key) or Map.has_key?(attrs, Atom.to_string(key))
+
+  defp value(attrs, key, default \\ nil) do
+    case Map.fetch(attrs, key) do
+      {:ok, value} -> value
+      :error -> Map.get(attrs, Atom.to_string(key), default)
+    end
+  end
+
+  defp list_of_maps?(values) when is_list(values), do: Enum.all?(values, &is_map/1)
+  defp list_of_maps?(_values), do: false
+
+  defp string_list?(values) when is_list(values),
+    do: Enum.all?(values, &Support.present_binary?/1)
+
+  defp string_list?(_values), do: false
+end
+
 defmodule AppKit.Core.InstallationBinding do
   @moduledoc """
   Stable northbound installation binding envelope.

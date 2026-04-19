@@ -11,8 +11,14 @@ Current contract groups:
 - paging, sorting, and filtering primitives
 - error and action envelopes
 - subject, execution, decision, projection, and operator reference DTOs
-- installation DTOs
+- installation DTOs, including the operator-only `AuthoringBundleImport`
+  envelope for deterministic pack bundle import
 - northbound backend behaviours for work queries, reviews, and installations
+
+`AuthoringBundleImport` is intentionally separate from ordinary installation
+templates. It carries bundle checksum/signature, manifest/spec echoes,
+descriptor metadata, policy refs, and optional expected installation revision;
+it rejects platform deployment or migration fields at the AppKit boundary.
 
 `AppKit.Core.Result` and `AppKit.Core.RunRef` remain part of the current
 northbound contract set and are not treated as temporary coexistence shims.

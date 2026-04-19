@@ -27,6 +27,13 @@ product calls into Mezzanine, Citadel, Jido Integration, or Execution Plane are
 boundary violations unless the product is authoring a pure `Mezzanine.Pack`
 model contract.
 
+Installation bootstrap includes a separate operator-only authoring bundle
+import path. Normal installation templates continue to reject deployment and
+platform-migration fields; `AppKit.InstallationSurface.import_authoring_bundle/3`
+uses `AppKit.Core.AuthoringBundleImport` and the Mezzanine bridge to validate
+checksum, configured signature, descriptor policy, and installation revision
+before the lower config registry activates anything.
+
 ## Scope
 
 - chat-facing surfaces

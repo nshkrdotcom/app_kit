@@ -5,6 +5,7 @@ defmodule AppKit.InstallationSurface do
 
   alias AppKit.Core.{
     ActionResult,
+    AuthoringBundleImport,
     InstallationBinding,
     InstallationRef,
     InstallResult,
@@ -19,6 +20,16 @@ defmodule AppKit.InstallationSurface do
           {:ok, InstallResult.t()} | {:error, SurfaceError.t()}
   def create_installation(%RequestContext{} = context, %InstallTemplate{} = template, opts \\ []) do
     backend(opts).create_installation(context, template, opts)
+  end
+
+  @spec import_authoring_bundle(RequestContext.t(), AuthoringBundleImport.t(), keyword()) ::
+          {:ok, InstallResult.t()} | {:error, SurfaceError.t()}
+  def import_authoring_bundle(
+        %RequestContext{} = context,
+        %AuthoringBundleImport{} = bundle_import,
+        opts \\ []
+      ) do
+    backend(opts).import_authoring_bundle(context, bundle_import, opts)
   end
 
   @spec get_installation(RequestContext.t(), InstallationRef.t(), keyword()) ::

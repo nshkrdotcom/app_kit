@@ -5,6 +5,7 @@ defmodule AppKit.Core.Backends.InstallationBackend do
 
   alias AppKit.Core.{
     ActionResult,
+    AuthoringBundleImport,
     InstallationBinding,
     InstallationRef,
     InstallResult,
@@ -16,6 +17,9 @@ defmodule AppKit.Core.Backends.InstallationBackend do
   }
 
   @callback create_installation(RequestContext.t(), InstallTemplate.t(), keyword()) ::
+              {:ok, InstallResult.t()} | {:error, SurfaceError.t()}
+
+  @callback import_authoring_bundle(RequestContext.t(), AuthoringBundleImport.t(), keyword()) ::
               {:ok, InstallResult.t()} | {:error, SurfaceError.t()}
 
   @callback get_installation(RequestContext.t(), InstallationRef.t(), keyword()) ::

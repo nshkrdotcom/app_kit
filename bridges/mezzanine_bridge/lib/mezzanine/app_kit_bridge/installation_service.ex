@@ -60,6 +60,28 @@ defmodule Mezzanine.AppKitBridge.InstallationService do
     end
   end
 
+  @spec import_authoring_bundle(map(), keyword()) :: {:ok, map()} | {:error, term()}
+  def import_authoring_bundle(attrs, opts \\ []) when is_map(attrs) and is_list(opts) do
+    attrs = Map.new(attrs)
+
+    with {:ok, import_result} <- MezzanineConfigRegistry.import_authoring_bundle(attrs, opts),
+         {:ok, detail} <- installation_detail(import_result.installation) do
+      {:ok,
+       %{
+         installation_ref: detail.installation_ref,
+         status: :created,
+         message: "Authoring bundle imported",
+         metadata: %{
+           bundle: bundle_summary(import_result.bundle),
+           installation: detail,
+           pack_registration: pack_registration_summary(import_result.pack_registration)
+         }
+       }}
+    else
+      {:error, reason} -> {:error, normalize_error(reason)}
+    end
+  end
+
   @spec get_installation(Ecto.UUID.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def get_installation(installation_id, _opts \\ []) when is_binary(installation_id) do
     case fetch_installation(installation_id) do
@@ -293,6 +315,31 @@ defmodule Mezzanine.AppKitBridge.InstallationService do
       },
       message: message,
       metadata: %{installation: detail}
+    }
+  end
+
+  defp bundle_summary(bundle) do
+    %{
+      bundle_id: bundle.bundle_id,
+      tenant_id: bundle.tenant_id,
+      installation_id: bundle.installation_id,
+      pack_slug: bundle.compiled_pack.pack_slug,
+      pack_version: bundle.compiled_pack.version,
+      checksum: bundle.checksum,
+      signature: bundle.signature,
+      authored_by: bundle.authored_by,
+      policy_refs: bundle.policy_refs
+    }
+  end
+
+  defp pack_registration_summary(%PackRegistration{} = registration) do
+    %{
+      id: registration.id,
+      pack_slug: registration.pack_slug,
+      version: registration.version,
+      status: registration.status,
+      canonical_subject_kinds: registration.canonical_subject_kinds,
+      serializer_version: registration.serializer_version
     }
   end
 
