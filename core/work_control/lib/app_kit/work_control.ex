@@ -51,6 +51,6 @@ defmodule AppKit.WorkControl do
 
   defp backend(opts) do
     Keyword.get(opts, :work_backend) ||
-      Application.get_env(:app_kit, :work_backend, AppKit.WorkControl.DefaultBackend)
+      Application.get_env(:app_kit_core, :work_backend, AppKit.WorkControl.DefaultBackend)
   end
 end

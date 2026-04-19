@@ -47,6 +47,6 @@ defmodule AppKit.WorkSurface do
 
   defp backend(opts) do
     Keyword.get(opts, :work_query_backend) ||
-      Application.get_env(:app_kit, :work_query_backend, AppKit.Bridges.MezzanineBridge)
+      Application.get_env(:app_kit_core, :work_query_backend, AppKit.Bridges.MezzanineBridge)
   end
 end

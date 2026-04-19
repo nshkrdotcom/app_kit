@@ -38,6 +38,6 @@ defmodule AppKit.ReviewSurface do
 
   defp backend(opts) do
     Keyword.get(opts, :review_backend) ||
-      Application.get_env(:app_kit, :review_backend, AppKit.Bridges.MezzanineBridge)
+      Application.get_env(:app_kit_core, :review_backend, AppKit.Bridges.MezzanineBridge)
   end
 end

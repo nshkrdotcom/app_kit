@@ -76,6 +76,10 @@ defmodule AppKit.InstallationSurface do
 
   defp backend(opts) do
     Keyword.get(opts, :installation_backend) ||
-      Application.get_env(:app_kit, :installation_backend, AppKit.Bridges.MezzanineBridge)
+      Application.get_env(
+        :app_kit_core,
+        :installation_backend,
+        AppKit.Bridges.MezzanineBridge
+      )
   end
 end

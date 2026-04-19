@@ -30,3 +30,10 @@ This keeps product-facing AppKit reads northbound while preserving the lower
 tenant boundary: a valid lease token alone is insufficient if the caller scope
 does not match the tenant, installation, subject, execution, and trace carried
 by the lease.
+
+## Product Boundary
+
+Products should see this bridge only as the configured backend behind AppKit
+surfaces. They should not import lower Mezzanine service modules directly for
+governed writes or lower reads. `mix app_kit.no_bypass` is the static gate that
+keeps product code on the AppKit side of this boundary.

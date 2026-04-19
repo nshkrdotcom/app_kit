@@ -11,6 +11,11 @@ AppKit composes lower layers without swallowing their ownership:
 
 The bridge packages in this workspace keep those seams explicit and app-safe.
 
+The AppKit product boundary is enforced in two places: public surface modules
+keep product-facing DTOs stable, and `mix app_kit.no_bypass` statically rejects
+product or AppKit paths that try to reach lower governed-write APIs directly.
+Execution Plane remains a hazmat layer, not a product dependency.
+
 The welded `app_kit_core` artifact is tracked through the prepared bundle flow:
 
 ```bash

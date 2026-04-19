@@ -155,7 +155,7 @@ defmodule AppKit.OperatorSurface do
 
   defp backend(opts) do
     Keyword.get(opts, :operator_backend) ||
-      Application.get_env(:app_kit, :operator_backend, AppKit.OperatorSurface.DefaultBackend)
+      Application.get_env(:app_kit_core, :operator_backend, AppKit.OperatorSurface.DefaultBackend)
   end
 
   defp with_operator_surface(opts, callback) when is_function(callback, 1) do
