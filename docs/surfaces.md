@@ -28,3 +28,18 @@ usage so the execution layer cannot become a product API.
 Default surface backends are configured under `:app_kit_core`. The config keys
 match the surface families: `:installation_backend`, `:work_query_backend`,
 `:review_backend`, `:operator_backend`, and `:work_backend`.
+
+## Schema Registry
+
+Generated BFF and SDK shapes are recorded by
+`AppKit.Workspace.SchemaRegistry`. The Phase 4 registry declares
+`AppKit.ProductBootstrap.v1`, `AppKit.SchemaRegistryEntry.v1`, and
+`Platform.GeneratedArtifactOwnership.v1` with owner repo, producers,
+consumers, required enterprise envelope fields, runbooks, proofs, and
+release-manifest keys.
+
+Boundary generation is deterministic: `mix app_kit.gen.boundary <schema_name>`
+writes DTO, mapper, mapper-test, and generated-artifact manifest files. The
+manifest records artifact hashes so product packages can prove they are using
+AppKit-owned generated shapes rather than hand-edited DTOs or lower-truth
+imports.

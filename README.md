@@ -79,6 +79,18 @@ Citadel, Jido Integration, and Execution Plane while allowing the pure
 Execution Plane usage so attach and stream behavior stays behind AppKit and
 Mezzanine leases.
 
+The Phase 4 schema registry is also part of root CI:
+
+```bash
+mix app_kit.schema_registry.verify
+```
+
+`AppKit.Workspace.SchemaRegistry` is the AppKit-owned contract ledger for
+generated BFF/SDK DTOs. `mix app_kit.gen.boundary <schema_name>` emits the
+DTO, mapper, mapper test, and a deterministic
+`generated_artifacts/<schema_name>_schema_registry.exs` manifest with artifact
+hashes for release-manifest and Stack Lab proof linkage.
+
 Default AppKit surface backends are configured under the real OTP application
 `:app_kit_core`, for example `:installation_backend`, `:work_query_backend`,
 `:review_backend`, `:operator_backend`, and `:work_backend`. Products may pass
