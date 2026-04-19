@@ -21,6 +21,8 @@ Current contract groups:
   retry, and dead-letter evidence
 - archival restore DTOs for cold-index trace restore, artifact restore,
   hot/cold conflict quarantine, and archival sweep retry evidence
+- evidence/audit DTOs for Citadel audit hash-chain projection and Mezzanine
+  suppression visibility projection
 - northbound backend behaviours for work queries, reviews, and installations
 
 `AuthoringBundleImport` is intentionally separate from ordinary installation
@@ -56,6 +58,13 @@ preserve AppKit as a read-only projection consumer of Mezzanine archival truth
 while carrying the tenant, authority, trace, release-manifest, source-contract,
 hash, precedence, quarantine, and retry fields needed for incident export and
 restore operator flows.
+
+`AuditHashChainProjection` and `SuppressionVisibilityProjection` are the Phase
+4 operator projection DTOs for immutable audit evidence and suppression
+visibility. They preserve AppKit as a read-only projection consumer while
+carrying tenant, authority, trace, release-manifest, source-contract,
+hash-chain, diagnostics, and recovery-action fields required for incident
+reconstruction.
 
 `AppKit.Core.Result` and `AppKit.Core.RunRef` remain part of the current
 northbound contract set and are not treated as temporary coexistence shims.
