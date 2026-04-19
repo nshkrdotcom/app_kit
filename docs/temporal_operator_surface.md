@@ -6,6 +6,13 @@ AppKit does not own the Temporal runtime and should not import a Temporal SDK di
 
 Mezzanine owns the durable workflow boundary and the native local Temporal developer substrate. AppKit consumes workflow state through governed Mezzanine/AppKit seams and operator projections.
 
+M31 cutover note: AppKit treats Oban as a Mezzanine-local implementation detail
+for workflow-start outbox dispatch, workflow-signal outbox dispatch where a
+local command must be durably paired with signal delivery, claim-check garbage
+collection, and bounded local jobs. AppKit never reads Oban rows as workflow
+truth and never renders an operator action complete until Mezzanine projections
+show the workflow acknowledgement/effect state.
+
 ## Local development
 
 When AppKit work needs live workflow state, start the Mezzanine-owned substrate:
@@ -30,6 +37,7 @@ Expected contract:
 - AppKit operator surfaces may display workflow-derived state.
 - AppKit should read workflow state from Mezzanine projections or explicit Mezzanine facades.
 - AppKit should not start, signal, cancel, or query Temporal workflows by calling Temporal directly.
+- AppKit should not inspect Oban jobs, queues, or rows for live workflow state.
 - AppKit should not own Temporal worker supervision.
 - AppKit should not invent a separate Temporal dev service.
 
@@ -42,6 +50,7 @@ Operator views should expose:
 - stable workflow identity supplied by Mezzanine,
 - lifecycle state and staleness labels,
 - signal/cancel actions routed through governed seams,
+- local outbox pending/stale labels supplied by Mezzanine projections, not Oban row reads,
 - lineage links to lower runs, attempts, artifacts, reviews, and evidence,
 - failure classes and safe recovery actions.
 
