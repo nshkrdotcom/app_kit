@@ -23,6 +23,8 @@ Current contract groups:
   hot/cold conflict quarantine, and archival sweep retry evidence
 - evidence/audit DTOs for Citadel audit hash-chain projection and Mezzanine
   suppression visibility projection
+- extension supply-chain DTOs for pack signature, pack bundle schema, and
+  connector-admission projection
 - northbound backend behaviours for work queries, reviews, and installations
 
 `AuthoringBundleImport` is intentionally separate from ordinary installation
@@ -65,6 +67,14 @@ visibility. They preserve AppKit as a read-only projection consumer while
 carrying tenant, authority, trace, release-manifest, source-contract,
 hash-chain, diagnostics, and recovery-action fields required for incident
 reconstruction.
+
+`ExtensionPackSignatureProjection`, `ExtensionPackBundleProjection`, and
+`ConnectorAdmissionProjection` are the Phase 4 product/operator projection DTOs
+for extension supply-chain evidence. They preserve AppKit as a read-only
+consumer of Mezzanine pack authoring truth and Jido Integration connector
+admission truth while carrying tenant, authority, trace, release-manifest,
+source-contract, signature, schema, declared-resource, connector, and duplicate
+admission fields needed for product registry views.
 
 `AppKit.Core.Result` and `AppKit.Core.RunRef` remain part of the current
 northbound contract set and are not treated as temporary coexistence shims.
