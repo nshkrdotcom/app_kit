@@ -17,6 +17,8 @@ Current contract groups:
   no-bypass scan evidence, and full product fabric smoke proof
 - revision/epoch and lease-revocation DTOs for operator-visible fencing and
   revocation evidence
+- resource-pressure and retry-posture DTOs for operator-visible shedding,
+  retry, and dead-letter evidence
 - northbound backend behaviours for work queries, reviews, and installations
 
 `AuthoringBundleImport` is intentionally separate from ordinary installation
@@ -36,6 +38,14 @@ tenant, installation, authority, idempotency, trace, release-manifest,
 principal-or-system-actor scope plus the exact revision, epoch, fence,
 revocation, cache invalidation, and post-revocation attempt refs needed for
 operator-visible fail-closed evidence.
+
+`QueuePressureProjection` and `RetryPostureProjection` are the Phase 4
+operator projection DTOs for resource budget and retry posture evidence. They
+carry tenant, installation, authority, idempotency, trace, release-manifest,
+principal-or-system-actor scope plus queue/budget/pressure/shed fields or
+operation/retry/backoff/idempotency/dead-letter fields so AppKit can render
+backpressure and retry state without importing lower-truth modules or runtime
+SDK structs.
 
 `AppKit.Core.Result` and `AppKit.Core.RunRef` remain part of the current
 northbound contract set and are not treated as temporary coexistence shims.
