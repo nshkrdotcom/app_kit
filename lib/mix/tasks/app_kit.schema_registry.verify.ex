@@ -15,6 +15,7 @@ defmodule Mix.Tasks.AppKit.SchemaRegistry.Verify do
   @impl true
   def run(_args) do
     SchemaRegistry.validate_all!()
+    SchemaRegistry.validate_core_dto_surface!()
     Mix.shell().info("app_kit.schema_registry.verify passed")
   end
 end

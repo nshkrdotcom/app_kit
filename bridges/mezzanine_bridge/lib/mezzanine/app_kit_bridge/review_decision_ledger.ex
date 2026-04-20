@@ -43,6 +43,7 @@ defmodule Mezzanine.AppKitBridge.ReviewDecisionLedger do
     DecisionCommands.decide(decision_record, %{
       decision_value: "accept",
       reason: Keyword.get(opts, :reason),
+      trace_id: context.trace_id,
       causation_id: causation_id(context.review_unit.id, :accept),
       actor_ref: actor_ref(opts)
     })
@@ -52,6 +53,7 @@ defmodule Mezzanine.AppKitBridge.ReviewDecisionLedger do
     DecisionCommands.decide(decision_record, %{
       decision_value: "reject",
       reason: Keyword.get(opts, :reason),
+      trace_id: context.trace_id,
       causation_id: causation_id(context.review_unit.id, :reject),
       actor_ref: actor_ref(opts)
     })
@@ -60,6 +62,7 @@ defmodule Mezzanine.AppKitBridge.ReviewDecisionLedger do
   defp apply_resolution(:waive, decision_record, context, opts) do
     DecisionCommands.waive(decision_record, %{
       reason: Keyword.get(opts, :reason),
+      trace_id: context.trace_id,
       causation_id: causation_id(context.review_unit.id, :waive),
       actor_ref: actor_ref(opts)
     })

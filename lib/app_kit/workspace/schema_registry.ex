@@ -132,11 +132,108 @@ defmodule AppKit.Workspace.SchemaRegistry do
     }
   ]
 
+  @allowed_core_modules [
+    "AppKit.Core.ActionResult",
+    "AppKit.Core.ActorRef",
+    "AppKit.Core.ArchivalConflictProjection",
+    "AppKit.Core.ArchivalRestoreSupport",
+    "AppKit.Core.ArchivalSweepProjection",
+    "AppKit.Core.AttachGrantRef",
+    "AppKit.Core.AuditHashChainProjection",
+    "AppKit.Core.AuthoringBundleImport",
+    "AppKit.Core.BindingDescriptor",
+    "AppKit.Core.BindingEnvelope",
+    "AppKit.Core.BindingFailurePosture",
+    "AppKit.Core.BindingOwnership",
+    "AppKit.Core.BlockingCondition",
+    "AppKit.Core.ColdRestoreArtifactProjection",
+    "AppKit.Core.ColdRestoreTraceProjection",
+    "AppKit.Core.CommandEnvelope",
+    "AppKit.Core.CommandResult",
+    "AppKit.Core.ConnectorAdmissionProjection",
+    "AppKit.Core.DecisionRef",
+    "AppKit.Core.DecisionSummary",
+    "AppKit.Core.EnterprisePrecutSupport",
+    "AppKit.Core.EnvironmentRef",
+    "AppKit.Core.ErrorTaxonomyProjection",
+    "AppKit.Core.EvidenceAuditSupport",
+    "AppKit.Core.ExecutionRef",
+    "AppKit.Core.ExtensionPackBundleProjection",
+    "AppKit.Core.ExtensionPackSignatureProjection",
+    "AppKit.Core.ExtensionSupplyChainSupport",
+    "AppKit.Core.FilterSet",
+    "AppKit.Core.FullProductFabricSmoke",
+    "AppKit.Core.InstallResult",
+    "AppKit.Core.InstallTemplate",
+    "AppKit.Core.InstallationBinding",
+    "AppKit.Core.InstallationRef",
+    "AppKit.Core.InstallationRevisionEpochFence",
+    "AppKit.Core.LeaseRevocationEvidence",
+    "AppKit.Core.LowerScopeRef",
+    "AppKit.Core.NextStepPreview",
+    "AppKit.Core.ObserverDescriptor",
+    "AppKit.Core.OperatorAction",
+    "AppKit.Core.OperatorActionRef",
+    "AppKit.Core.OperatorActionRequest",
+    "AppKit.Core.OperatorProjection",
+    "AppKit.Core.OperatorSignalResult",
+    "AppKit.Core.OperatorSurfaceProjection",
+    "AppKit.Core.PageRequest",
+    "AppKit.Core.PageResult",
+    "AppKit.Core.PendingObligation",
+    "AppKit.Core.PrincipalRef",
+    "AppKit.Core.ProductBoundaryNoBypassScan",
+    "AppKit.Core.ProductCertification",
+    "AppKit.Core.ProductFabricSupport",
+    "AppKit.Core.ProductTenantContext",
+    "AppKit.Core.ProjectRef",
+    "AppKit.Core.ProjectionRef",
+    "AppKit.Core.QueuePressureProjection",
+    "AppKit.Core.ReadLease",
+    "AppKit.Core.ReadLeaseRef",
+    "AppKit.Core.Rejection",
+    "AppKit.Core.RequestContext",
+    "AppKit.Core.ResourcePath",
+    "AppKit.Core.ResourceRef",
+    "AppKit.Core.Result",
+    "AppKit.Core.RetryPostureProjection",
+    "AppKit.Core.ReviewTaskRef",
+    "AppKit.Core.RevisionEpochSupport",
+    "AppKit.Core.RunRef",
+    "AppKit.Core.RunRequest",
+    "AppKit.Core.SortSpec",
+    "AppKit.Core.StreamAttachLease",
+    "AppKit.Core.StreamAttachLeaseRef",
+    "AppKit.Core.SubjectDetail",
+    "AppKit.Core.SubjectRef",
+    "AppKit.Core.SubjectSummary",
+    "AppKit.Core.Support",
+    "AppKit.Core.SuppressionVisibilityProjection",
+    "AppKit.Core.SurfaceError",
+    "AppKit.Core.SystemActorRef",
+    "AppKit.Core.Telemetry",
+    "AppKit.Core.TenantRef",
+    "AppKit.Core.TimelineEvent",
+    "AppKit.Core.TraceIdentity",
+    "AppKit.Core.UnifiedTrace",
+    "AppKit.Core.UnifiedTraceStep",
+    "AppKit.Core.WorkflowQueryRequest",
+    "AppKit.Core.WorkflowRef",
+    "AppKit.Core.WorkflowSignalRequest",
+    "AppKit.Core.WorkflowStartRequest",
+    "AppKit.Core.WorkspaceRef"
+  ]
+
+  @core_module_pattern ~r/^defmodule\s+(AppKit\.Core\.[\w.]+)\s+do/m
+
   @spec entries() :: [map()]
   def entries, do: @entries
 
   @spec enterprise_fields() :: [String.t()]
   def enterprise_fields, do: @enterprise_fields
+
+  @spec allowed_core_modules() :: [String.t()]
+  def allowed_core_modules, do: @allowed_core_modules
 
   @spec fetch(String.t()) :: {:ok, map()} | {:error, :unknown_schema_contract}
   def fetch(contract_name) when is_binary(contract_name) do
@@ -165,6 +262,32 @@ defmodule AppKit.Workspace.SchemaRegistry do
 
       {:error, reason} ->
         raise ArgumentError, "invalid AppKit schema registry: #{inspect(reason)}"
+    end
+  end
+
+  @spec validate_core_dto_surface(Path.t()) :: :ok | {:error, term()}
+  def validate_core_dto_surface(root \\ default_core_dto_surface_root()) when is_binary(root) do
+    with :ok <- require_surface_root(root) do
+      unexpected_modules =
+        root
+        |> discover_core_modules()
+        |> Enum.reject(&(&1 in @allowed_core_modules))
+
+      case unexpected_modules do
+        [] -> :ok
+        _ -> {:error, {:unexpected_appkit_core_modules, unexpected_modules}}
+      end
+    end
+  end
+
+  @spec validate_core_dto_surface!(Path.t()) :: :ok
+  def validate_core_dto_surface!(root \\ default_core_dto_surface_root()) when is_binary(root) do
+    case validate_core_dto_surface(root) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        raise ArgumentError, "invalid AppKit Core DTO surface: #{inspect(reason)}"
     end
   end
 
@@ -219,4 +342,29 @@ defmodule AppKit.Workspace.SchemaRegistry do
 
   defp require_big_bang(%{replacement_version_policy: "big_bang_no_legacy"}), do: :ok
   defp require_big_bang(_entry), do: {:error, :legacy_replacement_policy_not_allowed}
+
+  defp default_core_dto_surface_root do
+    Path.expand("../../../core/app_kit_core/lib/app_kit/core", __DIR__)
+  end
+
+  defp require_surface_root(root) do
+    if File.dir?(root) do
+      :ok
+    else
+      {:error, {:missing_core_dto_surface_root, root}}
+    end
+  end
+
+  defp discover_core_modules(root) do
+    root
+    |> Path.join("*.ex")
+    |> Path.wildcard()
+    |> Enum.flat_map(fn path ->
+      @core_module_pattern
+      |> Regex.scan(File.read!(path), capture: :all_but_first)
+      |> List.flatten()
+    end)
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
 end

@@ -31,6 +31,29 @@ defmodule AppKit.SchemaRegistryTest do
              SchemaRegistry.validate_entry(invalid_entry)
   end
 
+  test "core DTO surface allows the profiled AppKit.Core modules" do
+    assert :ok = SchemaRegistry.validate_core_dto_surface()
+  end
+
+  test "core DTO surface rejects new one-off AppKit.Core modules" do
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "app_kit_core_dto_surface_#{System.unique_integer([:positive])}"
+      )
+
+    on_exit(fn -> File.rm_rf(root) end)
+    File.mkdir_p!(root)
+
+    File.write!(Path.join(root, "surprise_projection.ex"), """
+    defmodule AppKit.Core.SurpriseProjection do
+    end
+    """)
+
+    assert {:error, {:unexpected_appkit_core_modules, ["AppKit.Core.SurpriseProjection"]}} =
+             SchemaRegistry.validate_core_dto_surface(root)
+  end
+
   test "boundary generator emits a schema-registry manifest with artifact hashes" do
     output_root =
       Path.join(
