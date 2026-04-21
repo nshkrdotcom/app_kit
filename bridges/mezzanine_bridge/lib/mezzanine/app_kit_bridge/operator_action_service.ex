@@ -81,18 +81,67 @@ defmodule Mezzanine.AppKitBridge.OperatorActionService do
     )
   end
 
-  defp dispatch_action(:retry_continuation, _tenant_id, _subject_id, params, _actor) do
+  defp dispatch_action(:retry_continuation, _tenant_id, subject_id, params, actor) do
     with {:ok, continuation_id} <- continuation_id(params) do
-      LifecycleContinuation.retry(continuation_id)
+      LifecycleContinuation.retry(
+        continuation_id,
+        operator_continuation_opts(
+          :retry_continuation,
+          subject_id,
+          continuation_id,
+          params,
+          actor
+        )
+      )
     end
   end
 
-  defp dispatch_action(:waive_continuation, _tenant_id, _subject_id, params, _actor) do
+  defp dispatch_action(:waive_continuation, _tenant_id, subject_id, params, actor) do
     with {:ok, continuation_id} <- continuation_id(params) do
-      LifecycleContinuation.waive(continuation_id,
-        reason: Map.get(params, :reason, "operator waived")
-      )
+      opts =
+        :waive_continuation
+        |> operator_continuation_opts(subject_id, continuation_id, params, actor)
+        |> Keyword.put(:reason, param(params, :reason, "operator waived"))
+
+      LifecycleContinuation.waive(continuation_id, opts)
     end
+  end
+
+  defp operator_continuation_opts(action, subject_id, continuation_id, params, actor) do
+    [
+      operator_action_ref:
+        param(
+          params,
+          :operator_action_ref,
+          "operator-action://#{subject_id}/#{action}/#{continuation_id}"
+        ),
+      operator_actor_ref: actor_ref(actor, []),
+      authority_decision_ref:
+        param(
+          params,
+          :authority_decision_ref,
+          "authority-decision://#{subject_id}/#{action}/#{continuation_id}"
+        ),
+      safe_action:
+        param(
+          params,
+          :safe_action,
+          default_safe_action(action)
+        ),
+      blast_radius:
+        param(
+          params,
+          :blast_radius,
+          "single_subject"
+        )
+    ]
+  end
+
+  defp default_safe_action(:retry_continuation), do: "operator_retry_lifecycle_continuation"
+  defp default_safe_action(:waive_continuation), do: "operator_waive_lifecycle_continuation"
+
+  defp param(params, key, default) do
+    Map.get(params, key) || Map.get(params, Atom.to_string(key)) || default
   end
 
   defp normalize_action(action) when action in @supported_actions, do: {:ok, action}

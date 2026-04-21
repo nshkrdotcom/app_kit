@@ -91,6 +91,13 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     end
   end
 
+  defmodule DeadLetterContinuationDispatcher do
+    @moduledoc false
+
+    def dispatch_lifecycle_continuation(_continuation, _target),
+      do: {:error, :invalid_transition}
+  end
+
   setup do
     ops_domain_owner = Sandbox.start_owner!(OpsDomainRepo, shared: false)
     audit_owner = Sandbox.start_owner!(AuditRepo, shared: false)
@@ -257,13 +264,21 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
         target_transition: "execution_completed:expense_capture",
         next_attempt_at: ~U[2026-04-18 19:00:00Z],
         trace_id: "trace-continuation-operator",
+        metadata: %{
+          "continuation_target" => %{
+            "kind" => "owner_command",
+            "owner" => "operator_services_test",
+            "command" => "record_dead_letter",
+            "idempotency_key" => "continuation-operator-1"
+          }
+        },
         status: :pending
       })
 
     {:ok, dead_lettered} =
       LifecycleContinuation.process(continuation.continuation_id,
         now: ~U[2026-04-18 19:01:00Z],
-        handler: fn _continuation -> {:error, :invalid_transition} end
+        dispatcher: DeadLetterContinuationDispatcher
       )
 
     assert dead_lettered.status == :dead_lettered
