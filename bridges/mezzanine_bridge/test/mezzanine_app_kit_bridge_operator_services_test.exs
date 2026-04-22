@@ -636,7 +636,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
                  recipe_ref: "triage_ticket",
                  trace_id: trace_id,
                  causation_id: "cause-#{suffix}",
-                 dispatch_state: "accepted",
+                 dispatch_state: "accepted_active",
                  dispatch_attempt_count: 0,
                  next_dispatch_at: now,
                  submission_ref: %{"id" => "submission-#{suffix}"},
@@ -661,7 +661,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
                  causation_id: "cause-#{suffix}",
                  fact_kind: "execution_dispatched",
                  actor_ref: %{kind: :scheduler},
-                 payload: %{dispatch_state: "accepted"},
+                 payload: %{dispatch_state: "accepted_active"},
                  occurred_at: now,
                  inserted_at: now,
                  updated_at: now
@@ -674,6 +674,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
                  id: dump_uuid!(Ecto.UUID.generate()),
                  trace_id: trace_id,
                  causation_id: "cause-#{suffix}",
+                 tenant_id: installation_id,
                  installation_id: installation_id,
                  subject_id: subject_id,
                  execution_id: execution_id,
@@ -764,7 +765,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
               "occurred_at" => "2026-04-15T10:00:00Z",
               "fact_kind" => "execution_dispatched",
               "actor_ref" => %{"kind" => "scheduler"},
-              "payload" => %{"dispatch_state" => "accepted"}
+              "payload" => %{"dispatch_state" => "accepted_active"}
             }
           ],
           "executions" => [
@@ -773,7 +774,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
               "trace_id" => trace_id,
               "causation_id" => "cause-#{suffix}",
               "subject_id" => subject_id,
-              "dispatch_state" => "accepted",
+              "dispatch_state" => "accepted_active",
               "recipe_ref" => "triage_ticket",
               "compiled_pack_revision" => 7,
               "lower_receipt" => %{
@@ -836,7 +837,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
         installation_id: installation_id,
         subject_id: subject_id,
         subject_state: "completed",
-        execution_states: ["accepted"],
+        execution_states: ["accepted_active"],
         trace_ids: [trace_id],
         execution_ids: [execution_id],
         decision_ids: [decision_id],
