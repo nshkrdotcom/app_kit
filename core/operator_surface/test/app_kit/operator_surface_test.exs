@@ -6,6 +6,13 @@ defmodule AppKit.OperatorSurfaceTest do
 
     alias AppKit.Core.{
       ActionResult,
+      MemoryFragmentListRequest,
+      MemoryFragmentProjection,
+      MemoryFragmentProvenance,
+      MemoryInvalidationRequest,
+      MemoryPromotionRequest,
+      MemoryProofTokenLookup,
+      MemoryShareUpRequest,
       OperatorAction,
       OperatorProjection,
       ReadLease,
@@ -154,9 +161,126 @@ defmodule AppKit.OperatorSurfaceTest do
         message: "action applied"
       })
     end
+
+    @impl true
+    def list_memory_fragments(
+          %RequestContext{} = _context,
+          %MemoryFragmentListRequest{} = _request,
+          _opts
+        ) do
+      {:ok, [memory_fragment_projection()]}
+    end
+
+    @impl true
+    def memory_fragment_by_proof_token(
+          %RequestContext{} = _context,
+          %MemoryProofTokenLookup{} = _lookup,
+          _opts
+        ) do
+      {:ok, memory_fragment_projection()}
+    end
+
+    @impl true
+    def memory_fragment_provenance(
+          %RequestContext{} = _context,
+          "memory-private://alpha/private-1",
+          _opts
+        ) do
+      MemoryFragmentProvenance.new(%{
+        fragment_ref: "memory-private://alpha/private-1",
+        proof_token_ref: "proof://recall/1",
+        proof_hash: valid_hash("proof"),
+        source_contract_name: "OuterBrain.MemoryContextProvenance.v2",
+        snapshot_epoch: 42,
+        source_node_ref: "node://memory-reader@host/reader-1",
+        commit_lsn: "16/B374D848",
+        commit_hlc: %{wall_ns: 1_800_000_000_000_000_000, logical: 1, node: "reader-1"},
+        provenance_refs: ["provenance://outer-brain/context/1"],
+        evidence_refs: [%{ref: "evidence://recall/1", kind: "proof"}],
+        governance_refs: [%{ref: "governance://memory/read", kind: "read"}]
+      })
+    end
+
+    @impl true
+    def request_memory_share_up(
+          %RequestContext{} = _context,
+          %MemoryShareUpRequest{} = request,
+          _opts
+        ) do
+      memory_action_result(request.fragment_ref, "share_up", "Share-up requested")
+    end
+
+    @impl true
+    def request_memory_promotion(
+          %RequestContext{} = _context,
+          %MemoryPromotionRequest{} = request,
+          _opts
+        ) do
+      memory_action_result(request.shared_fragment_ref, "promote", "Promotion requested")
+    end
+
+    @impl true
+    def request_memory_invalidation(
+          %RequestContext{} = _context,
+          %MemoryInvalidationRequest{} = request,
+          _opts
+        ) do
+      memory_action_result(request.root_fragment_ref, "invalidate", "Invalidation requested")
+    end
+
+    defp memory_fragment_projection do
+      {:ok, projection} =
+        MemoryFragmentProjection.new(%{
+          fragment_ref: "memory-private://alpha/private-1",
+          tenant_ref: "tenant://alpha",
+          installation_ref: "installation://alpha",
+          tier: "private",
+          proof_token_ref: "proof://recall/1",
+          proof_hash: valid_hash("proof"),
+          source_node_ref: "node://memory-reader@host/reader-1",
+          snapshot_epoch: 42,
+          commit_lsn: "16/B374D848",
+          commit_hlc: %{wall_ns: 1_800_000_000_000_000_000, logical: 1, node: "reader-1"},
+          provenance_refs: ["provenance://outer-brain/context/1"],
+          evidence_refs: [%{ref: "evidence://recall/1", kind: "proof"}],
+          governance_refs: [%{ref: "governance://memory/read", kind: "read"}],
+          cluster_invalidation_status: "none",
+          staleness_class: "fresh",
+          redaction_posture: "operator_safe"
+        })
+
+      projection
+    end
+
+    defp memory_action_result(fragment_ref, action_kind, message) do
+      ActionResult.new(%{
+        status: :accepted,
+        action_ref: %{
+          id: "#{fragment_ref}:#{action_kind}",
+          action_kind: action_kind
+        },
+        message: message,
+        metadata: %{fragment_ref: fragment_ref}
+      })
+    end
+
+    defp valid_hash(seed) do
+      "sha256:" <> Base.encode16(:crypto.hash(:sha256, seed), case: :lower)
+    end
   end
 
-  alias AppKit.Core.{OperatorActionRequest, RequestContext, RunRef, SubjectRef}
+  alias AppKit.Core.{
+    MemoryFragmentListRequest,
+    MemoryInvalidationRequest,
+    MemoryPromotionRequest,
+    MemoryProofTokenLookup,
+    MemoryShareUpRequest,
+    OperatorActionRequest,
+    RequestContext,
+    RunRef,
+    SubjectRef
+  }
+
   alias AppKit.OperatorSurface
 
   test "projects run status and review output" do
@@ -265,6 +389,86 @@ defmodule AppKit.OperatorSurfaceTest do
     assert hd(trace.steps).source == "execution_record"
     assert read_lease.lease_ref.allowed_family == "unified_trace"
     assert stream_lease.lease_ref.allowed_family == "runtime_stream"
+  end
+
+  test "delegates memory-control listing, proof lookup, provenance, and write requests" do
+    context = request_context()
+
+    assert {:ok, list_request} =
+             MemoryFragmentListRequest.new(%{
+               proof_token_ref: "proof://recall/1",
+               include_provenance?: true
+             })
+
+    assert {:ok, proof_lookup} =
+             MemoryProofTokenLookup.new(%{
+               proof_token_ref: "proof://recall/1",
+               expected_tenant_ref: "tenant://alpha",
+               reject_stale?: true,
+               current_epoch: 42
+             })
+
+    assert {:ok, share_up_request} =
+             MemoryShareUpRequest.new(%{
+               fragment_ref: "memory-private://alpha/private-1",
+               target_scope_ref: "scope://team-alpha",
+               share_up_policy_ref: "share-up-policy://team-alpha",
+               transform_ref: "transform://redact-pii",
+               reason: "share project memory",
+               evidence_refs: [%{ref: "evidence://operator/share-up", kind: "operator"}]
+             })
+
+    assert {:ok, promotion_request} =
+             MemoryPromotionRequest.new(%{
+               shared_fragment_ref: "memory-shared://alpha/shared-1",
+               promotion_policy_ref: "promote-policy://governed",
+               reason: "approved for governed memory",
+               evidence_refs: [%{ref: "evidence://operator/promote", kind: "operator"}]
+             })
+
+    assert {:ok, invalidation_request} =
+             MemoryInvalidationRequest.new(%{
+               root_fragment_ref: "memory-private://alpha/private-1",
+               reason: :operator_suppression,
+               suppression_reason: "obsolete user preference",
+               invalidate_policy_ref: "invalidate-policy://default",
+               authority_ref: %{ref: "authority://operator/suppression", kind: "operator"},
+               evidence_refs: [%{ref: "evidence://operator/invalidate", kind: "operator"}]
+             })
+
+    backend_opts = [operator_backend: FakeOperatorBackend]
+
+    assert {:ok, [fragment]} =
+             OperatorSurface.list_memory_fragments(context, list_request, backend_opts)
+
+    assert {:ok, same_fragment} =
+             OperatorSurface.memory_fragment_by_proof_token(context, proof_lookup, backend_opts)
+
+    assert {:ok, provenance} =
+             OperatorSurface.memory_fragment_provenance(
+               context,
+               "memory-private://alpha/private-1",
+               backend_opts
+             )
+
+    assert {:ok, share_up_result} =
+             OperatorSurface.request_memory_share_up(context, share_up_request, backend_opts)
+
+    assert {:ok, promotion_result} =
+             OperatorSurface.request_memory_promotion(context, promotion_request, backend_opts)
+
+    assert {:ok, invalidation_result} =
+             OperatorSurface.request_memory_invalidation(
+               context,
+               invalidation_request,
+               backend_opts
+             )
+
+    assert fragment.proof_hash == same_fragment.proof_hash
+    assert provenance.source_contract_name == "OuterBrain.MemoryContextProvenance.v2"
+    assert share_up_result.action_ref.action_kind == "share_up"
+    assert promotion_result.action_ref.action_kind == "promote"
+    assert invalidation_result.action_ref.action_kind == "invalidate"
   end
 
   defp request_context do

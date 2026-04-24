@@ -8,6 +8,13 @@ defmodule AppKit.OperatorSurface do
   alias AppKit.Core.{
     ActionResult,
     ExecutionRef,
+    MemoryFragmentListRequest,
+    MemoryFragmentProjection,
+    MemoryFragmentProvenance,
+    MemoryInvalidationRequest,
+    MemoryPromotionRequest,
+    MemoryProofTokenLookup,
+    MemoryShareUpRequest,
     OperatorAction,
     OperatorActionRequest,
     OperatorProjection,
@@ -136,6 +143,80 @@ defmodule AppKit.OperatorSurface do
       when is_list(opts) do
     with_operator_surface(opts, fn backend ->
       backend.apply_action(context, subject_ref, action_request, opts)
+    end)
+  end
+
+  @spec list_memory_fragments(RequestContext.t(), MemoryFragmentListRequest.t(), keyword()) ::
+          {:ok, [MemoryFragmentProjection.t()]} | {:error, SurfaceError.t()}
+  def list_memory_fragments(
+        %RequestContext{} = context,
+        %MemoryFragmentListRequest{} = request,
+        opts \\ []
+      )
+      when is_list(opts) do
+    with_operator_surface(opts, fn backend ->
+      backend.list_memory_fragments(context, request, opts)
+    end)
+  end
+
+  @spec memory_fragment_by_proof_token(RequestContext.t(), MemoryProofTokenLookup.t(), keyword()) ::
+          {:ok, MemoryFragmentProjection.t()} | {:error, SurfaceError.t()}
+  def memory_fragment_by_proof_token(
+        %RequestContext{} = context,
+        %MemoryProofTokenLookup{} = lookup,
+        opts \\ []
+      )
+      when is_list(opts) do
+    with_operator_surface(opts, fn backend ->
+      backend.memory_fragment_by_proof_token(context, lookup, opts)
+    end)
+  end
+
+  @spec memory_fragment_provenance(RequestContext.t(), String.t(), keyword()) ::
+          {:ok, MemoryFragmentProvenance.t()} | {:error, SurfaceError.t()}
+  def memory_fragment_provenance(%RequestContext{} = context, fragment_ref, opts \\ [])
+      when is_binary(fragment_ref) and is_list(opts) do
+    with_operator_surface(opts, fn backend ->
+      backend.memory_fragment_provenance(context, fragment_ref, opts)
+    end)
+  end
+
+  @spec request_memory_share_up(RequestContext.t(), MemoryShareUpRequest.t(), keyword()) ::
+          {:ok, ActionResult.t()} | {:error, SurfaceError.t()}
+  def request_memory_share_up(
+        %RequestContext{} = context,
+        %MemoryShareUpRequest{} = request,
+        opts \\ []
+      )
+      when is_list(opts) do
+    with_operator_surface(opts, fn backend ->
+      backend.request_memory_share_up(context, request, opts)
+    end)
+  end
+
+  @spec request_memory_promotion(RequestContext.t(), MemoryPromotionRequest.t(), keyword()) ::
+          {:ok, ActionResult.t()} | {:error, SurfaceError.t()}
+  def request_memory_promotion(
+        %RequestContext{} = context,
+        %MemoryPromotionRequest{} = request,
+        opts \\ []
+      )
+      when is_list(opts) do
+    with_operator_surface(opts, fn backend ->
+      backend.request_memory_promotion(context, request, opts)
+    end)
+  end
+
+  @spec request_memory_invalidation(RequestContext.t(), MemoryInvalidationRequest.t(), keyword()) ::
+          {:ok, ActionResult.t()} | {:error, SurfaceError.t()}
+  def request_memory_invalidation(
+        %RequestContext{} = context,
+        %MemoryInvalidationRequest{} = request,
+        opts \\ []
+      )
+      when is_list(opts) do
+    with_operator_surface(opts, fn backend ->
+      backend.request_memory_invalidation(context, request, opts)
     end)
   end
 

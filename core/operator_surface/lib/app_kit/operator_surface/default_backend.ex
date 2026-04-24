@@ -10,6 +10,13 @@ defmodule AppKit.OperatorSurface.DefaultBackend do
   alias AppKit.Core.{
     ActionResult,
     ExecutionRef,
+    MemoryFragmentListRequest,
+    MemoryFragmentProjection,
+    MemoryFragmentProvenance,
+    MemoryInvalidationRequest,
+    MemoryPromotionRequest,
+    MemoryProofTokenLookup,
+    MemoryShareUpRequest,
     OperatorAction,
     OperatorActionRequest,
     OperatorProjection,
@@ -179,6 +186,88 @@ defmodule AppKit.OperatorSurface.DefaultBackend do
   end
 
   @impl true
+  def list_memory_fragments(
+        %RequestContext{} = context,
+        %MemoryFragmentListRequest{} = request,
+        opts
+      )
+      when is_list(opts) do
+    {:ok, [default_memory_fragment(context, request.proof_token_ref, opts)]}
+  end
+
+  @impl true
+  def memory_fragment_by_proof_token(
+        %RequestContext{} = context,
+        %MemoryProofTokenLookup{} = lookup,
+        opts
+      )
+      when is_list(opts) do
+    {:ok, default_memory_fragment(context, lookup.proof_token_ref, opts)}
+  end
+
+  @impl true
+  def memory_fragment_provenance(%RequestContext{} = context, fragment_ref, opts)
+      when is_binary(fragment_ref) and is_list(opts) do
+    MemoryFragmentProvenance.new(%{
+      fragment_ref: fragment_ref,
+      proof_token_ref: Keyword.get(opts, :proof_token_ref, "proof://default"),
+      proof_hash: Keyword.get(opts, :proof_hash, default_hash("proof")),
+      source_contract_name: "OuterBrain.MemoryContextProvenance.v2",
+      snapshot_epoch: Keyword.get(opts, :snapshot_epoch, 1),
+      source_node_ref: Keyword.get(opts, :source_node_ref, "node://app-kit/default"),
+      commit_lsn: Keyword.get(opts, :commit_lsn, "0/0"),
+      commit_hlc: Keyword.get(opts, :commit_hlc, default_commit_hlc()),
+      provenance_refs: Keyword.get(opts, :provenance_refs, ["provenance://app-kit/default"]),
+      evidence_refs: Keyword.get(opts, :evidence_refs, [%{ref: "evidence://app-kit/default"}]),
+      governance_refs:
+        Keyword.get(opts, :governance_refs, [%{ref: "governance://app-kit/default"}]),
+      metadata: %{trace_id: context.trace_id}
+    })
+  end
+
+  @impl true
+  def request_memory_share_up(
+        %RequestContext{} = _context,
+        %MemoryShareUpRequest{} = request,
+        opts
+      )
+      when is_list(opts) do
+    memory_action_result(
+      request.fragment_ref,
+      "share_up",
+      Keyword.get(opts, :message, "Share-up requested")
+    )
+  end
+
+  @impl true
+  def request_memory_promotion(
+        %RequestContext{} = _context,
+        %MemoryPromotionRequest{} = request,
+        opts
+      )
+      when is_list(opts) do
+    memory_action_result(
+      request.shared_fragment_ref,
+      "promote",
+      Keyword.get(opts, :message, "Promotion requested")
+    )
+  end
+
+  @impl true
+  def request_memory_invalidation(
+        %RequestContext{} = _context,
+        %MemoryInvalidationRequest{} = request,
+        opts
+      )
+      when is_list(opts) do
+    memory_action_result(
+      request.root_fragment_ref,
+      "invalidate",
+      Keyword.get(opts, :message, "Invalidation requested")
+    )
+  end
+
+  @impl true
   def run_status(%RunRef{} = run_ref, attrs, _opts) when is_map(attrs) do
     ProjectionBridge.operator_projection(run_ref, attrs)
   end
@@ -217,6 +306,52 @@ defmodule AppKit.OperatorSurface.DefaultBackend do
         })
       ]
     end)
+  end
+
+  defp default_memory_fragment(%RequestContext{} = context, proof_token_ref, opts) do
+    {:ok, projection} =
+      MemoryFragmentProjection.new(%{
+        fragment_ref: Keyword.get(opts, :fragment_ref, "memory://default"),
+        tenant_ref: context.tenant_ref.id,
+        installation_ref: context.installation_ref && context.installation_ref.id,
+        tier: Keyword.get(opts, :tier, "unknown"),
+        proof_token_ref: proof_token_ref,
+        proof_hash: Keyword.get(opts, :proof_hash, default_hash(proof_token_ref)),
+        source_node_ref: Keyword.get(opts, :source_node_ref, "node://app-kit/default"),
+        snapshot_epoch: Keyword.get(opts, :snapshot_epoch, 1),
+        commit_lsn: Keyword.get(opts, :commit_lsn, "0/0"),
+        commit_hlc: Keyword.get(opts, :commit_hlc, default_commit_hlc()),
+        provenance_refs: Keyword.get(opts, :provenance_refs, ["provenance://app-kit/default"]),
+        evidence_refs: Keyword.get(opts, :evidence_refs, [%{ref: "evidence://app-kit/default"}]),
+        governance_refs:
+          Keyword.get(opts, :governance_refs, [%{ref: "governance://app-kit/default"}]),
+        cluster_invalidation_status: Keyword.get(opts, :cluster_invalidation_status, "unknown"),
+        staleness_class: Keyword.get(opts, :staleness_class, "unknown"),
+        redaction_posture: Keyword.get(opts, :redaction_posture, "operator_safe"),
+        metadata: %{trace_id: context.trace_id}
+      })
+
+    projection
+  end
+
+  defp memory_action_result(fragment_ref, action_kind, message) do
+    ActionResult.new(%{
+      status: :accepted,
+      action_ref: %{
+        id: "#{fragment_ref}:#{action_kind}",
+        action_kind: action_kind
+      },
+      message: message,
+      metadata: %{fragment_ref: fragment_ref}
+    })
+  end
+
+  defp default_hash(seed) when is_binary(seed) do
+    "sha256:" <> Base.encode16(:crypto.hash(:sha256, seed), case: :lower)
+  end
+
+  defp default_commit_hlc do
+    %{wall_ns: System.system_time(:nanosecond), logical: 0, node: "app-kit"}
   end
 
   defp authorization_scope(%RequestContext{} = context, %ExecutionRef{} = execution_ref) do

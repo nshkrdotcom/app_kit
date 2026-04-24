@@ -31,6 +31,13 @@ defmodule AppKit.Bridges.MezzanineBridge do
     InstallationRef,
     InstallResult,
     InstallTemplate,
+    MemoryFragmentListRequest,
+    MemoryFragmentProjection,
+    MemoryFragmentProvenance,
+    MemoryInvalidationRequest,
+    MemoryPromotionRequest,
+    MemoryProofTokenLookup,
+    MemoryShareUpRequest,
     NextStepPreview,
     OperatorAction,
     OperatorActionRef,
@@ -528,6 +535,98 @@ defmodule AppKit.Bridges.MezzanineBridge do
   end
 
   @impl true
+  def list_memory_fragments(
+        %RequestContext{} = context,
+        %MemoryFragmentListRequest{} = request,
+        opts
+      )
+      when is_list(opts) do
+    with attrs <- memory_request_attrs(context, request),
+         {:ok, rows} <- memory_control_service(opts).list_fragments_by_proof_token(attrs, opts),
+         {:ok, fragments} <- map_each(rows, &memory_fragment_projection_from_map/1) do
+      {:ok, fragments}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def memory_fragment_by_proof_token(
+        %RequestContext{} = context,
+        %MemoryProofTokenLookup{} = lookup,
+        opts
+      )
+      when is_list(opts) do
+    with attrs <- memory_request_attrs(context, lookup),
+         {:ok, row} <- memory_control_service(opts).lookup_fragment_by_proof_token(attrs, opts),
+         {:ok, fragment} <- memory_fragment_projection_from_map(row) do
+      {:ok, fragment}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def memory_fragment_provenance(%RequestContext{} = context, fragment_ref, opts)
+      when is_binary(fragment_ref) and is_list(opts) do
+    with attrs <- Map.put(memory_context_attrs(context), :fragment_ref, fragment_ref),
+         {:ok, row} <- memory_control_service(opts).fragment_provenance(attrs, opts),
+         {:ok, provenance} <- memory_fragment_provenance_from_map(row) do
+      {:ok, provenance}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def request_memory_share_up(
+        %RequestContext{} = context,
+        %MemoryShareUpRequest{} = request,
+        opts
+      )
+      when is_list(opts) do
+    with attrs <- memory_request_attrs(context, request),
+         {:ok, bridge_result} <- memory_control_service(opts).request_share_up(attrs, opts),
+         {:ok, action_result} <- action_result_from_bridge(bridge_result) do
+      {:ok, action_result}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def request_memory_promotion(
+        %RequestContext{} = context,
+        %MemoryPromotionRequest{} = request,
+        opts
+      )
+      when is_list(opts) do
+    with attrs <- memory_request_attrs(context, request),
+         {:ok, bridge_result} <- memory_control_service(opts).request_promotion(attrs, opts),
+         {:ok, action_result} <- action_result_from_bridge(bridge_result) do
+      {:ok, action_result}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def request_memory_invalidation(
+        %RequestContext{} = context,
+        %MemoryInvalidationRequest{} = request,
+        opts
+      )
+      when is_list(opts) do
+    with attrs <- memory_request_attrs(context, request),
+         {:ok, bridge_result} <- memory_control_service(opts).request_invalidation(attrs, opts),
+         {:ok, action_result} <- action_result_from_bridge(bridge_result) do
+      {:ok, action_result}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
   def start_run(domain_call, opts) when is_map(domain_call) and is_list(opts) do
     work_control_service(opts).start_run(domain_call, opts)
   end
@@ -901,6 +1000,66 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   defp timeline_event_from_map(_row), do: {:error, :invalid_timeline_event}
 
+  defp memory_fragment_projection_from_map(row) when is_map(row) do
+    row
+    |> strip_memory_raw_payload()
+    |> MemoryFragmentProjection.new()
+  end
+
+  defp memory_fragment_projection_from_map(_row),
+    do: {:error, :invalid_memory_fragment_projection}
+
+  defp memory_fragment_provenance_from_map(row) when is_map(row) do
+    row
+    |> strip_memory_raw_payload()
+    |> MemoryFragmentProvenance.new()
+  end
+
+  defp memory_fragment_provenance_from_map(_row),
+    do: {:error, :invalid_memory_fragment_provenance}
+
+  defp strip_memory_raw_payload(row) when is_map(row) do
+    Map.drop(row, [
+      :payload,
+      "payload",
+      :raw_payload,
+      "raw_payload",
+      :content,
+      "content",
+      :fragment_payload,
+      "fragment_payload",
+      :body,
+      "body",
+      :raw_fragment,
+      "raw_fragment",
+      :raw_content,
+      "raw_content"
+    ])
+  end
+
+  defp memory_request_attrs(%RequestContext{} = context, request) when is_map(request) do
+    request
+    |> Map.from_struct()
+    |> Map.delete(:__struct__)
+    |> Map.merge(memory_context_attrs(context))
+    |> compact_map()
+  end
+
+  defp memory_context_attrs(%RequestContext{} = context) do
+    %{
+      tenant_ref: context.tenant_ref && context.tenant_ref.id,
+      installation_ref: context.installation_ref && context.installation_ref.id,
+      trace_id: context.trace_id,
+      actor_ref: memory_actor_ref(context)
+    }
+    |> compact_map()
+  end
+
+  defp memory_actor_ref(%RequestContext{actor_ref: %{id: actor_id}}) when is_binary(actor_id),
+    do: actor_id
+
+  defp memory_actor_ref(_context), do: "app_kit"
+
   defp actor_ref_from_any(nil), do: nil
   defp actor_ref_from_any(%ActorRef{} = actor_ref), do: actor_ref
   defp actor_ref_from_any(%{} = actor_ref), do: actor_ref
@@ -1032,6 +1191,9 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   defp operator_action_service(opts),
     do: Keyword.get(opts, :operator_action_service, Mezzanine.AppKitBridge.OperatorActionService)
+
+  defp memory_control_service(opts),
+    do: Keyword.get(opts, :memory_control_service, Mezzanine.AppKitBridge.MemoryControlService)
 
   defp service_exports?(service, function_name, arity)
        when is_atom(service) and is_atom(function_name) and is_integer(arity) do
@@ -1721,6 +1883,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @not_found_reasons [:bridge_not_found, :not_found, :pack_registration_not_found]
   @conflict_reasons [:installation_pack_conflict, :review_gate_not_satisfied]
   @transient_reasons [:timeout, :temporarily_unavailable]
+  @validation_reasons [:stale_proof_token]
   @validation_reason_prefixes ["missing_", "invalid_", "unsupported_"]
 
   defp normalize_atomish(value) when is_binary(value),
@@ -1775,6 +1938,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp surface_error_kind(reason) when reason in @not_found_reasons, do: :not_found
   defp surface_error_kind(reason) when reason in @conflict_reasons, do: :conflict
   defp surface_error_kind(reason) when reason in @transient_reasons, do: :transient
+  defp surface_error_kind(reason) when reason in @validation_reasons, do: :validation
 
   defp surface_error_kind(reason) when is_atom(reason) do
     if validation_reason?(reason), do: :validation, else: :boundary

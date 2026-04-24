@@ -485,6 +485,118 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     end
   end
 
+  defmodule FakeMemoryControlService do
+    def list_fragments_by_proof_token(attrs, _opts) do
+      send(self(), {:memory_list, attrs})
+
+      {:ok,
+       [
+         %{
+           fragment_ref: "memory-private://alpha/private-1",
+           tenant_ref: attrs.tenant_ref,
+           installation_ref: attrs.installation_ref,
+           tier: "private",
+           proof_token_ref: attrs.proof_token_ref,
+           proof_hash: valid_hash("proof"),
+           source_node_ref: "node://memory-reader@host/reader-1",
+           snapshot_epoch: 42,
+           commit_lsn: "16/B374D848",
+           commit_hlc: %{wall_ns: 1_800_000_000_000_000_000, logical: 1, node: "reader-1"},
+           provenance_refs: ["provenance://outer-brain/context/1"],
+           evidence_refs: [%{ref: "evidence://recall/1", kind: "proof"}],
+           governance_refs: [%{ref: "governance://memory/read", kind: "read"}],
+           cluster_invalidation_status: "none",
+           staleness_class: "fresh",
+           redaction_posture: "operator_safe",
+           payload: %{"forbidden" => "service must strip this"}
+         }
+       ]}
+    end
+
+    def lookup_fragment_by_proof_token(attrs, _opts) do
+      send(self(), {:memory_lookup, attrs})
+
+      {:ok,
+       %{
+         fragment_ref: "memory-private://alpha/private-1",
+         tenant_ref: attrs.tenant_ref,
+         installation_ref: attrs.installation_ref,
+         tier: "private",
+         proof_token_ref: attrs.proof_token_ref,
+         proof_hash: valid_hash("proof"),
+         source_node_ref: "node://memory-reader@host/reader-1",
+         snapshot_epoch: 42,
+         commit_lsn: "16/B374D848",
+         commit_hlc: %{wall_ns: 1_800_000_000_000_000_000, logical: 1, node: "reader-1"},
+         provenance_refs: ["provenance://outer-brain/context/1"],
+         evidence_refs: [%{ref: "evidence://recall/1", kind: "proof"}],
+         governance_refs: [%{ref: "governance://memory/read", kind: "read"}],
+         cluster_invalidation_status: "none",
+         staleness_class: "fresh",
+         redaction_posture: "operator_safe"
+       }}
+    end
+
+    def fragment_provenance(attrs, _opts) do
+      send(self(), {:memory_provenance, attrs})
+
+      {:ok,
+       %{
+         fragment_ref: attrs.fragment_ref,
+         proof_token_ref: "proof://recall/1",
+         proof_hash: valid_hash("proof"),
+         source_contract_name: "OuterBrain.MemoryContextProvenance.v2",
+         snapshot_epoch: 42,
+         source_node_ref: "node://memory-reader@host/reader-1",
+         commit_lsn: "16/B374D848",
+         commit_hlc: %{wall_ns: 1_800_000_000_000_000_000, logical: 1, node: "reader-1"},
+         provenance_refs: ["provenance://outer-brain/context/1"],
+         evidence_refs: [%{ref: "evidence://recall/1", kind: "proof"}],
+         governance_refs: [%{ref: "governance://memory/read", kind: "read"}]
+       }}
+    end
+
+    def request_share_up(attrs, _opts) do
+      send(self(), {:memory_share_up, attrs})
+      action_result(attrs.fragment_ref, "share_up", "Share-up requested")
+    end
+
+    def request_promotion(attrs, _opts) do
+      send(self(), {:memory_promotion, attrs})
+      action_result(attrs.shared_fragment_ref, "promote", "Promotion requested")
+    end
+
+    def request_invalidation(attrs, _opts) do
+      send(self(), {:memory_invalidation, attrs})
+      action_result(attrs.root_fragment_ref, "invalidate", "Invalidation requested")
+    end
+
+    defp action_result(fragment_ref, action_kind, message) do
+      {:ok,
+       %{
+         status: :accepted,
+         action_ref: %{
+           id: "#{fragment_ref}:#{action_kind}",
+           action_kind: action_kind
+         },
+         message: message,
+         metadata: %{fragment_ref: fragment_ref}
+       }}
+    end
+
+    defp valid_hash(seed) do
+      "sha256:" <> Base.encode16(:crypto.hash(:sha256, seed), case: :lower)
+    end
+  end
+
+  defmodule FakeDeniedMemoryControlService do
+    def lookup_fragment_by_proof_token(%{expected_tenant_ref: "tenant://other"}, _opts),
+      do: {:error, :unauthorized_lower_read}
+
+    def lookup_fragment_by_proof_token(%{current_epoch: 43}, _opts),
+      do: {:error, :stale_proof_token}
+  end
+
   alias AppKit.Bridges.MezzanineBridge
 
   alias AppKit.Core.{
@@ -494,6 +606,11 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     InstallationBinding,
     InstallationRef,
     InstallTemplate,
+    MemoryFragmentListRequest,
+    MemoryInvalidationRequest,
+    MemoryPromotionRequest,
+    MemoryProofTokenLookup,
+    MemoryShareUpRequest,
     OperatorActionRequest,
     PageRequest,
     ProjectionRef,
@@ -1019,6 +1136,180 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
         surface: :mezzanine_bridge
       }
     )
+  end
+
+  test "maps memory-control service into operator-safe AppKit DTOs" do
+    context = request_context()
+
+    assert {:ok, list_request} =
+             MemoryFragmentListRequest.new(%{
+               proof_token_ref: "proof://recall/1",
+               include_provenance?: true
+             })
+
+    assert {:ok, proof_lookup} =
+             MemoryProofTokenLookup.new(%{
+               proof_token_ref: "proof://recall/1",
+               expected_tenant_ref: "tenant://alpha",
+               reject_stale?: true,
+               current_epoch: 42
+             })
+
+    assert {:ok, [fragment]} =
+             MezzanineBridge.list_memory_fragments(
+               context,
+               list_request,
+               memory_control_service: FakeMemoryControlService
+             )
+
+    assert {:ok, same_fragment} =
+             MezzanineBridge.memory_fragment_by_proof_token(
+               context,
+               proof_lookup,
+               memory_control_service: FakeMemoryControlService
+             )
+
+    assert {:ok, provenance} =
+             MezzanineBridge.memory_fragment_provenance(
+               context,
+               "memory-private://alpha/private-1",
+               memory_control_service: FakeMemoryControlService
+             )
+
+    assert_received {:memory_list, list_attrs}
+    assert_received {:memory_lookup, lookup_attrs}
+    assert_received {:memory_provenance, provenance_attrs}
+
+    assert list_attrs.tenant_ref == "tenant-1"
+    assert lookup_attrs.proof_token_ref == "proof://recall/1"
+    assert provenance_attrs.fragment_ref == "memory-private://alpha/private-1"
+    assert fragment.proof_hash == same_fragment.proof_hash
+    assert fragment.staleness_class == "fresh"
+    assert fragment.cluster_invalidation_status == "none"
+    refute Map.has_key?(Map.from_struct(fragment), :payload)
+    assert provenance.source_contract_name == "OuterBrain.MemoryContextProvenance.v2"
+  end
+
+  test "routes share-up, promotion, and invalidation requests through memory-control service" do
+    context = request_context()
+
+    assert {:ok, share_up_request} =
+             MemoryShareUpRequest.new(%{
+               fragment_ref: "memory-private://alpha/private-1",
+               target_scope_ref: "scope://team-alpha",
+               share_up_policy_ref: "share-up-policy://team-alpha",
+               transform_ref: "transform://redact-pii",
+               reason: "share project memory",
+               evidence_refs: [%{ref: "evidence://operator/share-up", kind: "operator"}]
+             })
+
+    assert {:ok, promotion_request} =
+             MemoryPromotionRequest.new(%{
+               shared_fragment_ref: "memory-shared://alpha/shared-1",
+               promotion_policy_ref: "promote-policy://governed",
+               reason: "approved for governed memory",
+               evidence_refs: [%{ref: "evidence://operator/promote", kind: "operator"}]
+             })
+
+    assert {:ok, invalidation_request} =
+             MemoryInvalidationRequest.new(%{
+               root_fragment_ref: "memory-private://alpha/private-1",
+               reason: :operator_suppression,
+               suppression_reason: "obsolete user preference",
+               invalidate_policy_ref: "invalidate-policy://default",
+               authority_ref: %{ref: "authority://operator/suppression", kind: "operator"},
+               evidence_refs: [%{ref: "evidence://operator/invalidate", kind: "operator"}]
+             })
+
+    assert {:ok, share_up_result} =
+             MezzanineBridge.request_memory_share_up(
+               context,
+               share_up_request,
+               memory_control_service: FakeMemoryControlService
+             )
+
+    assert {:ok, promotion_result} =
+             MezzanineBridge.request_memory_promotion(
+               context,
+               promotion_request,
+               memory_control_service: FakeMemoryControlService
+             )
+
+    assert {:ok, invalidation_result} =
+             MezzanineBridge.request_memory_invalidation(
+               context,
+               invalidation_request,
+               memory_control_service: FakeMemoryControlService
+             )
+
+    assert_received {:memory_share_up, share_attrs}
+    assert_received {:memory_promotion, promotion_attrs}
+    assert_received {:memory_invalidation, invalidation_attrs}
+
+    assert share_attrs.trace_id == context.trace_id
+    assert share_attrs.actor_ref == "user-1"
+    assert promotion_attrs.shared_fragment_ref == "memory-shared://alpha/shared-1"
+    assert invalidation_attrs.reason == :operator_suppression
+    assert invalidation_attrs.suppression_reason == "obsolete user preference"
+    assert share_up_result.action_ref.action_kind == "share_up"
+    assert promotion_result.action_ref.action_kind == "promote"
+    assert invalidation_result.action_ref.action_kind == "invalidate"
+  end
+
+  test "memory proof lookup rejects cross-tenant and stale proof-token reads" do
+    context = request_context()
+
+    assert {:ok, cross_tenant_lookup} =
+             MemoryProofTokenLookup.new(%{
+               proof_token_ref: "proof://recall/1",
+               expected_tenant_ref: "tenant://other",
+               reject_stale?: true,
+               current_epoch: 42
+             })
+
+    assert {:error, cross_tenant_error} =
+             MezzanineBridge.memory_fragment_by_proof_token(
+               context,
+               cross_tenant_lookup,
+               memory_control_service: FakeDeniedMemoryControlService
+             )
+
+    assert {:ok, stale_lookup} =
+             MemoryProofTokenLookup.new(%{
+               proof_token_ref: "proof://recall/1",
+               expected_tenant_ref: "tenant-1",
+               reject_stale?: true,
+               current_epoch: 43
+             })
+
+    assert {:error, stale_error} =
+             MezzanineBridge.memory_fragment_by_proof_token(
+               context,
+               stale_lookup,
+               memory_control_service: FakeDeniedMemoryControlService
+             )
+
+    assert cross_tenant_error.kind == :authorization
+    assert cross_tenant_error.code == "unauthorized_lower_read"
+    assert stale_error.kind == :validation
+    assert stale_error.code == "stale_proof_token"
+  end
+
+  test "memory-control bridge keeps direct stores out of the northbound AppKit surface" do
+    bridge_root = Path.expand("../../..", __DIR__)
+
+    bridge_root
+    |> Path.join("lib/**/*.ex")
+    |> Path.wildcard(match_dot: true)
+    |> Enum.each(fn path ->
+      contents = File.read!(path)
+
+      refute contents =~ "Jido.Integration.V2.StorePostgres",
+             "#{path} imports the lower memory store directly"
+
+      refute contents =~ "MemoryTierStore",
+             "#{path} bypasses the Mezzanine memory-control facade"
+    end)
   end
 
   test "normalizes missing program context into a surface error" do
