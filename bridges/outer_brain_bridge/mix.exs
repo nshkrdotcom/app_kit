@@ -1,16 +1,14 @@
 defmodule AppKitOuterBrainBridge.MixProject do
   use Mix.Project
 
-  @default_outer_brain_domain_bridge_path Path.expand(
-                                            "../../../outer_brain/bridges/domain_bridge",
-                                            __DIR__
-                                          )
-  @outer_brain_domain_bridge_path_env "APP_KIT_OUTER_BRAIN_DOMAIN_BRIDGE_PATH"
-  @default_outer_brain_contracts_path Path.expand(
-                                        "../../../outer_brain/core/outer_brain_contracts",
-                                        __DIR__
-                                      )
-  @outer_brain_contracts_path_env "APP_KIT_OUTER_BRAIN_CONTRACTS_PATH"
+  @outer_brain_domain_bridge_path Path.expand(
+                                    "../../../outer_brain/bridges/domain_bridge",
+                                    __DIR__
+                                  )
+  @outer_brain_contracts_path Path.expand(
+                                "../../../outer_brain/core/outer_brain_contracts",
+                                __DIR__
+                              )
 
   def project do
     [
@@ -37,25 +35,11 @@ defmodule AppKitOuterBrainBridge.MixProject do
     [
       {:app_kit_core, path: "../../core/app_kit_core"},
       {:app_kit_scope_objects, path: "../../core/scope_objects"},
-      {:outer_brain_contracts, path: outer_brain_contracts_path()},
-      {:outer_brain_domain_bridge, path: outer_brain_domain_bridge_path()},
+      {:outer_brain_contracts, path: @outer_brain_contracts_path},
+      {:outer_brain_domain_bridge, path: @outer_brain_domain_bridge_path},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40.1", only: :dev, runtime: false}
     ]
-  end
-
-  defp outer_brain_domain_bridge_path do
-    System.get_env(
-      @outer_brain_domain_bridge_path_env,
-      @default_outer_brain_domain_bridge_path
-    )
-  end
-
-  defp outer_brain_contracts_path do
-    System.get_env(
-      @outer_brain_contracts_path_env,
-      @default_outer_brain_contracts_path
-    )
   end
 end

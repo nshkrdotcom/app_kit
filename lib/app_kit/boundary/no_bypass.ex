@@ -53,6 +53,7 @@ defmodule AppKit.Boundary.NoBypass do
     "**/doc/**",
     "**/dist/**"
   ]
+  @default_exclude_segments MapSet.new(["_build", "deps", "doc", "dist"])
 
   @spec scan([scan_option()]) :: {:ok, map()} | {:error, map()}
   def scan(opts \\ []) when is_list(opts) do
@@ -109,16 +110,88 @@ defmodule AppKit.Boundary.NoBypass do
     do: raise(ArgumentError, "unknown no-bypass profile #{inspect(profile)}")
 
   defp source_files(root, includes, excludes) do
-    excluded =
+    explicit_excludes =
       excludes
+      |> Enum.reject(&default_exclude?/1)
       |> Enum.flat_map(&Path.wildcard(Path.join(root, &1), match_dot: true))
       |> MapSet.new()
 
     includes
-    |> Enum.flat_map(&Path.wildcard(Path.join(root, &1), match_dot: true))
+    |> Enum.flat_map(&expand_include(root, &1))
     |> Enum.uniq()
-    |> Enum.reject(fn path -> File.dir?(path) or MapSet.member?(excluded, path) end)
+    |> Enum.reject(fn path ->
+      File.dir?(path) or generated_path?(root, path) or MapSet.member?(explicit_excludes, path)
+    end)
     |> Enum.sort()
+  end
+
+  defp default_exclude?(exclude), do: exclude in @default_excludes
+
+  defp expand_include(root, include) do
+    case recursive_source_include(include) do
+      {:ok, base_relative, extension} ->
+        root
+        |> Path.join(base_relative)
+        |> walk_source_files(extension)
+
+      :error ->
+        Path.wildcard(Path.join(root, include), match_dot: true)
+    end
+  end
+
+  defp recursive_source_include(include) do
+    case String.split(include, "/**/", parts: 2) do
+      [base_relative, "*.ex"] -> simple_recursive_include(base_relative, ".ex")
+      [base_relative, "*.exs"] -> simple_recursive_include(base_relative, ".exs")
+      _other -> :error
+    end
+  end
+
+  defp simple_recursive_include(base_relative, extension) do
+    if String.contains?(base_relative, ["*", "?", "{", "}"]) do
+      :error
+    else
+      {:ok, base_relative, extension}
+    end
+  end
+
+  defp walk_source_files(root, extension) do
+    root = Path.expand(root)
+
+    cond do
+      not File.dir?(root) ->
+        []
+
+      generated_path?(Path.dirname(root), root) ->
+        []
+
+      true ->
+        root
+        |> File.ls!()
+        |> Enum.flat_map(&walk_source_entry(&1, root, extension))
+    end
+  end
+
+  defp walk_source_entry(entry, root, extension) do
+    path = Path.join(root, entry)
+
+    cond do
+      File.dir?(path) ->
+        walk_source_files(path, extension)
+
+      String.ends_with?(path, extension) ->
+        [path]
+
+      true ->
+        []
+    end
+  end
+
+  defp generated_path?(root, path) do
+    path
+    |> Path.relative_to(root)
+    |> Path.split()
+    |> Enum.any?(&MapSet.member?(@default_exclude_segments, &1))
   end
 
   defp scan_file(profile, path) do

@@ -98,6 +98,29 @@ defmodule AppKit.NoBypassTest do
     assert report.checked_files == 1
   end
 
+  test "honors explicit excludes after collecting included source files" do
+    root = unique_root!()
+    owned_path = Path.join(root, "lib/product.ex")
+    generated_path = Path.join(root, "generated/lower.ex")
+
+    File.mkdir_p!(Path.dirname(owned_path))
+    File.mkdir_p!(Path.dirname(generated_path))
+    File.write!(owned_path, "defmodule Product do\nend\n")
+    File.write!(generated_path, "ExecutionPlane.Contracts.dispatch(%{})\n")
+
+    on_exit(fn -> File.rm_rf(root) end)
+
+    assert {:ok, report} =
+             NoBypass.scan(
+               root: root,
+               profiles: [:hazmat],
+               include: ["**/*.ex"],
+               exclude: ["generated/**"]
+             )
+
+    assert report.checked_files == 1
+  end
+
   defp write_product_file!(contents) do
     root = unique_root!()
     path = Path.join(root, "lib/product.ex")
