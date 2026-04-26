@@ -119,6 +119,51 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
              WorkQueryService.get_subject_projection(tenant_id, subject.subject_id)
   end
 
+  test "work query service exposes reducer runtime projection when the row exists" do
+    subject_id = Ecto.UUID.generate()
+
+    fetcher = fn "tenant-runtime", ^subject_id, _opts ->
+      {:ok,
+       %{
+         projection_name: "operator_subject_runtime",
+         projection_kind: "operator_runtime",
+         subject_id: subject_id,
+         computed_at: ~U[2026-04-25 13:00:00Z],
+         payload: %{
+           "subject" => %{
+             "subject_id" => subject_id,
+             "subject_kind" => "linear_coding_ticket",
+             "lifecycle_state" => "awaiting_review"
+           },
+           "execution" => %{"execution_id" => "exec-1", "dispatch_state" => "completed"},
+           "lower_receipt" => %{"receipt_id" => "receipt-1"},
+           "runtime" => %{
+             "token_totals" => %{"input" => 120, "output" => 45},
+             "rate_limit" => %{"remaining" => 80},
+             "event_counts" => %{"tool_call" => 2}
+           },
+           "review" => %{"pending_decision_ids" => ["dec-1"]},
+           "evidence" => %{"evidence_refs" => [%{"evidence_kind" => "pull_request"}]}
+         }
+       }}
+    end
+
+    assert {:ok, projection} =
+             WorkQueryService.get_subject_projection("tenant-runtime", subject_id,
+               projection_row_fetcher: fetcher
+             )
+
+    assert projection.subject_id == subject_id
+    assert projection.subject_kind == "linear_coding_ticket"
+    assert projection.lifecycle_state == "awaiting_review"
+    assert projection.review_status == :pending
+    assert projection.runtime["token_totals"] == %{"input" => 120, "output" => 45}
+    assert projection.runtime["rate_limit"]["remaining"] == 80
+    assert projection.runtime["event_counts"]["tool_call"] == 2
+    assert projection.lower_receipt["receipt_id"] == "receipt-1"
+    assert [%{"evidence_kind" => "pull_request"}] = projection.evidence["evidence_refs"]
+  end
+
   test "work control service returns the same app-kit compatible run result through the extracted service layer" do
     %{tenant_id: tenant_id, program: program, work_class: work_class} =
       fixture_stack("tenant-bridge-start-run")

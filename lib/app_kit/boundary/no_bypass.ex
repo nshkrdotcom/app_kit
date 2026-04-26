@@ -53,6 +53,9 @@ defmodule AppKit.Boundary.NoBypass do
     "**/doc/**",
     "**/dist/**"
   ]
+  @default_exclude_files MapSet.new([
+                           "lib/app_kit/boundary/no_bypass.ex"
+                         ])
   @default_exclude_segments MapSet.new(["_build", "deps", "doc", "dist"])
 
   @spec scan([scan_option()]) :: {:ok, map()} | {:error, map()}
@@ -120,7 +123,8 @@ defmodule AppKit.Boundary.NoBypass do
     |> Enum.flat_map(&expand_include(root, &1))
     |> Enum.uniq()
     |> Enum.reject(fn path ->
-      File.dir?(path) or generated_path?(root, path) or MapSet.member?(explicit_excludes, path)
+      File.dir?(path) or generated_path?(root, path) or default_excluded_file?(root, path) or
+        MapSet.member?(explicit_excludes, path)
     end)
     |> Enum.sort()
   end
@@ -192,6 +196,12 @@ defmodule AppKit.Boundary.NoBypass do
     |> Path.relative_to(root)
     |> Path.split()
     |> Enum.any?(&MapSet.member?(@default_exclude_segments, &1))
+  end
+
+  defp default_excluded_file?(root, path) do
+    path
+    |> Path.relative_to(root)
+    |> then(&MapSet.member?(@default_exclude_files, &1))
   end
 
   defp scan_file(profile, path) do

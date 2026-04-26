@@ -98,6 +98,32 @@ defmodule AppKit.NoBypassTest do
     assert report.checked_files == 1
   end
 
+  test "default scan skips the scanner implementation rule table" do
+    root = unique_root!()
+    scanner_path = Path.join(root, "lib/app_kit/boundary/no_bypass.ex")
+    product_path = Path.join(root, "lib/product.ex")
+
+    File.mkdir_p!(Path.dirname(scanner_path))
+
+    File.write!(
+      scanner_path,
+      "defmodule AppKit.Boundary.NoBypass do\n  @rules [ExecutionPlane]\nend\n"
+    )
+
+    File.write!(product_path, "defmodule Product do\nend\n")
+
+    on_exit(fn -> File.rm_rf(root) end)
+
+    assert {:ok, report} =
+             NoBypass.scan(
+               root: root,
+               profiles: [:hazmat],
+               include: ["lib/**/*.ex"]
+             )
+
+    assert report.checked_files == 1
+  end
+
   test "honors explicit excludes after collecting included source files" do
     root = unique_root!()
     owned_path = Path.join(root, "lib/product.ex")

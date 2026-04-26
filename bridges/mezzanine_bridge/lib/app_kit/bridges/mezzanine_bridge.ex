@@ -124,7 +124,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
     with {:ok, tenant_id} <- tenant_id(context),
          {:ok, subject_id} <- subject_id_from_projection(projection_ref),
          {:ok, projection} <-
-           work_query_service(opts).get_subject_projection(tenant_id, subject_id) do
+           get_subject_projection(work_query_service(opts), tenant_id, subject_id, opts) do
       {:ok, projection}
     else
       {:error, :archived, manifest_ref} -> normalize_surface_error({:archived, manifest_ref})
@@ -665,6 +665,14 @@ defmodule AppKit.Bridges.MezzanineBridge do
     with {:ok, tenant_id} <- tenant_id(context),
          {:ok, row} <- operator_query_service(opts).subject_status(tenant_id, subject_ref.id) do
       operator_projection_from_row(row, context)
+    end
+  end
+
+  defp get_subject_projection(service, tenant_id, subject_id, opts) do
+    if function_exported?(service, :get_subject_projection, 3) do
+      service.get_subject_projection(tenant_id, subject_id, opts)
+    else
+      service.get_subject_projection(tenant_id, subject_id)
     end
   end
 

@@ -112,6 +112,22 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
       {:ok, %{subject_id: "subj-1", work_status: :planned, review_status: :pending}}
     end
 
+    def get_subject_projection(tenant_id, "subj-1", opts) do
+      if Keyword.get(opts, :runtime_projection?) do
+        {:ok,
+         %{
+           subject_id: "subj-1",
+           runtime: %{
+             "token_totals" => %{"input" => 120, "output" => 45},
+             "rate_limit" => %{"remaining" => 80},
+             "event_counts" => %{"tool_call" => 2}
+           }
+         }}
+      else
+        get_subject_projection(tenant_id, "subj-1")
+      end
+    end
+
     def queue_stats(_tenant_id, _program_id) do
       {:ok, %{active_count: 2, running_count: 1}}
     end
@@ -676,6 +692,18 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
              )
 
     assert projection.subject_id == "subj-1"
+
+    assert {:ok, runtime_projection} =
+             MezzanineBridge.get_projection(
+               context,
+               projection_ref,
+               work_query_service: FakeWorkQueryService,
+               runtime_projection?: true
+             )
+
+    assert runtime_projection.runtime["token_totals"] == %{"input" => 120, "output" => 45}
+    assert runtime_projection.runtime["rate_limit"]["remaining"] == 80
+    assert runtime_projection.runtime["event_counts"]["tool_call"] == 2
 
     assert {:ok, queue_stats} =
              MezzanineBridge.queue_stats(

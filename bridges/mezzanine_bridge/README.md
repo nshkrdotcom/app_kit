@@ -31,6 +31,19 @@ tenant boundary: a valid lease token alone is insufficient if the caller scope
 does not match the tenant, installation, subject, execution, and trace carried
 by the lease.
 
+## Runtime Projections
+
+`Mezzanine.AppKitBridge.WorkQueryService.get_subject_projection/3` prefers the
+Mezzanine `operator_subject_runtime` projection row when it is present, then
+falls back to the legacy work projection. Runtime projection rows expose compact
+lower receipt refs, execution dispatch state, token totals, rate-limit status,
+runtime event counts, evidence refs, and pending review ids through
+`AppKit.WorkSurface.get_projection/3`.
+
+This lookup is ref-driven. The bridge does not read process environment and it
+does not accept static provider object selectors for GitHub, Linear, Codex, or
+workflow objects.
+
 ## Phase-3 Operator Recovery
 
 The bridge exposes the release-readiness operator paths proven in Stack Lab:

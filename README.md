@@ -78,6 +78,8 @@ Citadel, Jido Integration, and Execution Plane while allowing the pure
 `Mezzanine.Pack` authoring contract. `hazmat` separately blocks direct
 Execution Plane usage so attach and stream behavior stays behind AppKit and
 Mezzanine leases.
+The default scan excludes `lib/app_kit/boundary/no_bypass.ex` itself so the
+scanner's rule table can name forbidden modules without creating a self-hit.
 
 The Phase 4 schema registry is also part of root CI:
 
@@ -101,6 +103,15 @@ Lower-backed operator reads must stay behind AppKit surfaces. The Mezzanine
 bridge carries read and stream-attach `authorization_scope` in public DTOs so
 product callers cannot bypass tenant-scoped lease checks or call lower-facts
 stores with only a raw token.
+
+The Mezzanine bridge also exposes reducer-owned runtime projections through the
+existing work projection surface. When an `operator_subject_runtime` row exists,
+`AppKit.WorkSurface.get_projection/3` can return lower receipt refs, execution
+state, token totals, rate-limit state, runtime event counts, evidence refs, and
+pending review ids. Those values come from Mezzanine projection rows populated
+from durable receipts and workflow state; product code must not supply static
+provider object ids or environment-variable selectors to make the projection
+work.
 
 Operator-visible control-room projections use explicit Phase 4 DTOs:
 `AppKit.Core.OperatorSurfaceProjection` carries dispatch state, workflow effect
