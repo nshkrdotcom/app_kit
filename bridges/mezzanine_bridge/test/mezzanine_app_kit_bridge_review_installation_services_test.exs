@@ -639,7 +639,10 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
           recipe_ref: :expense_capture,
           runtime_class: :session,
           placement_ref: :local_runner,
-          required_lifecycle_hints: required_lifecycle_hints
+          required_lifecycle_hints: required_lifecycle_hints,
+          workspace_policy: %{strategy: :per_subject, root_ref: :app_kit_test_workspaces},
+          sandbox_policy_ref: :standard_app_kit_fixture,
+          prompt_refs: [:expense_capture_prompt]
         }
       ],
       projection_specs: [
