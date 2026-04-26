@@ -117,11 +117,56 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
         {:ok,
          %{
            subject_id: "subj-1",
+           subject_kind: "work_object",
+           lifecycle_state: "awaiting_review",
+           computed_at: ~U[2026-04-18 13:10:00Z],
+           source_bindings: [
+             %{
+               binding_ref: "linear_primary",
+               source_ref: "source://linear/tenant-1/subj-1",
+               source_kind: "linear_issue",
+               external_system: "linear",
+               source_state: "In Review",
+               workpad_refs: ["source-workpad://linear/tenant-1/subj-1"]
+             }
+           ],
+           workspace: %{id: "workspace-1", tenant_id: "tenant-1"},
+           execution: %{
+             "execution_id" => "exec-1",
+             "dispatch_state" => "terminal_success",
+             "failure_kind" => nil
+           },
+           lower_receipt: %{
+             "receipt_id" => "receipt-1",
+             "receipt_state" => "success",
+             "lower_receipt_ref" => "lower-receipt://run-1/attempt-1",
+             "run_id" => "run-1",
+             "attempt_id" => "attempt-1"
+           },
            runtime: %{
              "token_totals" => %{"input" => 120, "output" => 45},
              "rate_limit" => %{"remaining" => 80},
              "event_counts" => %{"tool_call" => 2}
-           }
+           },
+           evidence: %{
+             "evidence_refs" => [
+               %{
+                 "evidence_id" => "evidence-1",
+                 "evidence_kind" => "github_pr",
+                 "content_ref" => "evidence://github-pr/pr-dynamic",
+                 "status" => "present"
+               }
+             ]
+           },
+           review: %{"pending_decision_ids" => ["dec-1"]},
+           available_actions: [
+             %{
+               id: "subj-1:rework",
+               action_kind: "rework",
+               subject_ref: %{id: "subj-1", subject_kind: "work_object"},
+               status: "available"
+             }
+           ]
          }}
       else
         get_subject_projection(tenant_id, "subj-1")
@@ -704,6 +749,31 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     assert runtime_projection.runtime["token_totals"] == %{"input" => 120, "output" => 45}
     assert runtime_projection.runtime["rate_limit"]["remaining"] == 80
     assert runtime_projection.runtime["event_counts"]["tool_call"] == 2
+
+    assert {:ok, typed_runtime_projection} =
+             MezzanineBridge.get_runtime_projection(
+               context,
+               subject_ref,
+               work_query_service: FakeWorkQueryService
+             )
+
+    assert typed_runtime_projection.subject_ref.id == "subj-1"
+    assert typed_runtime_projection.lifecycle_state == "awaiting_review"
+
+    assert hd(typed_runtime_projection.source_bindings).source_ref ==
+             "source://linear/tenant-1/subj-1"
+
+    assert typed_runtime_projection.workspace_ref.id == "workspace-1"
+    assert typed_runtime_projection.execution_state.execution_ref.id == "exec-1"
+
+    assert hd(typed_runtime_projection.lower_receipts).lower_receipt_ref ==
+             "lower-receipt://run-1/attempt-1"
+
+    assert typed_runtime_projection.runtime.token_totals == %{"input" => 120, "output" => 45}
+    assert hd(typed_runtime_projection.runtime.events).event_kind == "tool_call"
+    assert hd(typed_runtime_projection.evidence).content_ref == "evidence://github-pr/pr-dynamic"
+    assert hd(typed_runtime_projection.review.pending_decision_refs).id == "dec-1"
+    assert hd(typed_runtime_projection.operator_commands).command_ref.action_kind == "rework"
 
     assert {:ok, queue_stats} =
              MezzanineBridge.queue_stats(

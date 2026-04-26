@@ -25,12 +25,15 @@ defmodule AppKit.Bridges.MezzanineBridge do
     BlockingCondition,
     DecisionRef,
     DecisionSummary,
+    EvidenceProjection,
     ExecutionRef,
+    ExecutionStateProjection,
     FilterSet,
     InstallationBinding,
     InstallationRef,
     InstallResult,
     InstallTemplate,
+    LowerReceiptSummary,
     MemoryFragmentListRequest,
     MemoryFragmentProjection,
     MemoryFragmentProvenance,
@@ -42,6 +45,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
     OperatorAction,
     OperatorActionRef,
     OperatorActionRequest,
+    OperatorCommandProjection,
     OperatorProjection,
     PageRequest,
     PageResult,
@@ -50,17 +54,23 @@ defmodule AppKit.Bridges.MezzanineBridge do
     ReadLease,
     RequestContext,
     Result,
+    ReviewProjection,
     RunRef,
     RunRequest,
+    RuntimeEventSummary,
+    RuntimeFactsProjection,
+    SourceBindingProjection,
     StreamAttachLease,
     SubjectDetail,
     SubjectRef,
+    SubjectRuntimeProjection,
     SubjectSummary,
     SurfaceError,
     Telemetry,
     TimelineEvent,
     UnifiedTrace,
-    UnifiedTraceStep
+    UnifiedTraceStep,
+    WorkspaceRef
   }
 
   alias Mezzanine.Archival.Query, as: ArchivalQuery
@@ -126,6 +136,30 @@ defmodule AppKit.Bridges.MezzanineBridge do
          {:ok, projection} <-
            get_subject_projection(work_query_service(opts), tenant_id, subject_id, opts) do
       {:ok, projection}
+    else
+      {:error, :archived, manifest_ref} -> normalize_surface_error({:archived, manifest_ref})
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def get_runtime_projection(%RequestContext{} = context, %SubjectRef{} = subject_ref, opts)
+      when is_list(opts) do
+    runtime_opts = Keyword.put(opts, :runtime_projection?, true)
+
+    with :ok <- ensure_subject_not_archived(context, subject_ref),
+         {:ok, tenant_id} <- tenant_id(context),
+         {:ok, projection} <-
+           get_subject_projection(
+             work_query_service(opts),
+             tenant_id,
+             subject_ref.id,
+             runtime_opts
+           ),
+         :ok <- ensure_runtime_projection_row(projection),
+         {:ok, runtime_projection} <-
+           subject_runtime_projection_from_map(projection, context, subject_ref) do
+      {:ok, runtime_projection}
     else
       {:error, :archived, manifest_ref} -> normalize_surface_error({:archived, manifest_ref})
       {:error, reason} -> normalize_surface_error(reason)
@@ -674,6 +708,374 @@ defmodule AppKit.Bridges.MezzanineBridge do
     else
       service.get_subject_projection(tenant_id, subject_id)
     end
+  end
+
+  defp ensure_runtime_projection_row(projection) when is_map(projection) do
+    if runtime_projection_row?(projection) do
+      :ok
+    else
+      {:error, :runtime_projection_not_found}
+    end
+  end
+
+  defp ensure_runtime_projection_row(_projection), do: {:error, :invalid_runtime_projection}
+
+  defp runtime_projection_row?(projection) do
+    Enum.any?([:runtime, :execution, :lower_receipt, :evidence, :review], fn key ->
+      is_map(fetch_value(projection, key))
+    end)
+  end
+
+  defp subject_runtime_projection_from_map(
+         projection,
+         %RequestContext{} = context,
+         %SubjectRef{} = requested_subject_ref
+       )
+       when is_map(projection) do
+    subject = fetch_value(projection, :subject) || %{}
+    lifecycle_state = runtime_lifecycle_state(projection, subject)
+
+    with {:ok, subject_ref} <-
+           runtime_subject_ref(projection, subject, requested_subject_ref, context),
+         {:ok, source_bindings} <- source_binding_projections(projection),
+         {:ok, workspace_ref} <- runtime_workspace_ref(projection, context),
+         {:ok, execution_state} <-
+           execution_state_projection(projection, subject_ref, lifecycle_state),
+         {:ok, lower_receipts} <- lower_receipt_summaries(projection, execution_state),
+         {:ok, runtime} <- runtime_facts_projection(projection),
+         {:ok, evidence} <- evidence_projections(projection),
+         {:ok, review} <- review_projection(projection, subject_ref),
+         {:ok, operator_commands} <- operator_command_projections(projection) do
+      SubjectRuntimeProjection.new(%{
+        subject_ref: subject_ref,
+        lifecycle_state: lifecycle_state,
+        source_bindings: source_bindings,
+        workspace_ref: workspace_ref,
+        execution_state: execution_state,
+        lower_receipts: lower_receipts,
+        runtime: runtime,
+        evidence: evidence,
+        review: review,
+        operator_commands: operator_commands,
+        updated_at:
+          coerce_datetime(
+            fetch_value(projection, :computed_at) || fetch_value(projection, :updated_at)
+          ),
+        schema_ref: "app_kit/subject_runtime_projection",
+        schema_version: 1,
+        payload: runtime_projection_payload(projection)
+      })
+    end
+  end
+
+  defp subject_runtime_projection_from_map(_projection, _context, _subject_ref),
+    do: {:error, :invalid_runtime_projection}
+
+  defp runtime_lifecycle_state(projection, subject) do
+    normalize_string(
+      fetch_value(projection, :lifecycle_state) ||
+        fetch_value(projection, :work_status) ||
+        fetch_value(subject, :lifecycle_state) ||
+        fetch_value(subject, :status) ||
+        "unknown"
+    )
+  end
+
+  defp runtime_subject_ref(
+         projection,
+         subject,
+         requested_subject_ref,
+         %RequestContext{} = context
+       ) do
+    subject_id =
+      fetch_value(projection, :subject_id) ||
+        fetch_value(subject, :subject_id) ||
+        fetch_value(subject, :id) ||
+        requested_subject_ref.id
+
+    subject_kind =
+      normalize_string(
+        fetch_value(projection, :subject_kind) ||
+          fetch_value(subject, :subject_kind) ||
+          requested_subject_ref.subject_kind ||
+          "subject"
+      )
+
+    SubjectRef.new(%{
+      id: subject_id,
+      subject_kind: subject_kind,
+      installation_ref: requested_subject_ref.installation_ref || context.installation_ref
+    })
+  end
+
+  defp source_binding_projections(projection) do
+    projection
+    |> runtime_source_binding_rows()
+    |> map_each(&source_binding_projection/1)
+  end
+
+  defp runtime_source_binding_rows(projection) do
+    cond do
+      is_list(fetch_value(projection, :source_bindings)) ->
+        fetch_value(projection, :source_bindings)
+
+      is_map(fetch_value(projection, :source_binding)) ->
+        [fetch_value(projection, :source_binding)]
+
+      true ->
+        []
+    end
+  end
+
+  defp source_binding_projection(row) when is_map(row) do
+    SourceBindingProjection.new(%{
+      binding_ref: fetch_value(row, :binding_ref) || fetch_value(row, :source_binding_ref),
+      source_ref: fetch_value(row, :source_ref),
+      source_kind:
+        normalize_string(fetch_value(row, :source_kind) || fetch_value(row, :kind) || "source"),
+      external_system: fetch_value(row, :external_system),
+      source_state: normalize_string(fetch_value(row, :source_state) || fetch_value(row, :state)),
+      source_url: fetch_value(row, :source_url) || fetch_value(row, :url),
+      workpad_refs: fetch_value(row, :workpad_refs) || [],
+      metadata: fetch_value(row, :metadata) || %{}
+    })
+  end
+
+  defp source_binding_projection(_row), do: {:error, :invalid_source_binding_projection}
+
+  defp runtime_workspace_ref(projection, %RequestContext{} = context) do
+    case fetch_value(projection, :workspace_ref) || fetch_value(projection, :workspace) do
+      nil ->
+        {:ok, nil}
+
+      row when is_map(row) ->
+        WorkspaceRef.new(%{
+          id: fetch_value(row, :id) || fetch_value(row, :workspace_id),
+          tenant_id: fetch_value(row, :tenant_id) || context.tenant_ref.id,
+          revision: fetch_value(row, :revision),
+          display_label: fetch_value(row, :display_label) || fetch_value(row, :label)
+        })
+
+      _row ->
+        {:error, :invalid_workspace_ref}
+    end
+  end
+
+  defp execution_state_projection(projection, %SubjectRef{} = subject_ref, lifecycle_state) do
+    case fetch_value(projection, :execution) do
+      row when is_map(row) ->
+        runtime_execution_state(row, subject_ref, lifecycle_state)
+
+      _row ->
+        {:ok, nil}
+    end
+  end
+
+  defp runtime_execution_state(row, %SubjectRef{} = subject_ref, lifecycle_state) do
+    execution_id = fetch_value(row, :execution_id) || fetch_value(row, :id)
+    dispatch_state = normalize_string(fetch_value(row, :dispatch_state) || "unknown")
+
+    with {:ok, execution_ref} <-
+           ExecutionRef.new(%{
+             id: execution_id,
+             subject_ref: subject_ref,
+             dispatch_state: dispatch_state
+           }) do
+      ExecutionStateProjection.new(%{
+        execution_ref: execution_ref,
+        lifecycle_state: lifecycle_state,
+        dispatch_state: dispatch_state,
+        failure_kind: normalize_string(fetch_value(row, :failure_kind)),
+        updated_at: coerce_datetime(fetch_value(row, :updated_at)),
+        metadata: fetch_value(row, :metadata) || %{}
+      })
+    end
+  end
+
+  defp lower_receipt_summaries(projection, execution_state) do
+    projection
+    |> lower_receipt_rows()
+    |> map_each(&lower_receipt_summary(&1, execution_state))
+  end
+
+  defp lower_receipt_rows(projection) do
+    cond do
+      is_list(fetch_value(projection, :lower_receipts)) ->
+        fetch_value(projection, :lower_receipts)
+
+      is_map(fetch_value(projection, :lower_receipt)) ->
+        [fetch_value(projection, :lower_receipt)]
+
+      true ->
+        []
+    end
+  end
+
+  defp lower_receipt_summary(row, execution_state) when is_map(row) do
+    LowerReceiptSummary.new(%{
+      receipt_ref: fetch_value(row, :receipt_ref) || fetch_value(row, :receipt_id),
+      receipt_state:
+        normalize_string(fetch_value(row, :receipt_state) || fetch_value(row, :state)),
+      lower_receipt_ref: fetch_value(row, :lower_receipt_ref),
+      run_ref:
+        runtime_lower_ref("lower-run", fetch_value(row, :run_ref) || fetch_value(row, :run_id)),
+      attempt_ref:
+        runtime_lower_ref(
+          "lower-attempt",
+          fetch_value(row, :attempt_ref) || fetch_value(row, :attempt_id)
+        ),
+      execution_ref: execution_state && execution_state.execution_ref,
+      metadata: fetch_value(row, :metadata) || %{}
+    })
+  end
+
+  defp lower_receipt_summary(_row, _execution_state), do: {:error, :invalid_lower_receipt_summary}
+
+  defp runtime_lower_ref(_prefix, nil), do: nil
+
+  defp runtime_lower_ref(prefix, value) when is_binary(value) do
+    if String.contains?(value, "://"), do: value, else: "#{prefix}://#{value}"
+  end
+
+  defp runtime_lower_ref(_prefix, _value), do: nil
+
+  defp runtime_facts_projection(projection) do
+    runtime = fetch_value(projection, :runtime) || %{}
+
+    with {:ok, events} <- runtime_event_summaries(fetch_value(runtime, :event_counts) || %{}) do
+      RuntimeFactsProjection.new(%{
+        token_totals: fetch_value(runtime, :token_totals) || %{},
+        rate_limit: fetch_value(runtime, :rate_limit) || %{},
+        events: events,
+        metadata: fetch_value(runtime, :metadata) || %{}
+      })
+    end
+  end
+
+  defp runtime_event_summaries(event_counts) when is_map(event_counts) do
+    event_counts
+    |> Enum.sort_by(fn {event_kind, _count} -> normalize_string(event_kind) end)
+    |> Enum.map(fn {event_kind, count} ->
+      RuntimeEventSummary.new(%{
+        event_kind: normalize_string(event_kind),
+        count: count
+      })
+    end)
+    |> collect()
+  end
+
+  defp runtime_event_summaries(_event_counts), do: {:error, :invalid_runtime_event_summary}
+
+  defp evidence_projections(projection) do
+    projection
+    |> evidence_projection_rows()
+    |> map_each(&evidence_projection/1)
+  end
+
+  defp evidence_projection_rows(projection) do
+    evidence = fetch_value(projection, :evidence)
+
+    cond do
+      is_list(fetch_value(evidence, :evidence_refs)) -> fetch_value(evidence, :evidence_refs)
+      is_list(evidence) -> evidence
+      true -> []
+    end
+  end
+
+  defp evidence_projection(row) when is_map(row) do
+    EvidenceProjection.new(%{
+      evidence_ref: fetch_value(row, :evidence_ref) || fetch_value(row, :evidence_id),
+      evidence_kind:
+        normalize_string(fetch_value(row, :evidence_kind) || fetch_value(row, :kind)),
+      content_ref: fetch_value(row, :content_ref),
+      status: normalize_string(fetch_value(row, :status) || "present"),
+      metadata: fetch_value(row, :metadata) || %{}
+    })
+  end
+
+  defp evidence_projection(_row), do: {:error, :invalid_evidence_projection}
+
+  defp review_projection(projection, %SubjectRef{} = subject_ref) do
+    review = fetch_value(projection, :review) || %{}
+    pending_decision_ids = fetch_value(review, :pending_decision_ids) || []
+    status = normalize_string(fetch_value(review, :status) || review_status(pending_decision_ids))
+
+    pending_decision_ids
+    |> Enum.map(fn decision_id ->
+      DecisionRef.new(%{
+        id: decision_id,
+        decision_kind: "operator_review",
+        subject_ref: subject_ref
+      })
+    end)
+    |> collect()
+    |> case do
+      {:ok, pending_decision_refs} ->
+        ReviewProjection.new(%{
+          status: status,
+          pending_decision_refs: pending_decision_refs,
+          metadata: fetch_value(review, :metadata) || %{}
+        })
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp review_status([_ | _]), do: "pending"
+  defp review_status(_pending_decision_ids), do: "none"
+
+  defp operator_command_projections(projection) do
+    projection
+    |> operator_command_rows()
+    |> map_each(&operator_command_projection/1)
+  end
+
+  defp operator_command_rows(projection), do: fetch_value(projection, :available_actions) || []
+
+  defp operator_command_projection(row) when is_map(row) do
+    raw_action_ref = fetch_value(row, :action_ref) || row
+
+    with {:ok, action_ref} <- operator_action_ref_from_map(raw_action_ref) do
+      OperatorCommandProjection.new(%{
+        command_ref: action_ref,
+        status: normalize_string(fetch_value(row, :status) || "available"),
+        enabled?: fetch_value(row, :enabled?) != false,
+        reason: fetch_value(row, :reason),
+        metadata: fetch_value(row, :metadata) || %{}
+      })
+    end
+  end
+
+  defp operator_command_projection(_row), do: {:error, :invalid_operator_command_projection}
+
+  defp runtime_projection_payload(projection) do
+    projection
+    |> Map.new()
+    |> Map.drop([
+      :source_bindings,
+      "source_bindings",
+      :source_binding,
+      "source_binding",
+      :workspace,
+      "workspace",
+      :workspace_ref,
+      "workspace_ref",
+      :execution,
+      "execution",
+      :lower_receipt,
+      "lower_receipt",
+      :lower_receipts,
+      "lower_receipts",
+      :runtime,
+      "runtime",
+      :evidence,
+      "evidence",
+      :review,
+      "review",
+      :available_actions,
+      "available_actions"
+    ])
   end
 
   defp execution_trace_lineage(%RequestContext{} = context, %ExecutionRef{} = execution_ref, opts) do

@@ -209,6 +209,19 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     assert pause_result.action_ref.action_kind == "pause"
     assert pause_result.metadata.control_session.current_mode == :paused
 
+    assert {:ok, resume_result} =
+             OperatorActionService.apply_action(
+               tenant_id,
+               work_object.id,
+               :resume,
+               %{"reason" => "inspection complete"},
+               %{actor_ref: "ops_lead"}
+             )
+
+    assert resume_result.status == :completed
+    assert resume_result.action_ref.action_kind == "resume"
+    assert resume_result.metadata.control_session.current_mode == :normal
+
     assert {:ok, override_result} =
              OperatorActionService.apply_action(
                tenant_id,
@@ -247,6 +260,22 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
 
     assert decision.state == :approved
     assert updated_review_unit.status == :accepted
+
+    %{tenant_id: cancel_tenant_id, work_object: cancel_work_object} =
+      fixture_stack("tenant-operator-cancel")
+
+    assert {:ok, cancel_result} =
+             OperatorActionService.apply_action(
+               cancel_tenant_id,
+               cancel_work_object.id,
+               :cancel,
+               %{"reason" => "operator stopped the task"},
+               %{actor_ref: "ops_lead"}
+             )
+
+    assert cancel_result.status == :completed
+    assert cancel_result.action_ref.action_kind == "cancel"
+    assert cancel_result.metadata.work_object.status == :cancelled
   end
 
   test "operator services expose and retry lifecycle continuation dead letters" do

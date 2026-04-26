@@ -33,16 +33,22 @@ by the lease.
 
 ## Runtime Projections
 
-`Mezzanine.AppKitBridge.WorkQueryService.get_subject_projection/3` prefers the
-Mezzanine `operator_subject_runtime` projection row when it is present, then
-falls back to the legacy work projection. Runtime projection rows expose compact
-lower receipt refs, execution dispatch state, token totals, rate-limit status,
-runtime event counts, evidence refs, and pending review ids through
-`AppKit.WorkSurface.get_projection/3`.
+`AppKit.WorkSurface.get_runtime_projection/3` uses this bridge to read the
+Mezzanine `operator_subject_runtime` projection row and return
+`AppKit.Core.SubjectRuntimeProjection`. Runtime projection rows expose source
+binding refs, workspace refs, compact lower receipt refs, execution dispatch
+state, token totals, rate-limit status, runtime event counts, evidence refs,
+pending review decisions, and available operator commands as typed AppKit DTOs.
+The older `AppKit.WorkSurface.get_projection/3` path remains available for named
+legacy projections and fallback reads.
 
 This lookup is ref-driven. The bridge does not read process environment and it
 does not accept static provider object selectors for GitHub, Linear, Codex, or
-workflow objects.
+workflow objects. Source publication remains a workflow-owned activity and
+projection/evidence concern until a production source-publisher command service
+exists; the bridge must not expose a fake manual operator action that writes a
+provider object without provider discovery/create output and durable receipt
+identity.
 
 ## Phase-3 Operator Recovery
 

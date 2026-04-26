@@ -29,6 +29,16 @@ Default surface backends are configured under `:app_kit_core`. The config keys
 match the surface families: `:installation_backend`, `:work_query_backend`,
 `:review_backend`, `:operator_backend`, and `:work_backend`.
 
+`WorkSurface.get_runtime_projection/3` is the typed runtime read for
+coding-ops operator views. It returns `AppKit.Core.SubjectRuntimeProjection`
+instead of a generic projection map, so products consume source bindings,
+workspace refs, execution state, lower receipts, evidence, review decisions,
+runtime events, and operator commands without importing lower Mezzanine or Jido
+modules. Runtime projection identity must already be present in source
+admission, workflow state, lower receipts, reducer rows, or explicit operator
+DTOs; products must not provide process-env selectors or static provider object
+ids to locate runtime state.
+
 ## Operator Projection Contracts
 
 Phase 4 operator projections are staleness-aware. Use

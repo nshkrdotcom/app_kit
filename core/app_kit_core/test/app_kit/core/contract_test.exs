@@ -12,17 +12,21 @@ defmodule AppKit.Core.ContractTest do
     BlockingCondition,
     DecisionRef,
     DecisionSummary,
+    EvidenceProjection,
     ExecutionRef,
+    ExecutionStateProjection,
     FilterSet,
     InstallationBinding,
     InstallationRef,
     InstallResult,
     InstallTemplate,
+    LowerReceiptSummary,
     NextStepPreview,
     ObserverDescriptor,
     OperatorAction,
     OperatorActionRef,
     OperatorActionRequest,
+    OperatorCommandProjection,
     OperatorProjection,
     OperatorSignalResult,
     OperatorSurfaceProjection,
@@ -34,10 +38,14 @@ defmodule AppKit.Core.ContractTest do
     ReadLeaseRef,
     RequestContext,
     RunRequest,
+    RuntimeEventSummary,
+    RuntimeFactsProjection,
     SortSpec,
+    SourceBindingProjection,
     StreamAttachLease,
     StreamAttachLeaseRef,
     SubjectDetail,
+    SubjectRuntimeProjection,
     SubjectSummary,
     SurfaceError,
     Telemetry,
@@ -270,6 +278,114 @@ defmodule AppKit.Core.ContractTest do
              })
 
     assert projection_ref.schema_version == 1
+  end
+
+  test "builds typed runtime projection DTOs without static provider selectors" do
+    updated_at = ~U[2026-04-18 13:10:00Z]
+    subject_ref = %{id: "subj-1", subject_kind: "work_object"}
+
+    assert {:ok, runtime_projection} =
+             SubjectRuntimeProjection.new(%{
+               subject_ref: subject_ref,
+               lifecycle_state: "awaiting_review",
+               source_bindings: [
+                 %{
+                   binding_ref: "linear_primary",
+                   source_ref: "source://linear/tenant-1/subj-1",
+                   source_kind: "linear_issue",
+                   external_system: "linear",
+                   source_state: "In Review",
+                   source_url: "https://linear.app/acme/issue/ENG-401",
+                   workpad_refs: ["source-workpad://linear/tenant-1/subj-1"]
+                 }
+               ],
+               workspace_ref: %{id: "workspace-1", tenant_id: "tenant-1"},
+               execution_state: %{
+                 execution_ref: %{
+                   id: "exec-1",
+                   subject_ref: subject_ref,
+                   dispatch_state: "terminal_success"
+                 },
+                 lifecycle_state: "awaiting_review",
+                 dispatch_state: "terminal_success",
+                 failure_kind: nil
+               },
+               lower_receipts: [
+                 %{
+                   receipt_ref: "receipt-1",
+                   lower_receipt_ref: "lower-receipt://run-1/attempt-1",
+                   receipt_state: "success",
+                   run_ref: "lower-run://run-1",
+                   attempt_ref: "lower-attempt://attempt-1",
+                   execution_ref: %{id: "exec-1", subject_ref: subject_ref}
+                 }
+               ],
+               runtime: %{
+                 token_totals: %{"input" => 120, "output" => 45},
+                 rate_limit: %{"remaining" => 80},
+                 events: [%{event_kind: "tool_call", count: 2}]
+               },
+               evidence: [
+                 %{
+                   evidence_ref: "evidence-1",
+                   evidence_kind: "github_pr",
+                   content_ref: "evidence://github-pr/pr-dynamic",
+                   status: "present"
+                 }
+               ],
+               review: %{
+                 status: "pending",
+                 pending_decision_refs: [
+                   %{id: "dec-1", decision_kind: "operator_review", subject_ref: subject_ref}
+                 ]
+               },
+               operator_commands: [
+                 %{
+                   command_ref: %{
+                     id: "subj-1:rework",
+                     action_kind: "rework",
+                     subject_ref: subject_ref
+                   },
+                   status: "available",
+                   enabled?: true
+                 }
+               ],
+               updated_at: updated_at,
+               schema_ref: "app_kit/subject_runtime_projection",
+               schema_version: 1
+             })
+
+    assert %SourceBindingProjection{source_ref: "source://linear/tenant-1/subj-1"} =
+             hd(runtime_projection.source_bindings)
+
+    assert %ExecutionStateProjection{dispatch_state: "terminal_success"} =
+             runtime_projection.execution_state
+
+    assert [%LowerReceiptSummary{receipt_state: "success"}] =
+             runtime_projection.lower_receipts
+
+    assert %RuntimeFactsProjection{events: [%RuntimeEventSummary{event_kind: "tool_call"}]} =
+             runtime_projection.runtime
+
+    assert [%EvidenceProjection{evidence_kind: "github_pr"}] = runtime_projection.evidence
+    assert runtime_projection.review.status == "pending"
+
+    assert [%OperatorCommandProjection{status: "available"}] =
+             runtime_projection.operator_commands
+
+    assert runtime_projection.updated_at == updated_at
+
+    refute runtime_projection
+           |> inspect()
+           |> String.contains?("github_issue_number")
+
+    assert {:error, :invalid_source_binding_projection} =
+             SourceBindingProjection.new(%{
+               binding_ref: "linear_primary",
+               source_ref: "source://linear/tenant-1/subj-1",
+               source_kind: "linear_issue",
+               github_issue_number: 123
+             })
   end
 
   test "builds operator projection with first-class obligation, blocker, and next-step facts" do

@@ -11,6 +11,7 @@ defmodule AppKit.Core.Backends.WorkQueryBackend do
     RequestContext,
     SubjectDetail,
     SubjectRef,
+    SubjectRuntimeProjection,
     SurfaceError
   }
 
@@ -25,6 +26,9 @@ defmodule AppKit.Core.Backends.WorkQueryBackend do
 
   @callback get_projection(RequestContext.t(), ProjectionRef.t(), keyword()) ::
               {:ok, map()} | {:error, SurfaceError.t()}
+
+  @callback get_runtime_projection(RequestContext.t(), SubjectRef.t(), keyword()) ::
+              {:ok, SubjectRuntimeProjection.t()} | {:error, SurfaceError.t()}
 
   @callback queue_stats(RequestContext.t(), FilterSet.t() | nil, keyword()) ::
               {:ok, map()} | {:error, SurfaceError.t()}

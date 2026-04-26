@@ -25,6 +25,8 @@ Current contract groups:
   hot/cold conflict quarantine, and archival sweep retry evidence
 - evidence/audit DTOs for Citadel audit hash-chain projection and Mezzanine
   suppression visibility projection
+- runtime projection DTOs for source binding, workspace, execution, lower
+  receipt, evidence, review, operator-command, and runtime-event facts
 - extension supply-chain DTOs for pack signature, pack bundle schema, and
   connector-admission projection
 - northbound backend behaviours for work queries, reviews, and installations
@@ -83,6 +85,14 @@ consumer of Mezzanine pack authoring truth and Jido Integration connector
 admission truth while carrying tenant, authority, trace, release-manifest,
 source-contract, signature, schema, declared-resource, connector, and duplicate
 admission fields needed for product registry views.
+
+`SubjectRuntimeProjection` and its nested runtime DTOs are the typed coding-ops
+operator projection contract. They carry only refs and reducer facts that come
+from source admission, workflow state, lower receipts, durable decision ids, and
+explicit operator commands. The DTO boundary rejects static provider object
+selectors such as GitHub issue numbers, Linear issue ids, PR numbers, Codex
+session ids, and workflow ids because those identifiers must be discovered or
+carried by lower receipts before they can appear in an operator projection.
 
 `AppKit.Core.Result` and `AppKit.Core.RunRef` remain part of the current
 northbound contract set and are not treated as temporary coexistence shims.

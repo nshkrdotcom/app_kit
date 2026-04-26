@@ -105,13 +105,17 @@ product callers cannot bypass tenant-scoped lease checks or call lower-facts
 stores with only a raw token.
 
 The Mezzanine bridge also exposes reducer-owned runtime projections through the
-existing work projection surface. When an `operator_subject_runtime` row exists,
-`AppKit.WorkSurface.get_projection/3` can return lower receipt refs, execution
-state, token totals, rate-limit state, runtime event counts, evidence refs, and
-pending review ids. Those values come from Mezzanine projection rows populated
-from durable receipts and workflow state; product code must not supply static
-provider object ids or environment-variable selectors to make the projection
-work.
+typed `AppKit.WorkSurface.get_runtime_projection/3` surface. When an
+`operator_subject_runtime` row exists, it returns
+`AppKit.Core.SubjectRuntimeProjection` with source bindings, workspace refs,
+execution state, lower receipt refs, token totals, rate-limit state, runtime
+event counts, evidence refs, pending review decisions, and available operator
+commands. `AppKit.WorkSurface.get_projection/3` remains available for named
+legacy projections, but product code should prefer the typed runtime DTO for
+coding-ops operator views. Runtime values come from Mezzanine projection rows
+populated from durable receipts and workflow state; product code must not
+supply static provider object ids or environment-variable selectors to make the
+projection work.
 
 Operator-visible control-room projections use explicit Phase 4 DTOs:
 `AppKit.Core.OperatorSurfaceProjection` carries dispatch state, workflow effect

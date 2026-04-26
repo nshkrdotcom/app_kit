@@ -11,6 +11,7 @@ defmodule AppKit.WorkSurface do
     RequestContext,
     SubjectDetail,
     SubjectRef,
+    SubjectRuntimeProjection,
     SurfaceError
   }
 
@@ -36,6 +37,12 @@ defmodule AppKit.WorkSurface do
           {:ok, map()} | {:error, SurfaceError.t()}
   def get_projection(%RequestContext{} = context, %ProjectionRef{} = projection_ref, opts \\ []) do
     backend(opts).get_projection(context, projection_ref, opts)
+  end
+
+  @spec get_runtime_projection(RequestContext.t(), SubjectRef.t(), keyword()) ::
+          {:ok, SubjectRuntimeProjection.t()} | {:error, SurfaceError.t()}
+  def get_runtime_projection(%RequestContext{} = context, %SubjectRef{} = subject_ref, opts \\ []) do
+    backend(opts).get_runtime_projection(context, subject_ref, opts)
   end
 
   @spec queue_stats(RequestContext.t(), FilterSet.t() | nil, keyword()) ::

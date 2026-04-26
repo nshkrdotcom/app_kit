@@ -12,6 +12,7 @@ defmodule AppKit.WorkSurfaceTest do
       RequestContext,
       SubjectDetail,
       SubjectRef,
+      SubjectRuntimeProjection,
       SubjectSummary
     }
 
@@ -64,6 +65,26 @@ defmodule AppKit.WorkSurfaceTest do
     end
 
     @impl true
+    def get_runtime_projection(
+          %RequestContext{} = _context,
+          %SubjectRef{} = subject_ref,
+          _opts
+        ) do
+      SubjectRuntimeProjection.new(%{
+        subject_ref: subject_ref,
+        lifecycle_state: "awaiting_review",
+        source_bindings: [
+          %{
+            binding_ref: "linear_primary",
+            source_ref: "source://linear/tenant-1/#{subject_ref.id}",
+            source_kind: "linear_issue"
+          }
+        ],
+        runtime: %{events: [%{event_kind: "tool_call", count: 2}]}
+      })
+    end
+
+    @impl true
     def queue_stats(%RequestContext{} = _context, _filters, _opts) do
       {:ok, %{active_count: 1, backend: :fake}}
     end
@@ -113,6 +134,13 @@ defmodule AppKit.WorkSurfaceTest do
                work_query_backend: FakeWorkQueryBackend
              )
 
+    assert {:ok, runtime_projection} =
+             WorkSurface.get_runtime_projection(
+               context,
+               subject_ref,
+               work_query_backend: FakeWorkQueryBackend
+             )
+
     assert {:ok, stats} =
              WorkSurface.queue_stats(
                context,
@@ -125,6 +153,11 @@ defmodule AppKit.WorkSurfaceTest do
     assert page_result.metadata.filter_mode == :and
     assert detail.subject_ref.id == "subject-1"
     assert projection.projection == "review_queue"
+
+    assert hd(runtime_projection.source_bindings).source_ref ==
+             "source://linear/tenant-1/subject-1"
+
+    assert hd(runtime_projection.runtime.events).event_kind == "tool_call"
     assert stats.backend == :fake
   end
 
