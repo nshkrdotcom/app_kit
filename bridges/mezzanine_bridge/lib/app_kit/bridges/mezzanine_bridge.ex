@@ -721,9 +721,11 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp ensure_runtime_projection_row(_projection), do: {:error, :invalid_runtime_projection}
 
   defp runtime_projection_row?(projection) do
-    Enum.any?([:runtime, :execution, :lower_receipt, :evidence, :review], fn key ->
-      is_map(fetch_value(projection, key))
-    end)
+    fetch_value(projection, :projection_name) == "operator_subject_runtime" and
+      not is_nil(fetch_value(projection, :computed_at) || fetch_value(projection, :updated_at)) and
+      is_map(fetch_value(projection, :execution)) and
+      is_map(fetch_value(projection, :lower_receipt)) and
+      runtime_source_binding_rows(projection) != []
   end
 
   defp subject_runtime_projection_from_map(

@@ -116,6 +116,8 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
       if Keyword.get(opts, :runtime_projection?) do
         {:ok,
          %{
+           projection_name: "operator_subject_runtime",
+           projection_version: 1,
            subject_id: "subj-1",
            subject_kind: "work_object",
            lifecycle_state: "awaiting_review",

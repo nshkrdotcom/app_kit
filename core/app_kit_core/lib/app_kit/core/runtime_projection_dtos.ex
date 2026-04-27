@@ -238,13 +238,14 @@ defmodule AppKit.Core.LowerReceiptSummary do
          receipt_state <- Map.get(attrs, :receipt_state),
          true <- RuntimeProjectionSupport.present_binary?(receipt_state),
          lower_receipt_ref <- Map.get(attrs, :lower_receipt_ref),
-         true <- RuntimeProjectionSupport.optional_binary?(lower_receipt_ref),
+         true <- RuntimeProjectionSupport.present_binary?(lower_receipt_ref),
          run_ref <- Map.get(attrs, :run_ref),
          true <- RuntimeProjectionSupport.optional_binary?(run_ref),
          attempt_ref <- Map.get(attrs, :attempt_ref),
          true <- RuntimeProjectionSupport.optional_binary?(attempt_ref),
          {:ok, execution_ref} <-
            RuntimeProjectionSupport.nested_struct(Map.get(attrs, :execution_ref), ExecutionRef),
+         false <- is_nil(execution_ref),
          metadata <- Map.get(attrs, :metadata, %{}),
          true <- RuntimeProjectionSupport.map?(metadata) do
       {:ok,
@@ -563,6 +564,7 @@ defmodule AppKit.Core.SubjectRuntimeProjection do
              Map.get(attrs, :source_bindings, []),
              SourceBindingProjection
            ),
+         true <- source_bindings != [],
          {:ok, workspace_ref} <-
            RuntimeProjectionSupport.nested_struct(Map.get(attrs, :workspace_ref), WorkspaceRef),
          {:ok, execution_state} <-
@@ -570,11 +572,13 @@ defmodule AppKit.Core.SubjectRuntimeProjection do
              Map.get(attrs, :execution_state),
              ExecutionStateProjection
            ),
+         false <- is_nil(execution_state),
          {:ok, lower_receipts} <-
            RuntimeProjectionSupport.nested_structs(
              Map.get(attrs, :lower_receipts, []),
              LowerReceiptSummary
            ),
+         true <- lower_receipts != [],
          {:ok, runtime} <-
            RuntimeProjectionSupport.nested_struct(
              Map.get(attrs, :runtime, %{}),
@@ -596,11 +600,11 @@ defmodule AppKit.Core.SubjectRuntimeProjection do
              OperatorCommandProjection
            ),
          updated_at <- Map.get(attrs, :updated_at),
-         true <- RuntimeProjectionSupport.optional_datetime?(updated_at),
+         true <- not is_nil(updated_at) and RuntimeProjectionSupport.optional_datetime?(updated_at),
          schema_ref <- Map.get(attrs, :schema_ref),
-         true <- RuntimeProjectionSupport.optional_binary?(schema_ref),
+         true <- RuntimeProjectionSupport.present_binary?(schema_ref),
          schema_version <- Map.get(attrs, :schema_version),
-         true <- RuntimeProjectionSupport.optional_non_neg_integer?(schema_version),
+         true <- is_integer(schema_version) and schema_version >= 0,
          payload <- Map.get(attrs, :payload, %{}),
          true <- RuntimeProjectionSupport.map?(payload) do
       {:ok,

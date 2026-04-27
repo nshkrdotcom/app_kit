@@ -36,18 +36,27 @@ defmodule Mezzanine.AppKitBridge.WorkQueryService do
       :not_archived ->
         case runtime_subject_projection(installation_id, subject_id, opts) do
           {:ok, projection} -> {:ok, projection}
-          :not_found -> WorkQueries.get_subject_projection(installation_id, subject_id)
+          :not_found -> runtime_projection_not_found_or_fallback(installation_id, subject_id, opts)
           {:error, reason} -> {:error, reason}
         end
     end
   end
 
+  defp runtime_projection_not_found_or_fallback(installation_id, subject_id, opts) do
+    if Keyword.get(opts, :runtime_projection?) do
+      {:error, :runtime_projection_not_found}
+    else
+      WorkQueries.get_subject_projection(installation_id, subject_id)
+    end
+  end
+
   defp runtime_subject_projection(installation_id, subject_id, opts) do
     fetcher = Keyword.get(opts, :projection_row_fetcher, &default_runtime_projection_fetch/3)
+    fetch_opts = Keyword.put_new(opts, :projection_name, @runtime_projection_name)
 
-    case fetcher.(installation_id, subject_id, opts) do
+    case fetcher.(installation_id, subject_id, fetch_opts) do
       {:ok, nil} -> :not_found
-      {:ok, row} -> {:ok, runtime_projection_from_row(row, subject_id)}
+      {:ok, row} -> runtime_projection_from_row(row, subject_id)
       :not_found -> :not_found
       {:error, reason} -> if not_found?(reason), do: :not_found, else: {:error, reason}
     end
@@ -75,9 +84,14 @@ defmodule Mezzanine.AppKitBridge.WorkQueryService do
     subject_payload = map_value(payload, :subject) || %{}
     lifecycle_state = map_value(subject_payload, :lifecycle_state)
 
-    row
-    |> base_runtime_projection(payload, subject_payload, subject_id, lifecycle_state)
-    |> Map.merge(runtime_payload_projection(payload))
+    with :ok <- require_runtime_row(row, payload) do
+      projection =
+        row
+        |> base_runtime_projection(payload, subject_payload, subject_id, lifecycle_state)
+        |> Map.merge(runtime_payload_projection(payload))
+
+      {:ok, projection}
+    end
   end
 
   defp base_runtime_projection(row, payload, subject_payload, subject_id, lifecycle_state) do
@@ -88,6 +102,7 @@ defmodule Mezzanine.AppKitBridge.WorkQueryService do
       work_status: lifecycle_status(lifecycle_state),
       review_status: review_status(payload),
       projection_name: fetch_value(row, :projection_name) || @runtime_projection_name,
+      projection_version: fetch_value(row, :projection_version) || 1,
       projection_kind: fetch_value(row, :projection_kind),
       computed_at: fetch_value(row, :computed_at)
     }
@@ -99,8 +114,37 @@ defmodule Mezzanine.AppKitBridge.WorkQueryService do
       lower_receipt: map_value(payload, :lower_receipt) || %{},
       runtime: map_value(payload, :runtime) || %{},
       evidence: map_value(payload, :evidence) || %{},
-      review: map_value(payload, :review) || %{}
+      review: map_value(payload, :review) || %{},
+      source_binding: map_value(payload, :source_binding) || map_value(payload, :source),
+      source_bindings: map_value(payload, :source_bindings) || []
     }
+  end
+
+  defp require_runtime_row(row, payload) do
+    cond do
+      fetch_value(row, :projection_name) != @runtime_projection_name ->
+        {:error, :runtime_projection_not_found}
+
+      is_nil(fetch_value(row, :computed_at)) and is_nil(fetch_value(row, :updated_at)) ->
+        {:error, :runtime_projection_missing_provenance}
+
+      not is_map(map_value(payload, :execution)) ->
+        {:error, :runtime_projection_missing_execution}
+
+      not is_map(map_value(payload, :lower_receipt)) ->
+        {:error, :runtime_projection_missing_lower_receipt}
+
+      not source_binding_present?(payload) ->
+        {:error, :runtime_projection_missing_source_binding}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp source_binding_present?(payload) do
+    is_map(map_value(payload, :source_binding)) or
+      match?([_ | _], map_value(payload, :source_bindings))
   end
 
   defp runtime_subject_id(row, subject_payload, subject_id) do

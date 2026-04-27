@@ -135,8 +135,20 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
              "subject_kind" => "linear_coding_ticket",
              "lifecycle_state" => "awaiting_review"
            },
+           "source_binding" => %{
+             "binding_ref" => "linear-primary",
+             "source_ref" => "source://linear/tenant-runtime/#{subject_id}",
+             "source_kind" => "linear_issue",
+             "external_system" => "linear",
+             "source_state" => "In Review",
+             "workpad_refs" => ["source-workpad://linear/tenant-runtime/#{subject_id}"]
+           },
            "execution" => %{"execution_id" => "exec-1", "dispatch_state" => "completed"},
-           "lower_receipt" => %{"receipt_id" => "receipt-1"},
+           "lower_receipt" => %{
+             "receipt_id" => "receipt-1",
+             "lower_receipt_ref" => "lower-receipt://exec-1/attempt-1",
+             "execution_ref" => "execution://exec-1"
+           },
            "runtime" => %{
              "token_totals" => %{"input" => 120, "output" => 45},
              "rate_limit" => %{"remaining" => 80},
@@ -162,6 +174,49 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert projection.runtime["event_counts"]["tool_call"] == 2
     assert projection.lower_receipt["receipt_id"] == "receipt-1"
     assert [%{"evidence_kind" => "pull_request"}] = projection.evidence["evidence_refs"]
+  end
+
+  test "work query service does not fall back to generic subject projections for runtime reads" do
+    subject_id = Ecto.UUID.generate()
+
+    fetcher = fn "tenant-runtime", ^subject_id, opts ->
+      send(self(), {:runtime_fetch, opts})
+      :not_found
+    end
+
+    assert {:error, :runtime_projection_not_found} =
+             WorkQueryService.get_subject_projection("tenant-runtime", subject_id,
+               projection_row_fetcher: fetcher,
+               runtime_projection?: true
+             )
+
+    assert_receive {:runtime_fetch, opts}
+    assert Keyword.get(opts, :projection_name) == "operator_subject_runtime"
+  end
+
+  test "work query service rejects non-runtime projection rows for runtime reads" do
+    subject_id = Ecto.UUID.generate()
+
+    fetcher = fn "tenant-runtime", ^subject_id, _opts ->
+      {:ok,
+       %{
+         projection_name: "generic_subject_projection",
+         subject_id: subject_id,
+         computed_at: ~U[2026-04-25 13:00:00Z],
+         payload: %{
+           "subject" => %{"subject_id" => subject_id},
+           "source_binding" => %{"source_ref" => "source://linear/tenant-runtime/#{subject_id}"},
+           "execution" => %{"execution_id" => "exec-1"},
+           "lower_receipt" => %{"lower_receipt_ref" => "lower-receipt://exec-1/attempt-1"}
+         }
+       }}
+    end
+
+    assert {:error, :runtime_projection_not_found} =
+             WorkQueryService.get_subject_projection("tenant-runtime", subject_id,
+               projection_row_fetcher: fetcher,
+               runtime_projection?: true
+             )
   end
 
   test "work control service returns the same app-kit compatible run result through the extracted service layer" do
