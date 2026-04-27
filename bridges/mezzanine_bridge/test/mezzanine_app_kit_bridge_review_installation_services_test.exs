@@ -616,6 +616,7 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
     manifest = %Manifest{
       pack_slug: :expense_approval,
       version: version,
+      profile_slots: profile_slots(),
       subject_kind_specs: [
         %SubjectKindSpec{name: :expense_request}
       ],
@@ -654,6 +655,19 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
       {:ok, compiled_pack} -> compiled_pack
       {:error, errors} -> raise "failed to compile pack fixture: #{inspect(errors)}"
     end
+  end
+
+  defp profile_slots do
+    %{
+      source_profile_ref: :synthetic_task,
+      runtime_profile_ref: :local_process,
+      tool_scope_ref: :local_coding_v1,
+      evidence_profile_ref: :file_artifacts_v1,
+      publication_profile_ref: :none,
+      review_profile_ref: :operator_optional,
+      memory_profile_ref: :none,
+      projection_profile_ref: :runtime_readback_v1
+    }
   end
 
   defp workflow_body do
