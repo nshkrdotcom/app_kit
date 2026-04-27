@@ -660,7 +660,55 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
       do: {:error, :stale_proof_token}
   end
 
+  defmodule FakeAgentRuntime do
+    def run(attrs) do
+      run_ref = Map.fetch!(attrs, :run_ref)
+      workflow_ref = "workflow://agent-loop/#{ref_suffix(run_ref)}"
+
+      {:ok,
+       %{
+         run_ref: run_ref,
+         subject_ref: Map.fetch!(attrs, :subject_ref),
+         workflow_ref: workflow_ref,
+         status: "completed",
+         terminal_state: "completed",
+         turn_states: [
+           %{
+             turn_ref: "turn://agent-loop/#{ref_suffix(run_ref)}/1",
+             state: "completed"
+           }
+         ],
+         action_receipts: [%{status: :succeeded}],
+         runtime_events: [
+           %{
+             event_ref: "event://agent-loop/#{ref_suffix(run_ref)}/1",
+             event_seq: 1,
+             event_kind: "run.terminal",
+             observed_at: ~U[2026-04-27 00:00:00Z],
+             tenant_ref: Map.fetch!(attrs, :tenant_ref),
+             installation_ref: Map.fetch!(attrs, :installation_ref),
+             subject_ref: Map.fetch!(attrs, :subject_ref),
+             run_ref: run_ref,
+             workflow_ref: workflow_ref,
+             level: "info",
+             message_summary: "run terminal"
+           }
+         ],
+         budget_state: %{"turns_remaining" => 2},
+         candidate_fact_refs: ["candidate-fact://fixture/1"],
+         memory_proof_refs: []
+       }}
+    end
+
+    defp ref_suffix(ref) do
+      ref
+      |> String.replace(~r/[^A-Za-z0-9]+/, "-")
+      |> String.trim("-")
+    end
+  end
+
   alias AppKit.Bridges.MezzanineBridge
+  alias AppKit.Core.Backends.AgentIntakeBackendConformance
 
   alias AppKit.Core.{
     DecisionRef,
@@ -1105,6 +1153,88 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     assert status_projection.backend == :fake
     assert review_projection.backend == :fake
+  end
+
+  test "routes AppKit agent intake through Mezzanine AgentLoop and maps M2 readback" do
+    context = request_context()
+
+    request =
+      AgentIntakeBackendConformance.fixture_agent_run_request(%{
+        params: %{max_turns: 3, fixture_script: "success_first_try"}
+      })
+
+    assert {:ok, future} =
+             MezzanineBridge.start_agent_run(context, request,
+               agent_loop_runtime: FakeAgentRuntime
+             )
+
+    assert future.accepted?
+    assert future.run_ref == "run://agent-loop/dedupe-agent-run"
+    assert future.workflow_ref == "workflow://agent-loop/run-agent-loop-dedupe-agent-run"
+
+    assert {:ok, projection} =
+             FakeAgentRuntime.run(%{
+               tenant_ref: request.tenant_ref,
+               installation_ref: request.installation_ref,
+               profile_ref: "profile://app-kit/agent-loop",
+               subject_ref: request.subject_ref,
+               run_ref: future.run_ref,
+               trace_id: request.trace_id,
+               idempotency_key: request.idempotency_key,
+               objective: request.initial_input_ref,
+               runtime_profile_ref: request.profile_bundle.runtime_profile_ref,
+               tool_catalog_ref: request.tool_catalog_ref,
+               authority_context_ref:
+                 "authority-context://agent-loop/run-agent-loop-dedupe-agent-run",
+               memory_profile_ref: request.profile_bundle.memory_profile_ref,
+               artifact_policy_ref: "artifact-policy://app-kit/agent-loop",
+               max_turns: 3,
+               timeout_policy: %{turn_timeout_ms: 30_000},
+               profile_bundle: Map.from_struct(request.profile_bundle)
+             })
+
+    assert {:ok, detail} =
+             MezzanineBridge.runtime_run_detail(
+               context,
+               future.run_ref,
+               %{agent_loop_projection: projection},
+               []
+             )
+
+    assert detail.run_ref == future.run_ref
+    assert detail.runtime_row.workflow_ref == future.workflow_ref
+    assert Enum.any?(detail.events, &(&1.event_kind == "run.terminal"))
+    assert detail.budget_state["turns_remaining"] == 2
+
+    turn_submission =
+      AgentIntakeBackendConformance.fixture_turn_submission(%{
+        run_ref: future.run_ref
+      })
+
+    assert {:ok, command} =
+             MezzanineBridge.submit_agent_turn(context, turn_submission,
+               agent_loop_runtime: FakeAgentRuntime
+             )
+
+    assert command.command_kind == :submit_turn
+    assert command.workflow_effect_state == "pending_signal"
+
+    assert {:ok, cancel} =
+             MezzanineBridge.cancel_agent_run(context, future.run_ref,
+               agent_loop_runtime: FakeAgentRuntime
+             )
+
+    assert cancel.command_kind == :cancel
+
+    assert {:ok, await_future} =
+             MezzanineBridge.await_agent_outcome(
+               context,
+               future.run_ref,
+               %{workflow_ref: future.workflow_ref},
+               agent_loop_runtime: FakeAgentRuntime
+             )
+
+    assert await_future.workflow_ref == future.workflow_ref
   end
 
   test "maps widened work-control and operator surface contracts into app-kit DTOs" do

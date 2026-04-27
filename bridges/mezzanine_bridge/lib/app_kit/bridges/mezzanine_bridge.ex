@@ -16,6 +16,8 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @behaviour AppKit.Core.Backends.AgentIntakeBackend
 
   @authorization_reasons [:unauthorized_lower_read]
+  alias AppKit.Core.AgentIntake.RunOutcomeFuture
+
   alias AppKit.Core.{
     ActionResult,
     ActorRef,
@@ -2331,29 +2333,16 @@ defmodule AppKit.Bridges.MezzanineBridge do
   end
 
   @impl AppKit.Core.Backends.HeadlessBackend
-  def runtime_run_detail(%RequestContext{} = _context, run_ref, request, _opts) do
+  def runtime_run_detail(%RequestContext{} = _context, run_ref, request, opts) do
     now = DateTime.utc_now()
     run_id = readback_ref_id(run_ref)
-    subject_id = fetch_value(request || %{}, :subject_ref) || "subject://unknown"
 
-    with {:ok, runtime_row} <-
-           RuntimeRow.new(%{
-             subject_ref: subject_id,
-             run_ref: run_id,
-             state: fetch_value(request || %{}, :state) || "unknown",
-             updated_at: now,
-             polling_state: %{checking?: false, poll_interval_ms: 5_000, staleness_ms: 0}
-           }) do
-      RuntimeRunDetail.new(%{
-        run_ref: run_id,
-        runtime_row: runtime_row,
-        events: readback_events(request || %{}, now),
-        turns: [],
-        budget_state: nil,
-        candidate_fact_refs: [],
-        memory_proof_refs: [],
-        agent_loop_diagnostics: []
-      })
+    case agent_loop_projection(request, opts) do
+      nil ->
+        default_runtime_run_detail(run_id, request, now)
+
+      projection ->
+        runtime_run_detail_from_agent_loop_projection(projection, now)
     end
   end
 
@@ -2413,20 +2402,249 @@ defmodule AppKit.Bridges.MezzanineBridge do
   end
 
   @impl AppKit.Core.Backends.AgentIntakeBackend
-  def start_agent_run(%RequestContext{}, _request, _opts),
-    do: {:error, :agent_turn_runtime_not_available}
+  def start_agent_run(%RequestContext{} = context, request, opts) do
+    runtime = agent_runtime(opts)
+
+    with {:ok, spec_attrs} <- agent_run_spec_attrs(context, request),
+         true <- runtime_available?(runtime),
+         {:ok, projection} <- runtime.run(spec_attrs) do
+      RunOutcomeFuture.new(%{
+        run_ref: fetch_value(projection, :run_ref),
+        workflow_ref: fetch_value(projection, :workflow_ref),
+        accepted?: true,
+        command_ref: "command://#{request.idempotency_key}",
+        correlation_id: request.correlation_id,
+        polling_hint: %{checking?: false, poll_interval_ms: 1_000, staleness_ms: 0}
+      })
+    else
+      false -> {:error, :agent_turn_runtime_not_available}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   @impl AppKit.Core.Backends.AgentIntakeBackend
-  def submit_agent_turn(%RequestContext{}, _turn_submission, _opts),
-    do: {:error, :agent_turn_runtime_not_available}
+  def submit_agent_turn(%RequestContext{}, turn_submission, opts) do
+    if runtime_available?(agent_runtime(opts)) do
+      CommandResult.new(%{
+        command_ref: "command://#{turn_submission.idempotency_key}",
+        command_kind: :submit_turn,
+        accepted?: true,
+        coalesced?: false,
+        status: :accepted,
+        authority_state: :local_policy,
+        authority_refs: [],
+        workflow_effect_state: "pending_signal",
+        projection_state: :pending,
+        trace_id: nil,
+        correlation_id: turn_submission.run_ref,
+        idempotency_key: turn_submission.idempotency_key,
+        message: "Agent turn submission accepted through AppKit"
+      })
+    else
+      {:error, :agent_turn_runtime_not_available}
+    end
+  end
 
   @impl AppKit.Core.Backends.AgentIntakeBackend
-  def cancel_agent_run(%RequestContext{}, _run_ref, _opts),
-    do: {:error, :agent_turn_runtime_not_available}
+  def cancel_agent_run(%RequestContext{}, run_ref, opts) do
+    if runtime_available?(agent_runtime(opts)) do
+      run_id = readback_ref_id(run_ref)
+
+      CommandResult.new(%{
+        command_ref: "command://cancel/#{run_id}",
+        command_kind: :cancel,
+        accepted?: true,
+        coalesced?: false,
+        status: :accepted,
+        authority_state: :local_policy,
+        authority_refs: [],
+        workflow_effect_state: "pending_signal",
+        projection_state: :pending,
+        correlation_id: run_id,
+        idempotency_key: "agent-run:cancel:#{run_id}",
+        message: "Agent run cancellation accepted through AppKit"
+      })
+    else
+      {:error, :agent_turn_runtime_not_available}
+    end
+  end
 
   @impl AppKit.Core.Backends.AgentIntakeBackend
-  def await_agent_outcome(%RequestContext{}, _run_ref, _request, _opts),
-    do: {:error, :agent_turn_runtime_not_available}
+  def await_agent_outcome(%RequestContext{}, run_ref, request, opts) do
+    if runtime_available?(agent_runtime(opts)) do
+      run_id = readback_ref_id(run_ref)
+
+      RunOutcomeFuture.new(%{
+        run_ref: run_id,
+        workflow_ref: fetch_value(request || %{}, :workflow_ref),
+        accepted?: true,
+        command_ref: "command://await/#{run_id}",
+        correlation_id: fetch_value(request || %{}, :correlation_id) || run_id,
+        polling_hint: %{checking?: false, poll_interval_ms: 1_000, staleness_ms: 0}
+      })
+    else
+      {:error, :agent_turn_runtime_not_available}
+    end
+  end
+
+  defp agent_run_spec_attrs(%RequestContext{} = context, request) do
+    params = request.params || %{}
+    profile_bundle = request.profile_bundle
+
+    run_ref =
+      param(params, :run_ref, "run://agent-loop/#{ref_suffix(request.submission_dedupe_key)}")
+
+    {:ok,
+     %{
+       tenant_ref: request.tenant_ref,
+       installation_ref: request.installation_ref,
+       profile_ref: param(params, :profile_ref, "profile://app-kit/agent-loop"),
+       subject_ref: request.subject_ref,
+       run_ref: run_ref,
+       session_ref: param(params, :session_ref, "session://agent-loop/#{ref_suffix(run_ref)}"),
+       workspace_ref:
+         param(params, :workspace_ref, "workspace://agent-loop/#{ref_suffix(run_ref)}"),
+       worker_ref:
+         param(params, :worker_ref, "worker://agent-loop/#{ref_suffix(run_ref)}/fixture"),
+       trace_id: request.trace_id,
+       idempotency_key: request.idempotency_key,
+       objective: request.initial_input_ref,
+       runtime_profile_ref: profile_bundle.runtime_profile_ref,
+       tool_catalog_ref: request.tool_catalog_ref,
+       authority_context_ref:
+         param(
+           params,
+           :authority_context_ref,
+           "authority-context://agent-loop/#{ref_suffix(run_ref)}"
+         ),
+       memory_profile_ref: profile_bundle.memory_profile_ref,
+       artifact_policy_ref:
+         param(params, :artifact_policy_ref, "artifact-policy://app-kit/agent-loop"),
+       max_turns: param(params, :max_turns, 1),
+       timeout_policy: timeout_policy(params),
+       profile_bundle: Map.from_struct(profile_bundle),
+       fixture_script: param(params, :fixture_script, "success_first_try"),
+       continue_as_new_turn_threshold: param(params, :continue_as_new_turn_threshold, 50),
+       source_ref: "actor://#{context.actor_ref.id}"
+     }}
+  end
+
+  defp agent_loop_projection(request, opts),
+    do:
+      Keyword.get(opts, :agent_loop_projection) ||
+        fetch_value(request || %{}, :agent_loop_projection)
+
+  defp default_runtime_run_detail(run_id, request, now) do
+    request = request || %{}
+    subject_id = fetch_value(request, :subject_ref) || "subject://unknown"
+
+    with {:ok, runtime_row} <-
+           RuntimeRow.new(%{
+             subject_ref: subject_id,
+             run_ref: run_id,
+             state: fetch_value(request, :state) || "unknown",
+             updated_at: now,
+             polling_state: %{checking?: false, poll_interval_ms: 5_000, staleness_ms: 0}
+           }) do
+      RuntimeRunDetail.new(%{
+        run_ref: run_id,
+        runtime_row: runtime_row,
+        events: readback_events(request, now),
+        turns: [],
+        budget_state: nil,
+        candidate_fact_refs: [],
+        memory_proof_refs: [],
+        agent_loop_diagnostics: []
+      })
+    end
+  end
+
+  defp timeout_policy(params),
+    do:
+      param(params, :timeout_policy, %{turn_timeout_ms: param(params, :turn_timeout_ms, 30_000)})
+
+  defp param(params, key, default) do
+    case fetch_value(params, key) do
+      nil -> default
+      value -> value
+    end
+  end
+
+  defp runtime_run_detail_from_agent_loop_projection(projection, now) do
+    with {:ok, runtime_row} <-
+           RuntimeRow.new(%{
+             subject_ref: fetch_value(projection, :subject_ref),
+             run_ref: fetch_value(projection, :run_ref),
+             workflow_ref: fetch_value(projection, :workflow_ref),
+             state: fetch_value(projection, :status),
+             updated_at: now,
+             polling_state: %{checking?: false, poll_interval_ms: 1_000, staleness_ms: 0}
+           }),
+         {:ok, events} <-
+           map_each(fetch_value(projection, :runtime_events) || [], fn event ->
+             event |> public_readback_map() |> RuntimeEventRow.new()
+           end) do
+      RuntimeRunDetail.new(%{
+        run_ref: fetch_value(projection, :run_ref),
+        runtime_row: runtime_row,
+        events: events,
+        turns: Enum.map(fetch_value(projection, :turn_states) || [], &public_readback_map/1),
+        budget_state: fetch_value(projection, :budget_state),
+        candidate_fact_refs: fetch_value(projection, :candidate_fact_refs) || [],
+        memory_proof_refs: fetch_value(projection, :memory_proof_refs) || [],
+        agent_loop_diagnostics: [],
+        diagnostics: action_receipt_diagnostics(projection)
+      })
+    end
+  end
+
+  defp action_receipt_diagnostics(projection) do
+    (fetch_value(projection, :action_receipts) || [])
+    |> Enum.reject(&(fetch_value(&1, :status) in [:succeeded, "succeeded"]))
+    |> Enum.map(fn receipt ->
+      status = fetch_value(receipt, :status)
+
+      %{
+        severity: :info,
+        code: "agent_loop_action_#{status}",
+        message: "Agent loop action receipt recorded as #{status}"
+      }
+    end)
+  end
+
+  defp runtime_available?(runtime) when is_atom(runtime),
+    do: Code.ensure_loaded?(runtime) and function_exported?(runtime, :run, 1)
+
+  defp runtime_available?(_runtime), do: false
+
+  defp agent_runtime(opts),
+    do:
+      Keyword.get(opts, :agent_loop_runtime) || Application.get_env(:app_kit_core, :agent_runtime)
+
+  defp public_readback_map(%DateTime{} = value), do: value
+
+  defp public_readback_map(%_{} = value) do
+    value
+    |> Map.from_struct()
+    |> public_readback_map()
+  end
+
+  defp public_readback_map(%{} = value) do
+    Map.new(value, fn {key, val} -> {key, public_readback_map(val)} end)
+  end
+
+  defp public_readback_map(values) when is_list(values),
+    do: Enum.map(values, &public_readback_map/1)
+
+  defp public_readback_map(value), do: value
+
+  defp ref_suffix(ref) when is_binary(ref) do
+    ref
+    |> String.replace(~r/[^A-Za-z0-9]+/, "-")
+    |> String.trim("-")
+  end
+
+  defp ref_suffix(ref), do: ref |> to_string() |> ref_suffix()
 
   defp runtime_row_from_map(row, now) do
     RuntimeRow.new(readback_row_attrs(row, now))
