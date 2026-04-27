@@ -1,0 +1,98 @@
+{
+  "schema_ref": "runtime_readback/m2_runtime_event_history.fixture.v1",
+  "schema_version": 1,
+  "events": [
+    {
+      "event_ref": "event://fixture/run-accepted",
+      "event_seq": 1,
+      "event_kind": "agent_run_accepted",
+      "observed_at": "2026-04-27T00:00:00Z",
+      "run_ref": "run://fixture",
+      "message_summary": "Run accepted"
+    },
+    {
+      "event_ref": "event://fixture/turn-started",
+      "event_seq": 2,
+      "event_kind": "turn_started",
+      "observed_at": "2026-04-27T00:00:01Z",
+      "run_ref": "run://fixture",
+      "turn_ref": "turn://fixture/1",
+      "message_summary": "Turn started"
+    },
+    {
+      "event_ref": "event://fixture/context-assembled",
+      "event_seq": 3,
+      "event_kind": "context_assembled",
+      "observed_at": "2026-04-27T00:00:02Z",
+      "run_ref": "run://fixture",
+      "turn_ref": "turn://fixture/1",
+      "payload_ref": "payload://fixture/context-pack",
+      "message_summary": "Context assembled"
+    },
+    {
+      "event_ref": "event://fixture/action-requested",
+      "event_seq": 4,
+      "event_kind": "action_requested",
+      "observed_at": "2026-04-27T00:00:03Z",
+      "run_ref": "run://fixture",
+      "turn_ref": "turn://fixture/1",
+      "payload_ref": "payload://fixture/action-request",
+      "message_summary": "Action requested"
+    },
+    {
+      "event_ref": "event://fixture/authority-denied",
+      "event_seq": 5,
+      "event_kind": "authority_denied",
+      "observed_at": "2026-04-27T00:00:04Z",
+      "run_ref": "run://fixture",
+      "turn_ref": "turn://fixture/1",
+      "message_summary": "Authority denied"
+    },
+    {
+      "event_ref": "event://fixture/review-pending",
+      "event_seq": 6,
+      "event_kind": "review_pending",
+      "observed_at": "2026-04-27T00:00:05Z",
+      "run_ref": "run://fixture",
+      "turn_ref": "turn://fixture/1",
+      "message_summary": "Review pending"
+    },
+    {
+      "event_ref": "event://fixture/action-submitted",
+      "event_seq": 7,
+      "event_kind": "action_submitted",
+      "observed_at": "2026-04-27T00:00:06Z",
+      "run_ref": "run://fixture",
+      "turn_ref": "turn://fixture/1",
+      "payload_ref": "payload://fixture/lower-submission",
+      "message_summary": "Later action submitted"
+    },
+    {
+      "event_ref": "event://fixture/lower-receipt",
+      "event_seq": 8,
+      "event_kind": "lower_receipt_observed",
+      "observed_at": "2026-04-27T00:00:07Z",
+      "run_ref": "run://fixture",
+      "turn_ref": "turn://fixture/1",
+      "payload_ref": "payload://fixture/lower-receipt",
+      "message_summary": "Lower receipt observed"
+    },
+    {
+      "event_ref": "event://fixture/turn-completed",
+      "event_seq": 9,
+      "event_kind": "turn_completed",
+      "observed_at": "2026-04-27T00:00:08Z",
+      "run_ref": "run://fixture",
+      "turn_ref": "turn://fixture/1",
+      "message_summary": "Turn completed"
+    },
+    {
+      "event_ref": "event://fixture/run-terminal",
+      "event_seq": 10,
+      "event_kind": "run_terminal",
+      "observed_at": "2026-04-27T00:00:09Z",
+      "run_ref": "run://fixture",
+      "message_summary": "Run terminal"
+    }
+  ]
+}

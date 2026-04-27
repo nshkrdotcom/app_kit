@@ -12,6 +12,8 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @behaviour AppKit.Core.Backends.ReviewBackend
   @behaviour AppKit.Core.Backends.WorkBackend
   @behaviour AppKit.Core.Backends.WorkQueryBackend
+  @behaviour AppKit.Core.Backends.HeadlessBackend
+  @behaviour AppKit.Core.Backends.AgentIntakeBackend
 
   @authorization_reasons [:unauthorized_lower_read]
   alias AppKit.Core.{
@@ -71,6 +73,15 @@ defmodule AppKit.Bridges.MezzanineBridge do
     UnifiedTrace,
     UnifiedTraceStep,
     WorkspaceRef
+  }
+
+  alias AppKit.Core.RuntimeReadback.{
+    CommandResult,
+    RuntimeEventRow,
+    RuntimeRow,
+    RuntimeRunDetail,
+    RuntimeStateSnapshot,
+    RuntimeSubjectDetail
   }
 
   alias Mezzanine.Archival.Query, as: ArchivalQuery
@@ -2248,6 +2259,304 @@ defmodule AppKit.Bridges.MezzanineBridge do
     |> case do
       {:ok, values} -> {:ok, Enum.reverse(values)}
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @impl AppKit.Core.Backends.HeadlessBackend
+  def state_snapshot(%RequestContext{} = context, request, opts) when is_list(opts) do
+    now = DateTime.utc_now()
+
+    with {:ok, tenant_ref} <- tenant_id(context),
+         {:ok, program_id} <- program_id(context, opts),
+         installation_ref <- readback_installation_ref(context),
+         {:ok, rows} <- work_query_service(opts).list_subjects(tenant_ref, program_id, %{}),
+         {:ok, runtime_rows} <- map_each(rows, &runtime_row_from_map(&1, now)) do
+      RuntimeStateSnapshot.new(%{
+        tenant_ref: tenant_ref,
+        installation_ref: installation_ref,
+        generated_at: now,
+        rows: runtime_rows,
+        polling_state: %{
+          checking?: false,
+          poll_interval_ms: fetch_readback_page_size(request, 5_000),
+          staleness_ms: 0
+        },
+        page: %{
+          page_size: fetch_readback_page_size(request, 25),
+          cursor: fetch_value(request || %{}, :cursor),
+          total_entries: length(runtime_rows)
+        }
+      })
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl AppKit.Core.Backends.HeadlessBackend
+  def runtime_subject_detail(%RequestContext{} = context, subject_ref, _request, opts)
+      when is_list(opts) do
+    subject_id = readback_ref_id(subject_ref)
+    now = DateTime.utc_now()
+
+    with {:ok, tenant_ref} <- tenant_id(context),
+         {:ok, projection} <-
+           get_subject_projection(
+             work_query_service(opts),
+             tenant_ref,
+             subject_id,
+             Keyword.put(opts, :runtime_projection?, true)
+           ),
+         {:ok, runtime_row} <-
+           runtime_row_from_map(
+             Map.merge(
+               %{subject_ref: subject_id, run_ref: "run://#{subject_id}", updated_at: now},
+               projection
+             ),
+             now
+           ) do
+      RuntimeSubjectDetail.new(%{
+        subject_ref: subject_id,
+        summary:
+          compact_map(%{
+            title: fetch_value(projection, :title),
+            state: fetch_value(projection, :state),
+            projection_ref: fetch_value(projection, :projection_ref)
+          }),
+        runtime_row: runtime_row,
+        events: readback_events(projection, now)
+      })
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl AppKit.Core.Backends.HeadlessBackend
+  def runtime_run_detail(%RequestContext{} = _context, run_ref, request, _opts) do
+    now = DateTime.utc_now()
+    run_id = readback_ref_id(run_ref)
+    subject_id = fetch_value(request || %{}, :subject_ref) || "subject://unknown"
+
+    with {:ok, runtime_row} <-
+           RuntimeRow.new(%{
+             subject_ref: subject_id,
+             run_ref: run_id,
+             state: fetch_value(request || %{}, :state) || "unknown",
+             updated_at: now,
+             polling_state: %{checking?: false, poll_interval_ms: 5_000, staleness_ms: 0}
+           }) do
+      RuntimeRunDetail.new(%{
+        run_ref: run_id,
+        runtime_row: runtime_row,
+        events: readback_events(request || %{}, now),
+        turns: [],
+        budget_state: nil,
+        candidate_fact_refs: [],
+        memory_proof_refs: [],
+        agent_loop_diagnostics: []
+      })
+    end
+  end
+
+  @impl AppKit.Core.Backends.HeadlessBackend
+  def request_runtime_refresh(%RequestContext{} = _context, request, _opts) do
+    CommandResult.new(%{
+      command_ref: "command://#{request.idempotency_key}",
+      command_kind: :refresh,
+      accepted?: true,
+      coalesced?: false,
+      status: :accepted,
+      authority_state: :local_policy,
+      authority_refs: [],
+      workflow_effect_state: "pending_signal",
+      projection_state: :pending,
+      idempotency_key: request.idempotency_key,
+      message: "Refresh command accepted with database_first acknowledgement"
+    })
+  end
+
+  @impl AppKit.Core.Backends.HeadlessBackend
+  def request_runtime_control(%RequestContext{} = _context, request, _opts) do
+    command_kind = request.action
+
+    workflow_effect_state =
+      if to_string(command_kind) == "inspect_memory_proof",
+        do: "not_available",
+        else: "pending_signal"
+
+    diagnostics =
+      if to_string(command_kind) == "inspect_memory_proof" do
+        [
+          %{
+            severity: :info,
+            code: "memory_proof_not_available",
+            message: "Memory proof readback is not available until Phase 7"
+          }
+        ]
+      else
+        []
+      end
+
+    CommandResult.new(%{
+      command_ref: "command://#{request.idempotency_key}",
+      command_kind: command_kind,
+      accepted?: true,
+      coalesced?: false,
+      status: :accepted,
+      authority_state: :local_policy,
+      authority_refs: [],
+      workflow_effect_state: workflow_effect_state,
+      projection_state: :pending,
+      idempotency_key: request.idempotency_key,
+      message: "Control command accepted with database_first acknowledgement",
+      diagnostics: diagnostics
+    })
+  end
+
+  @impl AppKit.Core.Backends.AgentIntakeBackend
+  def start_agent_run(%RequestContext{}, _request, _opts),
+    do: {:error, :agent_turn_runtime_not_available}
+
+  @impl AppKit.Core.Backends.AgentIntakeBackend
+  def submit_agent_turn(%RequestContext{}, _turn_submission, _opts),
+    do: {:error, :agent_turn_runtime_not_available}
+
+  @impl AppKit.Core.Backends.AgentIntakeBackend
+  def cancel_agent_run(%RequestContext{}, _run_ref, _opts),
+    do: {:error, :agent_turn_runtime_not_available}
+
+  @impl AppKit.Core.Backends.AgentIntakeBackend
+  def await_agent_outcome(%RequestContext{}, _run_ref, _request, _opts),
+    do: {:error, :agent_turn_runtime_not_available}
+
+  defp runtime_row_from_map(row, now) do
+    RuntimeRow.new(readback_row_attrs(row, now))
+  end
+
+  defp readback_row_attrs(row, now) do
+    subject_ref = subject_ref_for_row(row)
+
+    %{
+      subject_ref: subject_ref,
+      run_ref: run_ref_for_row(row, subject_ref),
+      execution_ref:
+        normalize_optional_readback_ref(
+          first_value(row, [:execution_ref, :execution_id]),
+          "execution"
+        ),
+      workflow_ref: normalize_optional_readback_ref(fetch_value(row, :workflow_ref), "workflow"),
+      state: first_value(row, [:state, :status]) || "unknown",
+      status_reason: fetch_value(row, :status_reason),
+      updated_at: fetch_value(row, :updated_at) || now,
+      session_ref: readback_session_ref(row),
+      workspace_ref: readback_workspace_ref(row),
+      polling_state: %{checking?: false, poll_interval_ms: 5_000, staleness_ms: 0},
+      provider_refs: fetch_value(row, :provider_refs) || %{},
+      extensions: fetch_value(row, :extensions) || %{}
+    }
+  end
+
+  defp readback_events(source, now) do
+    source
+    |> event_values()
+    |> Enum.with_index()
+    |> Enum.flat_map(&readback_event_row(&1, now))
+  end
+
+  defp readback_event_row({event, index}, now) do
+    case RuntimeEventRow.new(readback_event_attrs(event, index, now)) do
+      {:ok, event_row} -> [event_row]
+      {:error, _reason} -> []
+    end
+  end
+
+  defp readback_event_attrs(event, index, now) do
+    %{
+      event_ref:
+        normalize_readback_ref(fetch_value(event, :event_ref) || "event-#{index}", "event"),
+      event_seq: fetch_value(event, :event_seq) || index,
+      event_kind: first_value(event, [:event_kind, :kind]) || "unknown",
+      observed_at: fetch_value(event, :observed_at) || now,
+      subject_ref: normalize_optional_readback_ref(fetch_value(event, :subject_ref), "subject"),
+      run_ref: normalize_optional_readback_ref(fetch_value(event, :run_ref), "run"),
+      level: fetch_value(event, :level) || :info,
+      message_summary: first_value(event, [:message_summary, :summary]),
+      payload_ref: normalize_optional_readback_ref(fetch_value(event, :payload_ref), "payload"),
+      extensions: fetch_value(event, :extensions) || %{}
+    }
+  end
+
+  defp event_values(source) do
+    case fetch_value(source, :events) do
+      events when is_list(events) -> events
+      _other -> []
+    end
+  end
+
+  defp subject_ref_for_row(row),
+    do: row |> first_value([:subject_ref, :subject_id, :id]) |> normalize_readback_ref("subject")
+
+  defp run_ref_for_row(row, subject_ref) do
+    row
+    |> first_value([:run_ref, :run_id])
+    |> case do
+      nil -> subject_ref
+      value -> value
+    end
+    |> normalize_readback_ref("run")
+  end
+
+  defp first_value(source, keys), do: Enum.find_value(keys, &fetch_value(source, &1))
+
+  defp readback_session_ref(row) do
+    case fetch_value(row, :session_ref) || fetch_value(row, :session_id) do
+      nil -> nil
+      value -> %{id: normalize_readback_ref(value, "session")}
+    end
+  end
+
+  defp readback_workspace_ref(row) do
+    case fetch_value(row, :workspace_ref) || fetch_value(row, :workspace_id) do
+      nil ->
+        nil
+
+      value ->
+        %{
+          id: normalize_readback_ref(value, "workspace"),
+          display_label: fetch_value(row, :workspace_label),
+          path_redacted?: true
+        }
+    end
+  end
+
+  defp readback_installation_ref(context) do
+    context
+    |> fetch_value(:installation_ref)
+    |> readback_ref_id()
+    |> case do
+      nil -> "installation://unknown"
+      value -> normalize_readback_ref(value, "installation")
+    end
+  end
+
+  defp readback_ref_id(%{id: id}), do: id
+  defp readback_ref_id(value) when is_binary(value), do: value
+  defp readback_ref_id(value) when is_atom(value), do: Atom.to_string(value)
+  defp readback_ref_id(nil), do: nil
+  defp readback_ref_id(value), do: to_string(value)
+
+  defp normalize_optional_readback_ref(nil, _scheme), do: nil
+  defp normalize_optional_readback_ref(value, scheme), do: normalize_readback_ref(value, scheme)
+
+  defp normalize_readback_ref(value, scheme) do
+    value = readback_ref_id(value) || "unknown"
+
+    if String.contains?(value, "://"), do: value, else: "#{scheme}://#{value}"
+  end
+
+  defp fetch_readback_page_size(request, default) do
+    case fetch_value(request || %{}, :page_size) do
+      value when is_integer(value) and value > 0 -> value
+      _other -> default
     end
   end
 
