@@ -600,7 +600,8 @@ defmodule AppKit.Core.SubjectRuntimeProjection do
              OperatorCommandProjection
            ),
          updated_at <- Map.get(attrs, :updated_at),
-         true <- not is_nil(updated_at) and RuntimeProjectionSupport.optional_datetime?(updated_at),
+         true <-
+           not is_nil(updated_at) and RuntimeProjectionSupport.optional_datetime?(updated_at),
          schema_ref <- Map.get(attrs, :schema_ref),
          true <- RuntimeProjectionSupport.present_binary?(schema_ref),
          schema_version <- Map.get(attrs, :schema_version),

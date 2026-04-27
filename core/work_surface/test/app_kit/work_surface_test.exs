@@ -80,7 +80,23 @@ defmodule AppKit.WorkSurfaceTest do
             source_kind: "linear_issue"
           }
         ],
-        runtime: %{events: [%{event_kind: "tool_call", count: 2}]}
+        runtime: %{events: [%{event_kind: "tool_call", count: 2}]},
+        execution_state: %{
+          execution_ref: %{id: "execution-1", subject_ref: subject_ref},
+          lifecycle_state: "running",
+          dispatch_state: "running"
+        },
+        lower_receipts: [
+          %{
+            receipt_ref: "receipt-1",
+            receipt_state: "accepted",
+            lower_receipt_ref: "lower-receipt-1",
+            execution_ref: %{id: "execution-1", subject_ref: subject_ref}
+          }
+        ],
+        updated_at: ~U[2026-04-25 12:00:00Z],
+        schema_ref: "app_kit.subject_runtime_projection.v1",
+        schema_version: 1
       })
     end
 

@@ -35,9 +35,14 @@ defmodule Mezzanine.AppKitBridge.WorkQueryService do
 
       :not_archived ->
         case runtime_subject_projection(installation_id, subject_id, opts) do
-          {:ok, projection} -> {:ok, projection}
-          :not_found -> runtime_projection_not_found_or_fallback(installation_id, subject_id, opts)
-          {:error, reason} -> {:error, reason}
+          {:ok, projection} ->
+            {:ok, projection}
+
+          :not_found ->
+            runtime_projection_not_found_or_fallback(installation_id, subject_id, opts)
+
+          {:error, reason} ->
+            {:error, reason}
         end
     end
   end
