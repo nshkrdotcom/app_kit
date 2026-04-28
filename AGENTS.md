@@ -39,3 +39,44 @@ just temporal-ui
 ```
 
 Do not invent raw `temporal server start-dev` commands for normal work. Do not reset local Temporal state unless the user explicitly approves `just temporal-reset-confirm`.
+
+<!-- gn-ten:repo-agent:start repo=app_kit source_sha=ab276c0640772b73065ab12bf05d77be51f1bb67 -->
+# app_kit Agent Instructions Draft
+
+## Owns
+
+- Product-safe northbound surfaces.
+- Public DTOs for product reads, writes, reviews, operator controls, runtime
+  readback, semantic assist, trace lookup, and leased lower reads.
+- Boundary scanners that keep products on AppKit.
+
+## Does Not Own
+
+- Product UI.
+- Mezzanine runtime internals.
+- Citadel policy engine.
+- Jido Integration connector internals.
+- Execution Plane lanes.
+
+## Allowed Dependencies
+
+- Public contract artifacts from Mezzanine, OuterBrain, Citadel, Jido
+  Integration, Execution Plane, GroundPlane, and AITrace when routed through
+  bridge packages.
+
+## Forbidden Imports
+
+- Product runtime code must not be added here.
+- AppKit surfaces must not call lower internals in ways that bypass bridge
+  behaviours or DTO constructors.
+
+## Verification
+
+- `mix ci`
+- AppKit no-bypass scanner against product and hazmat profiles.
+
+## Escalation
+
+If a lower primitive is missing, add it in the lower owner repo first, then
+return to AppKit.
+<!-- gn-ten:repo-agent:end -->
