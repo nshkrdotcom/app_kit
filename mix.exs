@@ -72,7 +72,7 @@ defmodule AppKit.Workspace.MixProject do
         "monorepo.deps.get",
         "monorepo.format --check-formatted",
         "app_kit.schema_registry.verify",
-        "app_kit.no_bypass --profile hazmat --include core/**/*.ex --include bridges/**/*.ex --include examples/**/*.ex",
+        "app_kit.no_bypass.scan --profile hazmat --include core/**/*.ex --include bridges/**/*.ex --include examples/**/*.ex",
         "test",
         "monorepo.compile",
         "monorepo.test",

@@ -64,6 +64,41 @@ defmodule AppKit.NoBypassTest do
     assert report.checked_files == 1
   end
 
+  test "product profile allows approved AppKit product-safe surfaces" do
+    root =
+      write_product_file!("""
+      alias AppKit.WorkSurface
+      alias AppKit.WorkControl
+      alias AppKit.OperatorSurface
+      alias AppKit.ReviewSurface
+      alias AppKit.RuntimeGateway
+      alias AppKit.DomainSurface
+      """)
+
+    assert {:ok, report} =
+             NoBypass.scan(
+               root: root,
+               profiles: [:product, :hazmat],
+               include: ["lib/**/*.ex"]
+             )
+
+    assert report.checked_files == 1
+  end
+
+  test "product profile rejects direct AppKit bridge imports" do
+    root = write_product_file!("alias AppKit.Bridges.MezzanineBridge\n")
+
+    assert {:error, report} =
+             NoBypass.scan(
+               root: root,
+               profiles: [:product],
+               include: ["lib/**/*.ex"]
+             )
+
+    assert [%NoBypass.Violation{profile: :product, forbidden: "AppKit.Bridges"}] =
+             report.violations
+  end
+
   test "defaults to the product profile" do
     root = write_product_file!("alias Jido.Integration.V2.BrainIngress\n")
 

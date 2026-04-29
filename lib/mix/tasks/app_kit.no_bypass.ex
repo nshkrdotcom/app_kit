@@ -5,7 +5,7 @@ defmodule Mix.Tasks.AppKit.NoBypass do
   Scans source files for direct lower runtime/governance imports.
 
       mix app_kit.no_bypass --profile product --include "apps/my_product/lib/**/*.ex"
-      mix app_kit.no_bypass --root ../extravaganza --profile product --profile hazmat
+      mix app_kit.no_bypass.scan --root ../extravaganza --profile product --profile hazmat
   """
 
   use Mix.Task

@@ -34,6 +34,7 @@ defmodule AppKit.Boundary.NoBypass do
           | {:exclude, [String.t()] | String.t()}
 
   @product_forbidden [
+    {"AppKit.Bridges", ~r/\bAppKit\.Bridges?\./},
     {"Citadel", ~r/\bCitadel\./},
     {"Jido.Integration", ~r/\bJido\.Integration\b/},
     {"ExecutionPlane", ~r/\bExecutionPlane\b/},
