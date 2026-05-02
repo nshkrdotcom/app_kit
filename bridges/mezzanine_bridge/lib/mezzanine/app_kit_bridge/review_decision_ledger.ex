@@ -40,31 +40,41 @@ defmodule Mezzanine.AppKitBridge.ReviewDecisionLedger do
   def resolve_review_decision(_decision, _bridge_result, _opts), do: {:ok, nil}
 
   defp apply_resolution(:accept, decision_record, context, opts) do
-    DecisionCommands.decide(decision_record, %{
-      decision_value: "accept",
+    DecisionCommands.accept(decision_record, %{
+      tenant_id: command_tenant_id(context, opts),
+      authorized_installation_id: context.execution.installation_id,
       reason: Keyword.get(opts, :reason),
-      trace_id: context.trace_id,
-      causation_id: causation_id(context.review_unit.id, :accept),
-      actor_ref: actor_ref(opts)
+      trace_id: command_trace_id(context, opts),
+      causation_id: command_causation_id(context, opts, :accept),
+      actor_ref: command_actor_ref(context, opts),
+      idempotency_key: command_idempotency_key(context, opts, :accept),
+      expected_row_version: command_expected_row_version(opts)
     })
   end
 
   defp apply_resolution(:reject, decision_record, context, opts) do
-    DecisionCommands.decide(decision_record, %{
-      decision_value: "reject",
+    DecisionCommands.reject(decision_record, %{
+      tenant_id: command_tenant_id(context, opts),
+      authorized_installation_id: context.execution.installation_id,
       reason: Keyword.get(opts, :reason),
-      trace_id: context.trace_id,
-      causation_id: causation_id(context.review_unit.id, :reject),
-      actor_ref: actor_ref(opts)
+      trace_id: command_trace_id(context, opts),
+      causation_id: command_causation_id(context, opts, :reject),
+      actor_ref: command_actor_ref(context, opts),
+      idempotency_key: command_idempotency_key(context, opts, :reject),
+      expected_row_version: command_expected_row_version(opts)
     })
   end
 
   defp apply_resolution(:waive, decision_record, context, opts) do
     DecisionCommands.waive(decision_record, %{
+      tenant_id: command_tenant_id(context, opts),
+      authorized_installation_id: context.execution.installation_id,
       reason: Keyword.get(opts, :reason),
-      trace_id: context.trace_id,
-      causation_id: causation_id(context.review_unit.id, :waive),
-      actor_ref: actor_ref(opts)
+      trace_id: command_trace_id(context, opts),
+      causation_id: command_causation_id(context, opts, :waive),
+      actor_ref: command_actor_ref(context, opts),
+      idempotency_key: command_idempotency_key(context, opts, :waive),
+      expected_row_version: command_expected_row_version(opts)
     })
   end
 
@@ -178,4 +188,48 @@ defmodule Mezzanine.AppKitBridge.ReviewDecisionLedger do
   end
 
   defp causation_id(review_unit_id, stage), do: "review-unit:#{review_unit_id}:#{stage}"
+
+  defp command_context(opts) do
+    case Keyword.get(opts, :command_context) do
+      context when is_map(context) -> stringify_keys(context)
+      _other -> %{}
+    end
+  end
+
+  defp command_tenant_id(context, opts) do
+    command_context(opts)["tenant_id"] || context.execution.tenant_id
+  end
+
+  defp command_trace_id(context, opts) do
+    command_context(opts)["trace_id"] || context.trace_id
+  end
+
+  defp command_causation_id(context, opts, action) do
+    command_context(opts)["causation_id"] || causation_id(context.review_unit.id, action)
+  end
+
+  defp command_actor_ref(context, opts) do
+    tenant_id = command_tenant_id(context, opts)
+
+    case command_context(opts)["actor_ref"] do
+      actor_ref when is_map(actor_ref) ->
+        actor_ref
+        |> stringify_keys()
+        |> Map.put_new("tenant_id", tenant_id)
+
+      _other ->
+        actor_ref(opts)
+        |> stringify_keys()
+        |> Map.put_new("tenant_id", tenant_id)
+    end
+  end
+
+  defp command_idempotency_key(context, opts, action) do
+    command_context(opts)["idempotency_key"] ||
+      "review-decision:#{command_tenant_id(context, opts)}:#{context.review_unit.id}:#{action}"
+  end
+
+  defp command_expected_row_version(opts) do
+    command_context(opts)["expected_row_version"]
+  end
 end

@@ -6,14 +6,24 @@ defmodule Mezzanine.AppKitBridge.OperatorActionService do
   alias AppKit.Core.RunRef
   alias Mezzanine.AppKitBridge.AdapterSupport
   alias Mezzanine.AppKitBridge.ReviewActionService
+  alias Mezzanine.Audit.AuditAppend
+  alias Mezzanine.ConfigRegistry.Installation
+  alias Mezzanine.DecisionCommands
+  alias Mezzanine.Decisions.DecisionRecord
   alias Mezzanine.Execution.LifecycleContinuation
+  alias Mezzanine.Objects.SubjectRecord
   alias Mezzanine.OperatorActions
+  alias Mezzanine.OperatorCommands
+  alias Mezzanine.SourceEngine.SourceRefreshRequest
 
   @supported_actions [
+    :accept,
     :pause,
     :resume,
     :cancel,
+    :refresh,
     :replan,
+    :rework,
     :grant_override,
     :retry_continuation,
     :waive_continuation
@@ -65,7 +75,23 @@ defmodule Mezzanine.AppKitBridge.OperatorActionService do
   end
 
   defp dispatch_action(:cancel, tenant_id, subject_id, params, actor) do
-    OperatorActions.cancel_work(tenant_id, subject_id, actor_ref(actor, []), params)
+    if subject_record_control?(params) do
+      dispatch_subject_cancel(tenant_id, subject_id, params, actor)
+    else
+      OperatorActions.cancel_work(tenant_id, subject_id, actor_ref(actor, []), params)
+    end
+  end
+
+  defp dispatch_action(:accept, tenant_id, subject_id, params, actor) do
+    dispatch_decision_resolution(:accept, tenant_id, subject_id, params, actor)
+  end
+
+  defp dispatch_action(:rework, tenant_id, subject_id, params, actor) do
+    dispatch_decision_resolution(:rework, tenant_id, subject_id, params, actor)
+  end
+
+  defp dispatch_action(:refresh, tenant_id, subject_id, params, actor) do
+    dispatch_source_refresh(tenant_id, subject_id, params, actor)
   end
 
   defp dispatch_action(:replan, tenant_id, subject_id, params, actor) do
@@ -140,6 +166,281 @@ defmodule Mezzanine.AppKitBridge.OperatorActionService do
   defp default_safe_action(:retry_continuation), do: "operator_retry_lifecycle_continuation"
   defp default_safe_action(:waive_continuation), do: "operator_waive_lifecycle_continuation"
 
+  defp dispatch_decision_resolution(action, tenant_id, subject_id, params, actor) do
+    with {:ok, decision_id} <- required_param(params, :decision_id, :missing_decision_id),
+         {:ok, decision} <- load_decision(decision_id),
+         :ok <- ensure_decision_subject(decision, subject_id),
+         {:ok, scope} <- command_scope(tenant_id, decision.installation_id, params, actor),
+         command_attrs <- decision_command_attrs(action, decision, scope, params),
+         {:ok, updated_decision} <- resolve_decision(action, decision, command_attrs) do
+      {:ok,
+       %{
+         decision: updated_decision,
+         decision_id: updated_decision.id,
+         subject_id: updated_decision.subject_id,
+         installation_id: updated_decision.installation_id,
+         lifecycle_state: updated_decision.lifecycle_state,
+         decision_value: updated_decision.decision_value,
+         idempotency_key: command_attrs.idempotency_key,
+         authority: authority_payload(scope, command_attrs)
+       }}
+    end
+  end
+
+  defp dispatch_subject_cancel(tenant_id, subject_id, params, actor) do
+    with {:ok, subject} <- load_subject(subject_id),
+         {:ok, scope} <- command_scope(tenant_id, subject.installation_id, params, actor),
+         opts <- subject_command_opts(:cancel, subject, scope, params),
+         {:ok, result} <- OperatorCommands.cancel(subject.id, opts) do
+      {:ok, Map.put(result, :authority, authority_payload(scope, Map.new(opts)))}
+    end
+  end
+
+  defp dispatch_source_refresh(tenant_id, subject_id, params, actor) do
+    with {:ok, subject} <- load_subject(subject_id),
+         {:ok, scope} <- command_scope(tenant_id, subject.installation_id, params, actor),
+         {:ok, source_binding_id} <-
+           refresh_source_binding_id(subject, params),
+         refresh_attrs <- refresh_attrs(subject, source_binding_id, scope, params),
+         {:ok, refresh} <- SourceRefreshRequest.request(refresh_attrs),
+         {:ok, audit} <-
+           append_operator_audit(:source_refresh_requested, subject, nil, refresh_attrs) do
+      {:ok,
+       refresh
+       |> Map.put(:audit, audit)
+       |> Map.put(:authority, authority_payload(scope, refresh_attrs))}
+    end
+  end
+
+  defp resolve_decision(:accept, decision, command_attrs),
+    do: DecisionCommands.accept(decision, command_attrs)
+
+  defp resolve_decision(:rework, decision, command_attrs),
+    do: DecisionCommands.decide(decision, Map.put(command_attrs, :decision_value, "rework"))
+
+  defp subject_record_control?(params) do
+    owner = param(params, :control_owner, nil)
+    subject_kind = param(params, :subject_kind, nil)
+
+    owner in ["subject_record", :subject_record] or
+      subject_kind in ["coding_task", "linear_coding_ticket", "subject_record"]
+  end
+
+  defp load_decision(decision_id) do
+    case Ash.get(DecisionRecord, decision_id, authorize?: false, domain: Mezzanine.Decisions) do
+      {:ok, %DecisionRecord{} = decision} -> {:ok, decision}
+      {:ok, nil} -> {:error, :decision_not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp load_subject(subject_id) do
+    case Ash.get(SubjectRecord, subject_id, authorize?: false, domain: Mezzanine.Objects) do
+      {:ok, %SubjectRecord{} = subject} -> {:ok, subject}
+      {:ok, nil} -> {:error, :subject_not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp ensure_decision_subject(%DecisionRecord{subject_id: subject_id}, subject_id), do: :ok
+  defp ensure_decision_subject(_decision, _subject_id), do: {:error, :decision_subject_mismatch}
+
+  defp command_scope(tenant_id, installation_id, params, actor) do
+    context = operator_context(params)
+    actor_ref = command_actor_ref(context, actor, tenant_id)
+
+    with :ok <- ensure_context_tenant(context, tenant_id),
+         :ok <- ensure_actor_tenant(actor_ref, tenant_id),
+         :ok <- ensure_installation_authorized(tenant_id, installation_id, context) do
+      {:ok,
+       %{
+         tenant_id: tenant_id,
+         installation_id: installation_id,
+         actor_ref: actor_ref,
+         trace_id: context_value(context, :trace_id) || "operator-actions:#{installation_id}",
+         causation_id:
+           context_value(context, :causation_id) ||
+             "operator-actions:#{installation_id}:#{System.unique_integer([:positive])}",
+         idempotency_key: context_value(context, :idempotency_key)
+       }}
+    end
+  end
+
+  defp ensure_context_tenant(context, tenant_id) do
+    case context_value(context, :tenant_id) do
+      nil -> :ok
+      ^tenant_id -> :ok
+      _other -> {:error, :cross_tenant_operator_command_denied}
+    end
+  end
+
+  defp ensure_actor_tenant(actor_ref, tenant_id) do
+    case Map.get(actor_ref, "tenant_id") do
+      nil -> :ok
+      ^tenant_id -> :ok
+      _other -> {:error, :operator_actor_tenant_mismatch}
+    end
+  end
+
+  defp ensure_installation_authorized(tenant_id, installation_id, context) do
+    with :ok <- ensure_requested_installation(installation_id, context) do
+      cond do
+        installation_id == tenant_id ->
+          :ok
+
+        installation_belongs_to_tenant?(installation_id, tenant_id) ->
+          :ok
+
+        true ->
+          {:error, :cross_tenant_operator_command_denied}
+      end
+    end
+  end
+
+  defp ensure_requested_installation(installation_id, context) do
+    case context_value(context, :installation_id) do
+      nil -> :ok
+      ^installation_id -> :ok
+      _other -> {:error, :cross_tenant_operator_command_denied}
+    end
+  end
+
+  defp installation_belongs_to_tenant?(installation_id, tenant_id) do
+    case Ash.get(Installation, installation_id,
+           authorize?: false,
+           domain: Mezzanine.ConfigRegistry
+         ) do
+      {:ok, %Installation{tenant_id: ^tenant_id}} -> true
+      _other -> false
+    end
+  end
+
+  defp decision_command_attrs(action, decision, scope, params) do
+    %{
+      tenant_id: scope.tenant_id,
+      authorized_installation_id: decision.installation_id,
+      reason: param(params, :reason, nil),
+      trace_id: scope.trace_id,
+      causation_id: scope.causation_id,
+      actor_ref: scope.actor_ref,
+      expected_row_version: optional_param(params, :expected_row_version),
+      attempt_id: command_attempt_id(action, decision, scope),
+      idempotency_key:
+        scope.idempotency_key ||
+          "decision-terminal:#{scope.tenant_id}:#{decision.id}:#{action}:#{scope.causation_id}"
+    }
+    |> Map.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp subject_command_opts(action, subject, scope, params) do
+    [
+      tenant_id: scope.tenant_id,
+      authorized_installation_id: subject.installation_id,
+      reason: param(params, :reason, nil),
+      trace_id: scope.trace_id,
+      causation_id: scope.causation_id,
+      actor_ref: scope.actor_ref,
+      idempotency_key:
+        scope.idempotency_key ||
+          "subject-command:#{scope.tenant_id}:#{subject.id}:#{action}:#{scope.causation_id}"
+    ]
+  end
+
+  defp refresh_attrs(subject, source_binding_id, scope, params) do
+    %{
+      tenant_id: scope.tenant_id,
+      installation_id: subject.installation_id,
+      subject_id: subject.id,
+      source_binding_id: source_binding_id,
+      cursor: param(params, :cursor, nil),
+      trace_id: scope.trace_id,
+      causation_id: scope.causation_id,
+      actor_ref: scope.actor_ref,
+      reason: param(params, :reason, nil),
+      idempotency_key:
+        scope.idempotency_key ||
+          "source-refresh:#{scope.tenant_id}:#{subject.id}:#{source_binding_id}:#{scope.causation_id}"
+    }
+    |> Map.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp refresh_source_binding_id(subject, params) do
+    case param(params, :source_binding_id, nil) || subject.source_binding_id do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _other -> {:error, :missing_source_binding_id}
+    end
+  end
+
+  defp append_operator_audit(fact_kind, subject, decision, attrs) do
+    AuditAppend.append_fact(%{
+      installation_id: attrs.installation_id,
+      subject_id: subject.id,
+      decision_id: decision && decision.id,
+      trace_id: attrs.trace_id,
+      causation_id: attrs.causation_id,
+      fact_kind: fact_kind,
+      actor_ref: attrs.actor_ref,
+      idempotency_key: attrs.idempotency_key,
+      payload: %{
+        tenant_id: attrs.tenant_id,
+        installation_id: attrs.installation_id,
+        subject_id: subject.id,
+        decision_id: decision && decision.id,
+        reason: Map.get(attrs, :reason),
+        safe_action: Atom.to_string(fact_kind)
+      }
+    })
+  end
+
+  defp authority_payload(scope, attrs) do
+    %{
+      tenant_id: scope.tenant_id,
+      installation_id: scope.installation_id,
+      actor_ref: scope.actor_ref,
+      trace_id: scope.trace_id,
+      causation_id: scope.causation_id,
+      idempotency_key: Map.get(attrs, :idempotency_key)
+    }
+  end
+
+  defp command_attempt_id(action, decision, scope),
+    do: "operator-action:#{scope.tenant_id}:#{decision.id}:#{action}:#{scope.causation_id}"
+
+  defp operator_context(params) do
+    case param(params, :operator_context, %{}) do
+      context when is_map(context) -> stringify_keys(context)
+      _other -> %{}
+    end
+  end
+
+  defp context_value(context, key),
+    do: Map.get(context, Atom.to_string(key)) || Map.get(context, key)
+
+  defp command_actor_ref(context, actor, tenant_id) do
+    case context_value(context, :actor_ref) do
+      actor_ref when is_map(actor_ref) ->
+        actor_ref
+        |> stringify_keys()
+        |> Map.put_new("tenant_id", tenant_id)
+
+      _other ->
+        %{
+          "kind" => "operator",
+          "id" => actor_ref(actor, []),
+          "tenant_id" => tenant_id
+        }
+    end
+  end
+
+  defp required_param(params, key, error) do
+    case param(params, key, nil) do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _other -> {:error, error}
+    end
+  end
+
+  defp optional_param(params, key), do: param(params, key, nil)
+
   defp param(params, key, default) do
     Map.get(params, key) || Map.get(params, Atom.to_string(key)) || default
   end
@@ -177,8 +478,11 @@ defmodule Mezzanine.AppKitBridge.OperatorActionService do
 
   defp action_message(:pause), do: "Work paused"
   defp action_message(:resume), do: "Work resumed"
+  defp action_message(:accept), do: "Review accepted"
   defp action_message(:cancel), do: "Work cancelled"
+  defp action_message(:refresh), do: "Source refresh requested"
   defp action_message(:replan), do: "Replan requested"
+  defp action_message(:rework), do: "Review sent for rework"
   defp action_message(:grant_override), do: "Grant override applied"
   defp action_message(:retry_continuation), do: "Lifecycle continuation retry requested"
   defp action_message(:waive_continuation), do: "Lifecycle continuation waived"
@@ -186,4 +490,8 @@ defmodule Mezzanine.AppKitBridge.OperatorActionService do
   defp actor_ref(attrs, opts), do: AdapterSupport.actor_ref(attrs, opts)
   defp normalize_value(value), do: AdapterSupport.normalize_value(value)
   defp normalize_error(reason), do: AdapterSupport.normalize_error(reason)
+
+  defp stringify_keys(value) when is_map(value) do
+    Map.new(value, fn {key, nested} -> {to_string(key), nested} end)
+  end
 end

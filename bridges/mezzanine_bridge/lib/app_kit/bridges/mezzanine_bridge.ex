@@ -15,7 +15,11 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @behaviour AppKit.Core.Backends.HeadlessBackend
   @behaviour AppKit.Core.Backends.AgentIntakeBackend
 
-  @authorization_reasons [:unauthorized_lower_read]
+  @authorization_reasons [
+    :cross_tenant_operator_command_denied,
+    :operator_actor_tenant_mismatch,
+    :unauthorized_lower_read
+  ]
   alias AppKit.Core.AgentIntake.RunOutcomeFuture
 
   alias AppKit.Core.{
@@ -564,7 +568,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
       when is_list(opts) do
     with {:ok, tenant_id} <- tenant_id(context),
          action_kind <- action_kind(action_request),
-         action_params <- operator_action_params(action_request),
+         action_params <- operator_action_params(context, subject_ref, action_request),
          actor <- actor_payload(context),
          {:ok, bridge_result} <-
            operator_action_service(opts).apply_action(
@@ -1577,10 +1581,16 @@ defmodule AppKit.Bridges.MezzanineBridge do
        }),
        do: action_kind
 
-  defp operator_action_params(%OperatorActionRequest{} = action_request) do
+  defp operator_action_params(
+         %RequestContext{} = context,
+         %SubjectRef{} = subject_ref,
+         %OperatorActionRequest{} = action_request
+       ) do
     action_request.params
     |> Map.new()
     |> maybe_put("reason", action_request.reason)
+    |> maybe_put("subject_kind", subject_ref.subject_kind)
+    |> maybe_put("operator_context", operator_command_context(context, subject_ref))
   end
 
   defp run_request_action_params(%RunRequest{} = run_request) do
@@ -1589,6 +1599,36 @@ defmodule AppKit.Bridges.MezzanineBridge do
     |> maybe_put("recipe_ref", run_request.recipe_ref)
     |> maybe_put("reason", run_request.reason)
   end
+
+  defp operator_command_context(%RequestContext{} = context, %SubjectRef{} = subject_ref) do
+    %{
+      "tenant_id" => context.tenant_ref.id,
+      "installation_id" => command_installation_id(context, subject_ref),
+      "trace_id" => context.trace_id,
+      "causation_id" => context.causation_id || context.request_id || context.trace_id,
+      "idempotency_key" => context.idempotency_key,
+      "actor_ref" => %{
+        "kind" => to_string(context.actor_ref.kind),
+        "id" => context.actor_ref.id,
+        "tenant_id" => context.tenant_ref.id
+      }
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
+  defp command_installation_id(
+         %RequestContext{installation_ref: %InstallationRef{id: installation_id}},
+         _subject_ref
+       ),
+       do: installation_id
+
+  defp command_installation_id(_context, %SubjectRef{
+         installation_ref: %InstallationRef{id: installation_id}
+       }),
+       do: installation_id
+
+  defp command_installation_id(_context, _subject_ref), do: nil
 
   defp work_query_service(opts),
     do: Keyword.get(opts, :work_query_service, Mezzanine.AppKitBridge.WorkQueryService)

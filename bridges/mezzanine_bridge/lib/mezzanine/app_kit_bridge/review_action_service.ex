@@ -22,6 +22,7 @@ defmodule Mezzanine.AppKitBridge.ReviewActionService do
 
     with {:ok, program_id} <- fetch_string(attrs, opts, :program_id),
          {:ok, decision} <- normalize_decision(map_value(attrs, :decision)),
+         :ok <- ensure_authorized_context(tenant_id, attrs, opts),
          {:ok, bridge_result} <-
            dispatch_decision(tenant_id, review_unit_id, decision, attrs, opts, program_id),
          {:ok, decision_record} <-
@@ -29,7 +30,8 @@ defmodule Mezzanine.AppKitBridge.ReviewActionService do
              decision,
              bridge_result,
              reason: map_value(attrs, :reason),
-             actor_ref: actor_ref(attrs, opts)
+             actor_ref: actor_ref(attrs, opts),
+             command_context: decision_command_context(tenant_id, attrs, opts)
            ) do
       metadata =
         bridge_result
@@ -142,6 +144,71 @@ defmodule Mezzanine.AppKitBridge.ReviewActionService do
 
   defp normalize_decision(_decision), do: {:error, :unsupported_decision}
 
+  defp ensure_authorized_context(tenant_id, attrs, opts) do
+    context = decision_command_context(tenant_id, attrs, opts)
+
+    with :ok <- ensure_context_tenant(context, tenant_id) do
+      ensure_actor_tenant(context, tenant_id)
+    end
+  end
+
+  defp ensure_context_tenant(context, tenant_id) do
+    case Map.get(context, "tenant_id") do
+      nil -> :ok
+      ^tenant_id -> :ok
+      _other -> {:error, :cross_tenant_operator_command_denied}
+    end
+  end
+
+  defp ensure_actor_tenant(context, tenant_id) do
+    context
+    |> Map.get("actor_ref", %{})
+    |> case do
+      actor_ref when is_map(actor_ref) -> actor_ref
+      _other -> %{}
+    end
+    |> Map.get("tenant_id")
+    |> case do
+      nil -> :ok
+      ^tenant_id -> :ok
+      _other -> {:error, :operator_actor_tenant_mismatch}
+    end
+  end
+
+  defp decision_command_context(tenant_id, attrs, opts) do
+    context =
+      attrs
+      |> map_value(:operator_context)
+      |> case do
+        value when is_map(value) -> stringify_keys(value)
+        _other -> %{}
+      end
+
+    actor_ref =
+      case Map.get(context, "actor_ref") do
+        value when is_map(value) ->
+          value
+          |> stringify_keys()
+          |> Map.put_new("tenant_id", tenant_id)
+
+        _other ->
+          %{
+            "kind" => "operator",
+            "id" => actor_ref(attrs, opts),
+            "tenant_id" => tenant_id
+          }
+      end
+
+    context
+    |> Map.put_new("tenant_id", tenant_id)
+    |> Map.put_new("trace_id", map_value(attrs, :trace_id))
+    |> Map.put_new("causation_id", map_value(attrs, :causation_id))
+    |> Map.put_new("idempotency_key", map_value(attrs, :idempotency_key))
+    |> Map.put("actor_ref", actor_ref)
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
   defp fetch_tenant_id(run_ref, attrs, opts) do
     case Keyword.get(opts, :tenant_id) || map_value(attrs, :tenant_id) ||
            Map.get(run_ref.metadata, :tenant_id) || Map.get(run_ref.metadata, "tenant_id") do
@@ -211,4 +278,8 @@ defmodule Mezzanine.AppKitBridge.ReviewActionService do
   defp actor_ref(attrs, opts), do: AdapterSupport.actor_ref(attrs, opts)
   defp normalize_value(value), do: AdapterSupport.normalize_value(value)
   defp normalize_error(reason), do: AdapterSupport.normalize_error(reason)
+
+  defp stringify_keys(value) when is_map(value) do
+    Map.new(value, fn {key, nested} -> {to_string(key), nested} end)
+  end
 end

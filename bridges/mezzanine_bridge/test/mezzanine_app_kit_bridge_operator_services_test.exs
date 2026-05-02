@@ -1,7 +1,17 @@
 defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
   use ExUnit.Case, async: false
 
-  alias AppKit.Core.{RunRef, TraceIdentity}
+  alias AppKit.Bridges.MezzanineBridge
+
+  alias AppKit.Core.{
+    InstallationRef,
+    OperatorActionRequest,
+    RequestContext,
+    RunRef,
+    SubjectRef,
+    TraceIdentity
+  }
+
   alias Ecto.Adapters.SQL
   alias Ecto.Adapters.SQL.Sandbox
   alias Jido.Integration.V2.TenantScope
@@ -19,10 +29,14 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
   alias Mezzanine.Audit.Repo, as: AuditRepo
   alias Mezzanine.Audit.WorkAudit
   alias Mezzanine.Control.ControlSession
+  alias Mezzanine.DecisionCommands
+  alias Mezzanine.Decisions.DecisionRecord
   alias Mezzanine.Decisions.Repo, as: DecisionsRepo
   alias Mezzanine.EvidenceLedger.Repo, as: EvidenceRepo
   alias Mezzanine.Execution.LifecycleContinuation
   alias Mezzanine.Execution.Repo, as: ExecutionRepo
+  alias Mezzanine.Objects.Repo, as: ObjectsRepo
+  alias Mezzanine.Objects.{SubjectPayloadSchema, SubjectRecord}
   alias Mezzanine.OpsDomain.Repo, as: OpsDomainRepo
   alias Mezzanine.Programs.{PolicyBundle, Program}
   alias Mezzanine.ReadLease
@@ -101,6 +115,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
   setup do
     ops_domain_owner = Sandbox.start_owner!(OpsDomainRepo, shared: false)
     audit_owner = Sandbox.start_owner!(AuditRepo, shared: false)
+    objects_owner = Sandbox.start_owner!(ObjectsRepo, shared: false)
     execution_owner = Sandbox.start_owner!(ExecutionRepo, shared: false)
     decisions_owner = Sandbox.start_owner!(DecisionsRepo, shared: false)
     evidence_owner = Sandbox.start_owner!(EvidenceRepo, shared: false)
@@ -111,6 +126,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
       Sandbox.stop_owner(evidence_owner)
       Sandbox.stop_owner(decisions_owner)
       Sandbox.stop_owner(execution_owner)
+      Sandbox.stop_owner(objects_owner)
       Sandbox.stop_owner(audit_owner)
       Sandbox.stop_owner(ops_domain_owner)
     end)
@@ -276,6 +292,174 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     assert cancel_result.status == :completed
     assert cancel_result.action_ref.action_kind == "cancel"
     assert cancel_result.metadata.work_object.status == :cancelled
+  end
+
+  test "operator action service resolves accept and rework through DecisionCommands with tenant authority" do
+    %{tenant_id: tenant_id, work_object: accept_work_object} =
+      fixture_stack("tenant-operator-decision-accept")
+
+    %{decision_id: accept_decision_id} =
+      seed_trace_ledger(tenant_id, accept_work_object.id, "operator-decision-accept")
+
+    assert {:ok, accept_result} =
+             OperatorActionService.apply_action(
+               tenant_id,
+               accept_work_object.id,
+               :accept,
+               %{
+                 "decision_id" => accept_decision_id,
+                 "operator_context" =>
+                   operator_command_context(
+                     tenant_id,
+                     tenant_id,
+                     "trace-operator-accept",
+                     "cause-operator-accept",
+                     "idem-operator-accept"
+                   )
+               },
+               %{actor_ref: "ops_lead"}
+             )
+
+    assert accept_result.action_ref.action_kind == "accept"
+    assert accept_result.metadata.decision_value == "accept"
+    assert accept_result.metadata.authority.tenant_id == tenant_id
+
+    assert {:ok, accepted_decision} =
+             DecisionCommands.fetch_by_identity(%{
+               installation_id: tenant_id,
+               subject_id: accept_work_object.id,
+               execution_id: accept_result.metadata.decision.execution_id,
+               decision_kind: "human_review_required"
+             })
+
+    assert accepted_decision.lifecycle_state == "resolved"
+
+    %{tenant_id: rework_tenant_id, work_object: rework_work_object} =
+      fixture_stack("tenant-operator-decision-rework")
+
+    %{decision_id: rework_decision_id} =
+      seed_trace_ledger(rework_tenant_id, rework_work_object.id, "operator-decision-rework")
+
+    assert {:ok, rework_result} =
+             OperatorActionService.apply_action(
+               rework_tenant_id,
+               rework_work_object.id,
+               :rework,
+               %{
+                 "decision_id" => rework_decision_id,
+                 "reason" => "needs another pass",
+                 "operator_context" =>
+                   operator_command_context(
+                     rework_tenant_id,
+                     rework_tenant_id,
+                     "trace-operator-rework",
+                     "cause-operator-rework",
+                     "idem-operator-rework"
+                   )
+               },
+               %{actor_ref: "ops_lead"}
+             )
+
+    assert rework_result.action_ref.action_kind == "rework"
+    assert rework_result.metadata.decision_value == "rework"
+
+    assert {:error, :cross_tenant_operator_command_denied} =
+             OperatorActionService.apply_action(
+               "tenant-wrong",
+               rework_work_object.id,
+               :accept,
+               %{
+                 "decision_id" => rework_decision_id,
+                 "operator_context" =>
+                   operator_command_context(
+                     "tenant-wrong",
+                     "installation-wrong",
+                     "trace-operator-denied",
+                     "cause-operator-denied",
+                     "idem-operator-denied"
+                   )
+               },
+               %{actor_ref: "ops_lead"}
+             )
+
+    assert {:ok, current_decision} =
+             Ash.get(DecisionRecord, rework_decision_id,
+               authorize?: false,
+               domain: Mezzanine.Decisions
+             )
+
+    assert current_decision.decision_value == "rework"
+  end
+
+  test "app-kit operator surface rejects wrong-tenant cancel and refresh before subject effects" do
+    assert {:ok, subject} = ingest_subject_record("tenant-subject-command", "phase13")
+
+    assert {:ok, subject_ref} =
+             SubjectRef.new(%{
+               id: subject.id,
+               subject_kind: "coding_task",
+               installation_ref: installation_ref("tenant-subject-command")
+             })
+
+    wrong_context =
+      request_context(
+        "tenant-other",
+        "tenant-subject-command",
+        "trace-subject-cancel-denied",
+        "cause-subject-cancel-denied",
+        "idem-subject-cancel-denied"
+      )
+
+    assert {:ok, cancel_request} =
+             OperatorActionRequest.new(%{
+               action_ref: %{
+                 id: "#{subject.id}:cancel",
+                 action_kind: "cancel",
+                 subject_ref: subject_ref
+               },
+               reason: "wrong tenant"
+             })
+
+    assert {:error, cancel_error} =
+             MezzanineBridge.apply_action(wrong_context, subject_ref, cancel_request, [])
+
+    assert cancel_error.code == "cross_tenant_operator_command_denied"
+    assert cancel_error.kind == :authorization
+    assert {:ok, still_active} = Ash.get(SubjectRecord, subject.id)
+    assert still_active.status == "active"
+
+    assert {:ok, refresh_request} =
+             OperatorActionRequest.new(%{
+               action_ref: %{
+                 id: "#{subject.id}:refresh",
+                 action_kind: "refresh",
+                 subject_ref: subject_ref
+               },
+               reason: "wrong tenant"
+             })
+
+    assert {:error, refresh_error} =
+             MezzanineBridge.apply_action(wrong_context, subject_ref, refresh_request, [])
+
+    assert refresh_error.code == "cross_tenant_operator_command_denied"
+    assert refresh_error.kind == :authorization
+
+    valid_context =
+      request_context(
+        "tenant-subject-command",
+        "tenant-subject-command",
+        "trace-subject-refresh",
+        "cause-subject-refresh",
+        "idem-subject-refresh"
+      )
+
+    assert {:ok, refresh_result} =
+             MezzanineBridge.apply_action(valid_context, subject_ref, refresh_request, [])
+
+    assert refresh_result.action_ref.action_kind == "refresh"
+    assert refresh_result.metadata.refresh_requested?
+    assert refresh_result.metadata.lower_effect_started? == false
+    assert refresh_result.metadata.reconcile_started? == false
   end
 
   test "operator services expose and retry lifecycle continuation dead letters" do
@@ -761,6 +945,68 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
       decision_id: decision_id,
       evidence_id: evidence_id,
       audit_fact_id: audit_fact_id
+    }
+  end
+
+  defp ingest_subject_record(installation_id, suffix) do
+    SubjectRecord.ingest(%{
+      installation_id: installation_id,
+      source_ref: "linear://#{installation_id}/issue/#{suffix}",
+      source_binding_id: "linear-primary",
+      subject_kind: "linear_coding_ticket",
+      lifecycle_state: "queued",
+      schema_ref: SubjectPayloadSchema.default_schema_ref!("linear_coding_ticket"),
+      schema_version: SubjectPayloadSchema.default_schema_version!("linear_coding_ticket"),
+      payload: %{},
+      trace_id: "trace-ingest-#{suffix}",
+      causation_id: "cause-ingest-#{suffix}",
+      actor_ref: %{kind: :source_ingest, tenant_id: installation_id}
+    })
+  end
+
+  defp request_context(tenant_id, installation_id, _trace_id, causation_id, idempotency_key) do
+    {:ok, context} =
+      RequestContext.new(%{
+        trace_id: TraceIdentity.mint(),
+        causation_id: causation_id,
+        idempotency_key: idempotency_key,
+        actor_ref: %{id: "ops_lead", kind: "operator"},
+        tenant_ref: %{id: tenant_id},
+        installation_ref: installation_ref(installation_id)
+      })
+
+    context
+  end
+
+  defp installation_ref(installation_id) do
+    {:ok, installation_ref} =
+      InstallationRef.new(%{
+        id: installation_id,
+        pack_slug: "coding_ops",
+        status: :active
+      })
+
+    installation_ref
+  end
+
+  defp operator_command_context(
+         tenant_id,
+         installation_id,
+         trace_id,
+         causation_id,
+         idempotency_key
+       ) do
+    %{
+      "tenant_id" => tenant_id,
+      "installation_id" => installation_id,
+      "trace_id" => trace_id,
+      "causation_id" => causation_id,
+      "idempotency_key" => idempotency_key,
+      "actor_ref" => %{
+        "kind" => "operator",
+        "id" => "ops_lead",
+        "tenant_id" => tenant_id
+      }
     }
   end
 
