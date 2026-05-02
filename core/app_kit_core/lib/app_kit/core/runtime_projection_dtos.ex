@@ -14,8 +14,19 @@ defmodule AppKit.Core.RuntimeProjectionSupport do
                              "linear_comment_id",
                              "linear_issue_id",
                              "linear_issue_number",
+                             "access_token",
+                             "api_key",
+                             "authorization",
+                             "credential_secret",
+                             "password",
                              "pr_id",
                              "pr_number",
+                             "provider_account_id",
+                             "raw_credential",
+                             "raw_prompt",
+                             "raw_provider_payload",
+                             "refresh_token",
+                             "secret",
                              "workflow_id"
                            ])
 
@@ -313,11 +324,26 @@ defmodule AppKit.Core.RuntimeFactsProjection do
 
   alias AppKit.Core.{RuntimeEventSummary, RuntimeProjectionSupport}
 
-  defstruct token_totals: %{}, rate_limit: %{}, events: [], metadata: %{}
+  defstruct token_totals: %{},
+            token_dedupe: %{},
+            rate_limit: %{},
+            retry_queue: [],
+            aitrace: %{},
+            prompt: %{},
+            semantic: %{},
+            authority: %{},
+            events: [],
+            metadata: %{}
 
   @type t :: %__MODULE__{
           token_totals: map(),
+          token_dedupe: map(),
           rate_limit: map(),
+          retry_queue: [map()],
+          aitrace: map(),
+          prompt: map(),
+          semantic: map(),
+          authority: map(),
           events: [RuntimeEventSummary.t()],
           metadata: map()
         }
@@ -332,8 +358,20 @@ defmodule AppKit.Core.RuntimeFactsProjection do
            ),
          token_totals <- Map.get(attrs, :token_totals, %{}),
          true <- RuntimeProjectionSupport.map?(token_totals),
+         token_dedupe <- Map.get(attrs, :token_dedupe, %{}),
+         true <- RuntimeProjectionSupport.map?(token_dedupe),
          rate_limit <- Map.get(attrs, :rate_limit, %{}),
          true <- RuntimeProjectionSupport.map?(rate_limit),
+         retry_queue <- Map.get(attrs, :retry_queue, []),
+         true <- is_list(retry_queue) and Enum.all?(retry_queue, &is_map/1),
+         aitrace <- Map.get(attrs, :aitrace, %{}),
+         true <- RuntimeProjectionSupport.map?(aitrace),
+         prompt <- Map.get(attrs, :prompt, %{}),
+         true <- RuntimeProjectionSupport.map?(prompt),
+         semantic <- Map.get(attrs, :semantic, %{}),
+         true <- RuntimeProjectionSupport.map?(semantic),
+         authority <- Map.get(attrs, :authority, %{}),
+         true <- RuntimeProjectionSupport.map?(authority),
          {:ok, events} <-
            RuntimeProjectionSupport.nested_structs(
              Map.get(attrs, :events, []),
@@ -344,7 +382,13 @@ defmodule AppKit.Core.RuntimeFactsProjection do
       {:ok,
        %__MODULE__{
          token_totals: token_totals,
+         token_dedupe: token_dedupe,
          rate_limit: rate_limit,
+         retry_queue: retry_queue,
+         aitrace: aitrace,
+         prompt: prompt,
+         semantic: semantic,
+         authority: authority,
          events: events,
          metadata: metadata
        }}

@@ -322,7 +322,46 @@ defmodule AppKit.Core.ContractTest do
                ],
                runtime: %{
                  token_totals: %{"input" => 120, "output" => 45},
-                 rate_limit: %{"remaining" => 80},
+                 token_dedupe: %{
+                   "accepted_count" => 2,
+                   "duplicate_count" => 1,
+                   "token_hash_refs" => ["sha256:token-1", "sha256:token-2"]
+                 },
+                 rate_limit: %{"remaining" => 80, "retry_after_ms" => 120_000},
+                 retry_queue: [
+                   %{
+                     "retry_ref" => "retry://receipt/completed",
+                     "due_at" => "2026-05-01T12:00:00Z",
+                     "reason" => "rate_limited"
+                   }
+                 ],
+                 aitrace: %{
+                   "evidence_receipt_ref" => "aitrace://receipt/1",
+                   "export_bounds" => %{
+                     "schema_version" => "aitrace.export_bounds.v1",
+                     "redaction_policy_ref" => "aitrace.export_bounds.redact_hash.v1"
+                   }
+                 },
+                 prompt: %{
+                   "semantic_ref" => "semantic://context/1",
+                   "prompt_hash" => "sha256:prompt",
+                   "context_hash" => "sha256:context",
+                   "provenance_refs" => ["outer-brain://provenance/1"],
+                   "redaction_policy_ref" => "redaction://prompt"
+                 },
+                 semantic: %{
+                   "failure" => %{
+                     "failure_ref" => "semantic-failure://phase12/1",
+                     "kind" => "semantic_insufficient_context",
+                     "retry_class" => "repairable"
+                   }
+                 },
+                 authority: %{
+                   "provider_account_ref" => "provider-account://codex/redacted",
+                   "credential_ref" => "credential://lease/redacted",
+                   "provider_account_redaction" => "ref_only",
+                   "credential_redaction" => "ref_only"
+                 },
                  events: [%{event_kind: "tool_call", count: 2}]
                },
                evidence: [
@@ -367,6 +406,16 @@ defmodule AppKit.Core.ContractTest do
     assert %RuntimeFactsProjection{events: [%RuntimeEventSummary{event_kind: "tool_call"}]} =
              runtime_projection.runtime
 
+    assert runtime_projection.runtime.token_dedupe["duplicate_count"] == 1
+    assert hd(runtime_projection.runtime.retry_queue)["retry_ref"] == "retry://receipt/completed"
+    assert runtime_projection.runtime.aitrace["evidence_receipt_ref"] == "aitrace://receipt/1"
+    assert runtime_projection.runtime.prompt["prompt_hash"] == "sha256:prompt"
+
+    assert runtime_projection.runtime.semantic["failure"]["kind"] ==
+             "semantic_insufficient_context"
+
+    assert runtime_projection.runtime.authority["credential_redaction"] == "ref_only"
+
     assert [%EvidenceProjection{evidence_kind: "github_pr"}] = runtime_projection.evidence
     assert runtime_projection.review.status == "pending"
 
@@ -385,6 +434,12 @@ defmodule AppKit.Core.ContractTest do
                source_ref: "source://linear/tenant-1/subj-1",
                source_kind: "linear_issue",
                github_issue_number: 123
+             })
+
+    assert {:error, :invalid_runtime_facts_projection} =
+             RuntimeFactsProjection.new(%{
+               token_totals: %{},
+               metadata: %{"api_key" => "should-reject"}
              })
   end
 
