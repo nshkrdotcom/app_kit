@@ -36,6 +36,8 @@ the lower config registry activates anything. Authoring bundles are verified by
 checksum/schema validation in v1 unless Phase 1 source-verifies
 signing/signature-verification modules and tests or Phase 7 implements signing.
 Signature verification is a post-v1/new-contract candidate until then.
+`AppKit.Core.AuthoringBundleImport.checksum_for/1` is the product-facing helper
+for the canonical `sha256:` checksum used by that v1 posture.
 
 ## Scope
 

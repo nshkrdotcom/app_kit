@@ -35,6 +35,8 @@ Current contract groups:
 templates. It carries bundle checksum/schema posture, manifest/spec echoes,
 descriptor metadata, policy refs, and optional expected installation revision;
 it rejects platform deployment or migration fields at the AppKit boundary.
+`AuthoringBundleImport.checksum_for/1` canonicalizes the import payload and
+returns the `sha256:` checksum products use before import.
 Authoring bundles are verified by checksum/schema validation in v1 unless
 Phase 1 source-verifies signing/signature-verification modules and tests or
 Phase 7 implements signing. Signature verification is a post-v1/new-contract

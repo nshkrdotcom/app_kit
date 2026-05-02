@@ -832,6 +832,35 @@ defmodule AppKit.Core.ContractTest do
   end
 
   test "builds authoring bundle import DTOs separately from install templates" do
+    checksum =
+      AuthoringBundleImport.checksum_for(%{
+        bundle_id: "bundle-phase3",
+        tenant_id: "tenant-1",
+        installation_id: "install-phase3",
+        pack_manifest: %{"version" => "1.0.0", "pack_slug" => :phase3_pack},
+        checksum: "sha256:ignored",
+        signature: "hmac-sha256:ignored"
+      })
+
+    reordered_checksum =
+      AuthoringBundleImport.checksum_for(%{
+        "pack_manifest" => %{"pack_slug" => "phase3_pack", "version" => "1.0.0"},
+        "installation_id" => "install-phase3",
+        "tenant_id" => "tenant-1",
+        "bundle_id" => "bundle-phase3"
+      })
+
+    assert checksum == reordered_checksum
+    assert String.starts_with?(checksum, "sha256:")
+
+    refute checksum ==
+             AuthoringBundleImport.checksum_for(%{
+               bundle_id: "bundle-phase3",
+               tenant_id: "tenant-1",
+               installation_id: "install-phase3",
+               pack_manifest: %{"pack_slug" => "phase3_pack", "version" => "2.0.0"}
+             })
+
     assert {:ok, bundle_import} =
              AuthoringBundleImport.new(%{
                bundle_id: "bundle-phase3",

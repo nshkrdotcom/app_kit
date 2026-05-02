@@ -55,6 +55,7 @@ defmodule AppKit.Core.AuthoringBundleImport do
   alias AppKit.Core.Support
 
   @platform_migration_keys [:platform_migrations, :schema_migrations, :migrations]
+  @checksum_prefix "sha256:"
 
   @enforce_keys [
     :bundle_id,
@@ -162,6 +163,18 @@ defmodule AppKit.Core.AuthoringBundleImport do
     end
   end
 
+  @spec checksum_for(map()) :: String.t()
+  def checksum_for(attrs) when is_map(attrs) do
+    digest =
+      attrs
+      |> normalize_map()
+      |> Map.drop(["checksum", "signature"])
+      |> canonical_binary()
+      |> then(&:crypto.hash(:sha256, &1))
+
+    @checksum_prefix <> Base.encode16(digest, case: :lower)
+  end
+
   defp reject_platform_migrations(attrs) do
     if Enum.any?(@platform_migration_keys, &has_key?(attrs, &1)) do
       {:error, :pack_authored_platform_migration}
@@ -187,6 +200,35 @@ defmodule AppKit.Core.AuthoringBundleImport do
     do: Enum.all?(values, &Support.present_binary?/1)
 
   defp string_list?(_values), do: false
+
+  defp normalize_map(value) when is_map(value) do
+    Map.new(value, fn {key, nested} ->
+      {to_string(key), normalize_value(nested)}
+    end)
+  end
+
+  defp normalize_value(value) when is_map(value), do: normalize_map(value)
+  defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
+  defp normalize_value(value) when is_boolean(value) or is_nil(value), do: value
+  defp normalize_value(value) when is_atom(value), do: Atom.to_string(value)
+  defp normalize_value(value), do: value
+
+  defp canonical_binary(value) do
+    value
+    |> canonicalize()
+    |> :erlang.term_to_binary()
+  end
+
+  defp canonicalize(value) when is_map(value) do
+    value
+    |> Enum.map(fn {key, nested} -> {to_string(key), canonicalize(nested)} end)
+    |> Enum.sort_by(fn {key, _value} -> key end)
+  end
+
+  defp canonicalize(value) when is_list(value), do: Enum.map(value, &canonicalize/1)
+  defp canonicalize(value) when is_boolean(value) or is_nil(value), do: value
+  defp canonicalize(value) when is_atom(value), do: Atom.to_string(value)
+  defp canonicalize(value), do: value
 end
 
 defmodule AppKit.Core.InstallationBinding do
