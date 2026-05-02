@@ -220,10 +220,8 @@ defmodule Mezzanine.AppKitBridge.OperatorActionService do
 
   defp subject_record_control?(params) do
     owner = param(params, :control_owner, nil)
-    subject_kind = param(params, :subject_kind, nil)
 
-    owner in ["subject_record", :subject_record] or
-      subject_kind in ["coding_task", "linear_coding_ticket", "subject_record"]
+    owner in ["subject_record", :subject_record]
   end
 
   defp load_decision(decision_id) do

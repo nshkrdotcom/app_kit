@@ -417,6 +417,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
                  action_kind: "cancel",
                  subject_ref: subject_ref
                },
+               params: %{"control_owner" => "subject_record"},
                reason: "wrong tenant"
              })
 
@@ -435,6 +436,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
                  action_kind: "refresh",
                  subject_ref: subject_ref
                },
+               params: %{"control_owner" => "subject_record"},
                reason: "wrong tenant"
              })
 
