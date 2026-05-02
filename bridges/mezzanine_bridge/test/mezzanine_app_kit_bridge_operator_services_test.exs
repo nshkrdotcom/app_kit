@@ -674,6 +674,22 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
       assert pivot_trace.metadata.archive_pivot == Atom.to_string(pivot)
       assert Enum.all?(pivot_trace.steps, &(&1.staleness_class == :authoritative_archived))
     end
+
+    assert {:ok, string_pivot_trace} =
+             OperatorQueryService.get_archived_unified_trace_by_pivot(%{
+               installation_id: tenant_id,
+               pivot: "subject_id",
+               pivot_id: work_object.id
+             })
+
+    assert string_pivot_trace.trace_id == trace_id
+
+    assert {:error, :invalid_trace_query} =
+             OperatorQueryService.get_archived_unified_trace_by_pivot(%{
+               installation_id: tenant_id,
+               pivot: "provider_supplied_future_pivot",
+               pivot_id: work_object.id
+             })
   end
 
   test "operator services archive paths use disposable temp storage outside the bridge package" do

@@ -7,6 +7,24 @@ defmodule Mezzanine.AppKitBridge.WorkQueryService do
   alias Mezzanine.WorkQueries
 
   @runtime_projection_name "operator_subject_runtime"
+  @lifecycle_statuses [
+    :unknown,
+    :planned,
+    :submitted,
+    :processing,
+    :pending,
+    :queued,
+    :running,
+    :awaiting_review,
+    :blocked,
+    :paused,
+    :completed,
+    :failed,
+    :cancelled,
+    :resolved,
+    :paid
+  ]
+  @lifecycle_status_lookup Map.new(@lifecycle_statuses, &{Atom.to_string(&1), &1})
 
   defdelegate ingest_subject(attrs, opts \\ []), to: WorkQueries
   defdelegate list_subjects(tenant_id, program_id, filters \\ %{}), to: WorkQueries
@@ -163,9 +181,7 @@ defmodule Mezzanine.AppKitBridge.WorkQueryService do
     value
     |> String.downcase()
     |> String.replace("-", "_")
-    |> String.to_existing_atom()
-  rescue
-    ArgumentError -> :unknown
+    |> then(&Map.get(@lifecycle_status_lookup, &1, :unknown))
   end
 
   defp review_status(payload) do

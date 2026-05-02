@@ -37,6 +37,26 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
     :attempts,
     :run_artifacts
   ]
+  @trace_pivots [
+    :trace_id,
+    :subject_id,
+    :execution_id,
+    :decision_id,
+    :run_id,
+    :attempt_id,
+    :artifact_id,
+    :manifest_ref
+  ]
+  @trace_pivot_lookup Map.new(@trace_pivots, &{Atom.to_string(&1), &1})
+  @audit_fact_columns %{
+    "id" => :id,
+    "trace_id" => :trace_id,
+    "causation_id" => :causation_id,
+    "occurred_at" => :occurred_at,
+    "fact_kind" => :fact_kind,
+    "actor_ref" => :actor_ref,
+    "payload" => :payload
+  }
 
   @spec run_status(RunRef.t(), map(), keyword()) :: {:ok, map()} | {:error, atom()}
   def run_status(%RunRef{} = run_ref, attrs, opts \\ []) when is_map(attrs) and is_list(opts) do
@@ -291,29 +311,18 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
     value = Keyword.get(opts, :pivot) || map_get(attrs, :pivot)
 
     case value do
-      pivot
-      when pivot in [
-             :trace_id,
-             :subject_id,
-             :execution_id,
-             :decision_id,
-             :run_id,
-             :attempt_id,
-             :artifact_id,
-             :manifest_ref
-           ] ->
+      pivot when pivot in @trace_pivots ->
         {:ok, pivot}
 
       pivot when is_binary(pivot) ->
-        pivot
-        |> String.to_existing_atom()
-        |> then(&fetch_trace_pivot(%{pivot: &1}, []))
+        case Map.fetch(@trace_pivot_lookup, pivot) do
+          {:ok, pivot} -> {:ok, pivot}
+          :error -> {:error, :invalid_trace_query}
+        end
 
       _other ->
         {:error, :invalid_trace_query}
     end
-  rescue
-    ArgumentError -> {:error, :invalid_trace_query}
   end
 
   defp fetch_trace_sources(attrs, opts, %Query{} = query, execution_id) do
@@ -685,7 +694,8 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
 
   defp result_rows(%Postgrex.Result{columns: columns, rows: rows}) do
     Enum.map(rows, fn row ->
-      Enum.zip(columns, row) |> Map.new(fn {key, value} -> {String.to_atom(key), value} end)
+      Enum.zip(columns, row)
+      |> Map.new(fn {key, value} -> {Map.get(@audit_fact_columns, key, key), value} end)
     end)
   end
 

@@ -4,6 +4,7 @@ defmodule AppKit.Core.RuntimeReadback.DtosTest do
   alias AppKit.Core.RuntimeReadback.{
     CommandReconciliation,
     CommandResult,
+    Diagnostic,
     RuntimeRunDetail,
     RuntimeStateSnapshot,
     WorkspaceRef
@@ -88,6 +89,22 @@ defmodule AppKit.Core.RuntimeReadback.DtosTest do
 
     assert result.workflow_effect_state == "not_available"
     assert result.receipt_ref == nil
+  end
+
+  test "diagnostics bound severity strings without accepting unknown atom names" do
+    assert {:ok, %Diagnostic{severity: :warning}} =
+             Diagnostic.new(%{
+               severity: "warning",
+               code: "bounded_severity",
+               message: "bounded"
+             })
+
+    assert {:error, :invalid_diagnostic} =
+             Diagnostic.new(%{
+               severity: "provider_supplied_future_severity",
+               code: "unbounded",
+               message: "unbounded"
+             })
   end
 
   test "database_first reconciliation has bounded terminal signal rejection reasons" do

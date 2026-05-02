@@ -591,6 +591,44 @@ defmodule AppKit.Core.ContractTest do
              })
   end
 
+  test "operator projection enums accept only bounded string values" do
+    assert {:ok, %OperatorSurfaceProjection{dispatch_state: :delivered_to_temporal}} =
+             OperatorSurfaceProjection.new(operator_surface_projection_attrs())
+
+    assert {:error, :invalid_operator_surface_projection} =
+             OperatorSurfaceProjection.new(
+               Map.put(
+                 operator_surface_projection_attrs(),
+                 :dispatch_state,
+                 "provider_supplied_future_dispatch"
+               )
+             )
+
+    assert {:ok, %OperatorSignalResult{projection_state: :fresh}} =
+             OperatorSignalResult.new(operator_signal_result_attrs())
+
+    assert {:error, :invalid_operator_signal_result} =
+             OperatorSignalResult.new(
+               Map.put(
+                 operator_signal_result_attrs(),
+                 :projection_state,
+                 "provider_supplied_future_projection"
+               )
+             )
+
+    assert {:ok, %ObserverDescriptor{staleness_class: :diagnostic_only}} =
+             ObserverDescriptor.new(observer_descriptor_attrs())
+
+    assert {:error, :invalid_observer_descriptor} =
+             ObserverDescriptor.new(
+               Map.put(
+                 observer_descriptor_attrs(),
+                 :staleness_class,
+                 "provider_supplied_future_staleness"
+               )
+             )
+  end
+
   test "builds observer descriptors that isolate tenant scope and redacted fields" do
     assert {:ok, descriptor} =
              ObserverDescriptor.new(%{
@@ -1101,5 +1139,83 @@ defmodule AppKit.Core.ContractTest do
     assert {:record_decision, 4} in ReviewBackend.behaviour_info(:callbacks)
     assert {:create_installation, 3} in InstallationBackend.behaviour_info(:callbacks)
     assert {:reactivate_installation, 3} in InstallationBackend.behaviour_info(:callbacks)
+  end
+
+  defp operator_surface_projection_attrs do
+    %{
+      projection_ref: %{
+        name: "operator_signal_projection",
+        subject_ref: %{id: "subj-1", subject_kind: "expense_request"},
+        schema_ref: "AppKit.OperatorSurfaceProjection.v1",
+        schema_version: 1
+      },
+      tenant_ref: %{id: "tenant-1"},
+      installation_ref: %{id: "inst-1", pack_slug: "expense_approval"},
+      operator_ref: %{id: "ops-lead", kind: :human},
+      target_ref: %{id: "workflow/expense-1", kind: "workflow"},
+      authority_packet_ref: "authz-packet-1",
+      permission_decision_ref: "decision-1",
+      idempotency_key: "operator-signal:cancel:1",
+      trace_id: "0123456789abcdef0123456789abcdef",
+      correlation_id: "corr-1",
+      release_manifest_ref: "phase4-v6-milestone3",
+      projection_version: 7,
+      source_event_position: 42,
+      observed_at: ~U[2026-04-18 12:00:00Z],
+      produced_at: ~U[2026-04-18 12:00:02Z],
+      staleness_class: "pending_workflow_ack",
+      dispatch_state: "delivered_to_temporal",
+      workflow_effect_state: "pending"
+    }
+  end
+
+  defp operator_signal_result_attrs do
+    %{
+      command_id: "cmd-098",
+      signal_id: "signal-098",
+      workflow_ref: "workflow://workflow-098/run-098",
+      tenant_ref: %{id: "tenant-1"},
+      installation_ref: %{id: "inst-1", pack_slug: "expense_approval"},
+      operator_ref: %{id: "ops-lead", kind: :human},
+      resource_ref: %{id: "workflow/expense-1", kind: "workflow"},
+      authority_packet_ref: "authz-packet-098",
+      permission_decision_ref: "decision-098",
+      idempotency_key: "operator-signal:cancel:098",
+      trace_id: "0123456789abcdef0123456789abcdef",
+      correlation_id: "corr-098",
+      release_manifest_version: "phase4.v6.milestone28",
+      authority_state: "authorized",
+      local_state: "accepted",
+      dispatch_state: "delivered_to_temporal",
+      workflow_effect_state: "pending",
+      projection_state: "fresh",
+      operator_message: "workflow effect projected"
+    }
+  end
+
+  defp observer_descriptor_attrs do
+    %{
+      observer_ref: "observer:hindsight-audit",
+      projection_ref: %{
+        name: "hindsight_audit",
+        subject_ref: %{id: "subj-1", subject_kind: "expense_request"},
+        schema_ref: "AppKit.ObserverDescriptor.v1",
+        schema_version: 1
+      },
+      tenant_ref: %{id: "tenant-1"},
+      installation_ref: %{id: "inst-1", pack_slug: "expense_approval"},
+      principal_ref: %{id: "ops-lead", kind: :human},
+      resource_ref: %{id: "audit/subj-1", kind: "audit_stream"},
+      authority_packet_ref: "authz-packet-1",
+      permission_decision_ref: "decision-1",
+      idempotency_key: "observer:tenant-1:hindsight",
+      trace_id: "fedcba9876543210fedcba9876543210",
+      correlation_id: "corr-observer-1",
+      release_manifest_ref: "phase4-v6-milestone3",
+      staleness_class: "diagnostic_only",
+      redaction_policy_ref: "redaction/operator-observer-v1",
+      allowed_fields: ["observer_ref", "projection_ref", "staleness_class"],
+      blocked_fields: ["raw_provider_metadata"]
+    }
   end
 end

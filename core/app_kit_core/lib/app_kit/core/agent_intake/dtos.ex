@@ -115,7 +115,7 @@ defmodule AppKit.Core.AgentIntake.TurnSubmission do
   alias AppKit.Core.Substrate.Dump
 
   @kinds [:user_input, :approval, :denial, :replan_hint, :rework_hint, :cancel]
-  @string_kinds Enum.map(@kinds, &Atom.to_string/1)
+  @kind_lookup Map.new(@kinds, &{Atom.to_string(&1), &1})
 
   @enforce_keys [:idempotency_key, :actor_ref, :run_ref, :kind, :payload_ref]
   defstruct [:idempotency_key, :actor_ref, :run_ref, :kind, :payload_ref, params: %{}]
@@ -131,8 +131,7 @@ defmodule AppKit.Core.AgentIntake.TurnSubmission do
          true <- Support.safe_ref?(actor_ref),
          run_ref when is_binary(run_ref) <- Support.required(attrs, :run_ref),
          true <- Support.safe_ref?(run_ref),
-         kind <- Support.required(attrs, :kind),
-         true <- valid_kind?(kind),
+         {:ok, kind} <- normalize_kind(Support.required(attrs, :kind)),
          payload_ref when is_binary(payload_ref) <- Support.required(attrs, :payload_ref),
          true <- Support.safe_ref?(payload_ref),
          params <- Support.optional(attrs, :params, %{}),
@@ -142,7 +141,7 @@ defmodule AppKit.Core.AgentIntake.TurnSubmission do
          idempotency_key: idempotency_key,
          actor_ref: actor_ref,
          run_ref: run_ref,
-         kind: normalize_kind(kind),
+         kind: kind,
          payload_ref: payload_ref,
          params: params
        }}
@@ -155,9 +154,17 @@ defmodule AppKit.Core.AgentIntake.TurnSubmission do
   def new!(attrs), do: new(attrs) |> bang()
   defp bang({:ok, value}), do: value
   defp bang({:error, reason}), do: raise(ArgumentError, Atom.to_string(reason))
-  defp valid_kind?(kind), do: kind in @kinds or kind in @string_kinds
-  defp normalize_kind(kind) when is_binary(kind), do: String.to_atom(kind)
-  defp normalize_kind(kind), do: kind
+
+  defp normalize_kind(kind) when is_atom(kind) do
+    if kind in @kinds do
+      {:ok, kind}
+    else
+      :error
+    end
+  end
+
+  defp normalize_kind(kind) when is_binary(kind), do: Map.fetch(@kind_lookup, kind)
+  defp normalize_kind(_kind), do: :error
 end
 
 defmodule AppKit.Core.AgentIntake.RunOutcomeFuture do

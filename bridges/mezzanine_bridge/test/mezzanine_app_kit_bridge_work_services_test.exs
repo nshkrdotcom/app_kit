@@ -168,12 +168,43 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert projection.subject_id == subject_id
     assert projection.subject_kind == "linear_coding_ticket"
     assert projection.lifecycle_state == "awaiting_review"
+    assert projection.work_status == :awaiting_review
     assert projection.review_status == :pending
     assert projection.runtime["token_totals"] == %{"input" => 120, "output" => 45}
     assert projection.runtime["rate_limit"]["remaining"] == 80
     assert projection.runtime["event_counts"]["tool_call"] == 2
     assert projection.lower_receipt["receipt_id"] == "receipt-1"
     assert [%{"evidence_kind" => "pull_request"}] = projection.evidence["evidence_refs"]
+  end
+
+  test "work query service maps unknown runtime lifecycle strings to unknown" do
+    subject_id = Ecto.UUID.generate()
+
+    fetcher = fn "tenant-runtime", ^subject_id, _opts ->
+      {:ok,
+       %{
+         projection_name: "operator_subject_runtime",
+         subject_id: subject_id,
+         computed_at: ~U[2026-04-25 13:00:00Z],
+         payload: %{
+           "subject" => %{
+             "subject_id" => subject_id,
+             "subject_kind" => "linear_coding_ticket",
+             "lifecycle_state" => "provider_supplied_future_lifecycle"
+           },
+           "source_binding" => %{"source_ref" => "source://linear/#{subject_id}"},
+           "execution" => %{},
+           "lower_receipt" => %{}
+         }
+       }}
+    end
+
+    assert {:ok, projection} =
+             WorkQueryService.get_subject_projection("tenant-runtime", subject_id,
+               projection_row_fetcher: fetcher
+             )
+
+    assert projection.work_status == :unknown
   end
 
   test "work query service does not fall back to generic subject projections for runtime reads" do

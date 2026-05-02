@@ -960,15 +960,10 @@ defmodule AppKit.Core.OperatorSurfaceProjection do
   end
 
   defp normalize_enum(value, allowed) when is_binary(value) do
-    normalized = String.to_existing_atom(value)
-
-    if normalized in allowed do
-      {:ok, normalized}
-    else
-      :error
+    case Enum.find(allowed, &(Atom.to_string(&1) == value)) do
+      nil -> :error
+      normalized -> {:ok, normalized}
     end
-  rescue
-    ArgumentError -> :error
   end
 
   defp normalize_enum(_value, _allowed), do: :error
@@ -1180,15 +1175,10 @@ defmodule AppKit.Core.OperatorSignalResult do
   end
 
   defp normalize_enum(value, allowed) when is_binary(value) do
-    normalized = String.to_existing_atom(value)
-
-    if normalized in allowed do
-      {:ok, normalized}
-    else
-      :error
+    case Enum.find(allowed, &(Atom.to_string(&1) == value)) do
+      nil -> :error
+      normalized -> {:ok, normalized}
     end
-  rescue
-    ArgumentError -> :error
   end
 
   defp normalize_enum(_value, _allowed), do: :error
@@ -1361,15 +1351,10 @@ defmodule AppKit.Core.ObserverDescriptor do
   end
 
   defp normalize_enum(value, allowed) when is_binary(value) do
-    normalized = String.to_existing_atom(value)
-
-    if normalized in allowed do
-      {:ok, normalized}
-    else
-      :error
+    case Enum.find(allowed, &(Atom.to_string(&1) == value)) do
+      nil -> :error
+      normalized -> {:ok, normalized}
     end
-  rescue
-    ArgumentError -> :error
   end
 
   defp normalize_enum(_value, _allowed), do: :error

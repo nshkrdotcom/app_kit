@@ -144,7 +144,8 @@ defmodule AppKit.Core.RuntimeReadback.Diagnostic do
 
   alias AppKit.Core.RuntimeReadback.Support
 
-  @severities [:debug, :info, :warning, :error, "debug", "info", "warning", "error"]
+  @severity_atoms [:debug, :info, :warning, :error]
+  @severity_lookup Map.new(@severity_atoms, &{Atom.to_string(&1), &1})
   defstruct [:severity, :code, :message, :source_ref, :trace_ref, :semantic_failure_ref]
 
   def new(%__MODULE__{} = value), do: {:ok, value}
@@ -152,8 +153,7 @@ defmodule AppKit.Core.RuntimeReadback.Diagnostic do
   def new(attrs) do
     with {:ok, attrs, nil} <- Support.normalize(attrs),
          :ok <- Support.reject_selectors(attrs, :invalid_diagnostic),
-         severity <- Support.optional(attrs, :severity, :info),
-         true <- severity in @severities,
+         {:ok, severity} <- normalize_severity(Support.optional(attrs, :severity, :info)),
          code <- Support.optional(attrs, :code),
          true <- is_nil(code) or Support.present_binary?(code),
          message <- Support.optional(attrs, :message),
@@ -166,7 +166,7 @@ defmodule AppKit.Core.RuntimeReadback.Diagnostic do
          true <- Support.optional_ref?(semantic_failure_ref) do
       {:ok,
        %__MODULE__{
-         severity: normalize_atom(severity),
+         severity: severity,
          code: code,
          message: message,
          source_ref: source_ref,
@@ -179,8 +179,17 @@ defmodule AppKit.Core.RuntimeReadback.Diagnostic do
   end
 
   def dump(%__MODULE__{} = value), do: Support.dump_struct(value)
-  defp normalize_atom(value) when is_binary(value), do: String.to_atom(value)
-  defp normalize_atom(value), do: value
+
+  defp normalize_severity(value) when is_atom(value) do
+    if value in @severity_atoms do
+      {:ok, value}
+    else
+      :error
+    end
+  end
+
+  defp normalize_severity(value) when is_binary(value), do: Map.fetch(@severity_lookup, value)
+  defp normalize_severity(_value), do: :error
 end
 
 defmodule AppKit.Core.RuntimeReadback.TokenTotals do

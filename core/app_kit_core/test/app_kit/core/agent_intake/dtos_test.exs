@@ -50,8 +50,15 @@ defmodule AppKit.Core.AgentIntake.DtosTest do
     }
 
     assert {:ok, %TurnSubmission{kind: :user_input}} = TurnSubmission.new(base)
+
+    assert {:ok, %TurnSubmission{kind: :approval}} =
+             TurnSubmission.new(%{base | kind: "approval"})
+
     assert {:error, :invalid_turn_submission} = TurnSubmission.new(Map.put(base, :prompt, "raw"))
     assert {:error, :invalid_turn_submission} = TurnSubmission.new(Map.put(base, :tool_call, %{}))
+
+    assert {:error, :invalid_turn_submission} =
+             TurnSubmission.new(%{base | kind: "provider_supplied_future_kind"})
   end
 
   test "run outcome futures expose polling hints" do
