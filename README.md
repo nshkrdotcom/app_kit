@@ -31,8 +31,11 @@ Installation bootstrap includes a separate operator-only authoring bundle
 import path. Normal installation templates continue to reject deployment and
 platform-migration fields; `AppKit.InstallationSurface.import_authoring_bundle/3`
 uses `AppKit.Core.AuthoringBundleImport` and the Mezzanine bridge to validate
-checksum, configured signature, descriptor policy, and installation revision
-before the lower config registry activates anything.
+checksum/schema posture, descriptor policy, and installation revision before
+the lower config registry activates anything. Authoring bundles are verified by
+checksum/schema validation in v1 unless Phase 1 source-verifies
+signing/signature-verification modules and tests or Phase 7 implements signing.
+Signature verification is a post-v1/new-contract candidate until then.
 
 ## Scope
 
@@ -157,9 +160,9 @@ This project is licensed under the MIT License.
 
 ## Temporal developer environment
 
-Temporal CLI is expected to be available as `temporal` on this developer workstation for local durable-workflow development. Current provisioning is machine-level dotfiles setup, not a repo-local dependency.
-
-TODO: make Temporal ergonomics explicit for developers by adding repo-local setup scripts, version expectations, and fallback instructions so the tool is not silently assumed from the workstation.
+Temporal runtime development is managed from `/home/home/p/g/n/mezzanine`
+through the repo-owned `just` workflow. Do not start ad hoc Temporal processes
+or rely on the `temporal` CLI as the implementation runbook.
 
 ## Native Temporal development substrate
 

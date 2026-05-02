@@ -27,14 +27,18 @@ Current contract groups:
   suppression visibility projection
 - runtime projection DTOs for source binding, workspace, execution, lower
   receipt, evidence, review, operator-command, and runtime-event facts
-- extension supply-chain DTOs for pack signature, pack bundle schema, and
-  connector-admission projection
+- extension supply-chain DTOs for pack integrity posture, pack bundle schema,
+  and connector-admission projection
 - northbound backend behaviours for work queries, reviews, and installations
 
 `AuthoringBundleImport` is intentionally separate from ordinary installation
-templates. It carries bundle checksum/signature, manifest/spec echoes,
+templates. It carries bundle checksum/schema posture, manifest/spec echoes,
 descriptor metadata, policy refs, and optional expected installation revision;
 it rejects platform deployment or migration fields at the AppKit boundary.
+Authoring bundles are verified by checksum/schema validation in v1 unless
+Phase 1 source-verifies signing/signature-verification modules and tests or
+Phase 7 implements signing. Signature verification is a post-v1/new-contract
+candidate until then.
 
 `ProductTenantContext`, `ProductCertification`, `ProductBoundaryNoBypassScan`,
 and `FullProductFabricSmoke` are the Phase 4 product fabric contracts. They
@@ -79,12 +83,13 @@ hash-chain, diagnostics, and recovery-action fields required for incident
 reconstruction.
 
 `ExtensionPackSignatureProjection`, `ExtensionPackBundleProjection`, and
-`ConnectorAdmissionProjection` are the Phase 4 product/operator projection DTOs
-for extension supply-chain evidence. They preserve AppKit as a read-only
-consumer of Mezzanine pack authoring truth and Jido Integration connector
-admission truth while carrying tenant, authority, trace, release-manifest,
-source-contract, signature, schema, declared-resource, connector, and duplicate
-admission fields needed for product registry views.
+`ConnectorAdmissionProjection` are contract-only product/operator projection
+DTOs for extension supply-chain evidence until their owning executable proofs
+are green. They preserve AppKit as a read-only consumer of Mezzanine pack
+authoring truth and Jido Integration connector admission truth while carrying
+tenant, authority, trace, release-manifest, source-contract, integrity posture,
+schema, declared-resource, connector, and duplicate admission fields needed for
+product registry views.
 
 `SubjectRuntimeProjection` and its nested runtime DTOs are the typed coding-ops
 operator projection contract. They carry only refs and reducer facts that come
