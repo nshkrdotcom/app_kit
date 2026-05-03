@@ -6,5 +6,7 @@ surface.
 Its default backend is `AppKit.Bridges.MezzanineBridge`, which keeps review
 listings and review actions behind the stable `AppKit.Core.*` DTO contract.
 
-The default backend is read from `config :app_kit_core, :review_backend, ...`
-unless callers pass `:review_backend` directly in options.
+Standalone backends can be read from `config :app_kit_core, :review_backend,
+...`. Governed calls ignore that fallback when `:governed?` or authority-ref
+options are present; callers must pass `:review_backend` directly or use the
+compiled default bridge.

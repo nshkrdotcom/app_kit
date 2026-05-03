@@ -16,6 +16,8 @@ defmodule AppKit.InstallationSurface do
     SurfaceError
   }
 
+  alias AppKit.BackendConfig
+
   @spec create_installation(RequestContext.t(), InstallTemplate.t(), keyword()) ::
           {:ok, InstallResult.t()} | {:error, SurfaceError.t()}
   def create_installation(%RequestContext{} = context, %InstallTemplate{} = template, opts \\ []) do
@@ -86,11 +88,11 @@ defmodule AppKit.InstallationSurface do
   end
 
   defp backend(opts) do
-    Keyword.get(opts, :installation_backend) ||
-      Application.get_env(
-        :app_kit_core,
-        :installation_backend,
-        AppKit.Bridges.MezzanineBridge
-      )
+    BackendConfig.resolve(
+      opts,
+      :installation_backend,
+      :installation_backend,
+      AppKit.Bridges.MezzanineBridge
+    )
   end
 end

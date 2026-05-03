@@ -10,9 +10,11 @@ operator reads. Bridge backends must preserve that scope in `ReadLease` and
 `StreamAttachLease` DTOs so Mezzanine can fail closed on tenant, installation,
 subject, execution, or trace mismatch before any lower-facts read is attempted.
 
-The default backend is read from `config :app_kit_core, :operator_backend, ...`
-unless callers pass `:operator_backend` directly in options. Products should not
-configure a synthetic `:app_kit` application.
+Standalone backends can be read from `config :app_kit_core, :operator_backend,
+...`. Governed calls ignore that fallback when `:governed?` or authority-ref
+options are present; callers must pass `:operator_backend` directly or use the
+compiled default backend. Products should not configure a synthetic `:app_kit`
+application or use process config as authority.
 
 ## Phase 4 projection contracts
 

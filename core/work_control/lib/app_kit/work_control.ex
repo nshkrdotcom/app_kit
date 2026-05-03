@@ -3,7 +3,16 @@ defmodule AppKit.WorkControl do
   Reusable governed-run and work-submission helpers.
   """
 
-  alias AppKit.Core.{ActionResult, RequestContext, Result, RunRef, RunRequest, SurfaceError}
+  alias AppKit.Core.{
+    ActionResult,
+    RequestContext,
+    Result,
+    RunRef,
+    RunRequest,
+    SurfaceError
+  }
+
+  alias AppKit.BackendConfig
 
   def start_run(domain_call_or_context, opts_or_request \\ [])
 
@@ -50,7 +59,6 @@ defmodule AppKit.WorkControl do
   end
 
   defp backend(opts) do
-    Keyword.get(opts, :work_backend) ||
-      Application.get_env(:app_kit_core, :work_backend, AppKit.WorkControl.DefaultBackend)
+    BackendConfig.resolve(opts, :work_backend, :work_backend, AppKit.WorkControl.DefaultBackend)
   end
 end

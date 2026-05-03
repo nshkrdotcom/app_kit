@@ -2,11 +2,13 @@ defmodule AppKit.HeadlessSurface do
   @moduledoc """
   Product-facing M1 readback and control surface.
 
-  Products call this module instead of lower Mezzanine internals. The default
-  backend is configured under the real `:app_kit_core` application and resolves
-  to `AppKit.Bridges.MezzanineBridge` in integrated hosts.
+  Products call this module instead of lower Mezzanine internals. Standalone
+  backend fallback is configured under the real `:app_kit_core` application;
+  governed calls ignore that fallback and resolve to explicit options or the
+  compiled `AppKit.Bridges.MezzanineBridge` default.
   """
 
+  alias AppKit.BackendConfig
   alias AppKit.Core.RuntimeReadback.{ControlRequest, RefreshRequest}
 
   @backend_key :headless_backend
@@ -37,8 +39,7 @@ defmodule AppKit.HeadlessSurface do
   end
 
   defp backend(opts) do
-    Keyword.get(opts, :backend) ||
-      Application.get_env(:app_kit_core, @backend_key, @default_backend)
+    BackendConfig.resolve(opts, :backend, @backend_key, @default_backend)
   end
 end
 
@@ -51,6 +52,7 @@ defmodule AppKit.AgentIntake do
   around AppKit or calling providers directly.
   """
 
+  alias AppKit.BackendConfig
   alias AppKit.Core.AgentIntake.{AgentRunRequest, TurnSubmission}
 
   @backend_key :agent_intake_backend
@@ -77,7 +79,6 @@ defmodule AppKit.AgentIntake do
   end
 
   defp backend(opts) do
-    Keyword.get(opts, :backend) ||
-      Application.get_env(:app_kit_core, @backend_key, @default_backend)
+    BackendConfig.resolve(opts, :backend, @backend_key, @default_backend)
   end
 end

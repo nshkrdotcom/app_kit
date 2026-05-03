@@ -98,11 +98,14 @@ DTO, mapper, mapper test, and a deterministic
 `generated_artifacts/<schema_name>_schema_registry.exs` manifest with artifact
 hashes for release-manifest and Stack Lab proof linkage.
 
-Default AppKit surface backends are configured under the real OTP application
-`:app_kit_core`, for example `:installation_backend`, `:work_query_backend`,
-`:review_backend`, `:operator_backend`, and `:work_backend`. Products may pass
-explicit backend options for tests, but product runtime configuration should
-not create a synthetic `:app_kit` config namespace.
+Standalone AppKit surface backends may be configured under the real OTP
+application `:app_kit_core`, for example `:installation_backend`,
+`:work_query_backend`, `:review_backend`, `:operator_backend`, and
+`:work_backend`. Governed calls ignore application-env backend fallback when
+they carry `:governed?` or authority-ref options; they must pass explicit
+authority-selected backend material or use the compiled AppKit default backend.
+Product runtime configuration must not create a synthetic `:app_kit` config
+namespace and must not use process config as authority.
 
 Lower-backed operator reads must stay behind AppKit surfaces. The Mezzanine
 bridge carries read and stream-attach `authorization_scope` in public DTOs so

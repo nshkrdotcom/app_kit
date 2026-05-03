@@ -25,9 +25,12 @@ product imports into lower governed-write APIs while allowing pure
 `Mezzanine.Pack` authoring. The `hazmat` profile rejects direct Execution Plane
 usage so the execution layer cannot become a product API.
 
-Default surface backends are configured under `:app_kit_core`. The config keys
-match the surface families: `:installation_backend`, `:work_query_backend`,
-`:review_backend`, `:operator_backend`, and `:work_backend`.
+Standalone surface backends may be configured under `:app_kit_core`. The config
+keys match the surface families: `:installation_backend`, `:work_query_backend`,
+`:review_backend`, `:operator_backend`, and `:work_backend`. Governed calls
+ignore those application-env fallback keys when `:governed?` or authority-ref
+options are present, so process config cannot select bridge behavior, operator
+actions, or DTO authority.
 
 `WorkSurface.get_runtime_projection/3` is the typed runtime read for
 coding-ops operator views. It returns `AppKit.Core.SubjectRuntimeProjection`

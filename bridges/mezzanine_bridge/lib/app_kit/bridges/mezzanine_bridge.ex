@@ -7,6 +7,8 @@ defmodule AppKit.Bridges.MezzanineBridge do
   structs or lower package topology.
   """
 
+  alias AppKit.BackendConfig
+
   @behaviour AppKit.Core.Backends.InstallationBackend
   @behaviour AppKit.Core.Backends.OperatorBackend
   @behaviour AppKit.Core.Backends.ReviewBackend
@@ -2658,8 +2660,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp runtime_available?(_runtime), do: false
 
   defp agent_runtime(opts),
-    do:
-      Keyword.get(opts, :agent_loop_runtime) || Application.get_env(:app_kit_core, :agent_runtime)
+    do: BackendConfig.resolve_optional(opts, :agent_loop_runtime, :agent_runtime)
 
   defp public_readback_map(%DateTime{} = value), do: value
 

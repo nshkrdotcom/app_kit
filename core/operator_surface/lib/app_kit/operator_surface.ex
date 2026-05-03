@@ -4,6 +4,7 @@ defmodule AppKit.OperatorSurface do
   """
 
   alias AppKit.AppConfig
+  alias AppKit.BackendConfig
 
   alias AppKit.Core.{
     ActionResult,
@@ -235,8 +236,12 @@ defmodule AppKit.OperatorSurface do
   end
 
   defp backend(opts) do
-    Keyword.get(opts, :operator_backend) ||
-      Application.get_env(:app_kit_core, :operator_backend, AppKit.OperatorSurface.DefaultBackend)
+    BackendConfig.resolve(
+      opts,
+      :operator_backend,
+      :operator_backend,
+      AppKit.OperatorSurface.DefaultBackend
+    )
   end
 
   defp with_operator_surface(opts, callback) when is_function(callback, 1) do

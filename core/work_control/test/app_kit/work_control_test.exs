@@ -1,5 +1,5 @@
 defmodule AppKit.WorkControlTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   defmodule FakeWorkBackend do
     @behaviour AppKit.Core.Backends.WorkBackend
@@ -50,6 +50,52 @@ defmodule AppKit.WorkControlTest do
     end
   end
 
+  defmodule EnvWorkBackend do
+    @behaviour AppKit.Core.Backends.WorkBackend
+
+    alias AppKit.Core.{ActionResult, RequestContext, Result, RunRef, RunRequest}
+
+    @impl true
+    def start_run(domain_call, _opts) do
+      Result.new(%{
+        surface: :work_control,
+        state: :scheduled,
+        payload: %{backend: :app_env, domain_call: domain_call}
+      })
+    end
+
+    @impl true
+    def start_run(%RequestContext{} = context, %RunRequest{} = run_request, _opts) do
+      Result.new(%{
+        surface: :work_control,
+        state: :scheduled,
+        payload: %{
+          backend: :app_env,
+          trace_id: context.trace_id,
+          subject_id: run_request.subject_ref.id
+        }
+      })
+    end
+
+    @impl true
+    def retry_run(%RequestContext{} = context, %RunRef{} = run_ref, _opts) do
+      ActionResult.new(%{
+        status: :accepted,
+        action_ref: %{id: "#{run_ref.run_id}:retry", action_kind: "retry"},
+        message: context.trace_id
+      })
+    end
+
+    @impl true
+    def cancel_run(%RequestContext{} = context, %RunRef{} = run_ref, _opts) do
+      ActionResult.new(%{
+        status: :accepted,
+        action_ref: %{id: "#{run_ref.run_id}:cancel", action_kind: "cancel"},
+        message: context.trace_id
+      })
+    end
+  end
+
   alias AppKit.Core.{RequestContext, RunRef, RunRequest}
   alias AppKit.WorkControl
 
@@ -74,6 +120,23 @@ defmodule AppKit.WorkControlTest do
     assert result.payload.backend == :fake
     assert result.payload.domain_call.route_name == :compile_workspace
     assert result.payload.opts.target == :custom
+  end
+
+  test "governed calls do not select work backend from application env" do
+    previous_backend = Application.get_env(:app_kit_core, :work_backend, :unset)
+    Application.put_env(:app_kit_core, :work_backend, EnvWorkBackend)
+
+    on_exit(fn -> restore_work_backend(previous_backend) end)
+
+    assert {:ok, result} =
+             WorkControl.start_run(
+               %{route_name: :compile_workspace, scope_id: "workspace/main"},
+               governed?: true,
+               review_required: true
+             )
+
+    assert result.state == :waiting_review
+    refute Map.get(result.payload, :backend) == :app_env
   end
 
   test "starts, retries, and cancels through the widened typed work-control contract" do
@@ -131,4 +194,9 @@ defmodule AppKit.WorkControlTest do
 
     run_request
   end
+
+  defp restore_work_backend(:unset), do: Application.delete_env(:app_kit_core, :work_backend)
+
+  defp restore_work_backend(backend),
+    do: Application.put_env(:app_kit_core, :work_backend, backend)
 end

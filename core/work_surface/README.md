@@ -8,9 +8,10 @@ In Phase `3.2` it defaults to `AppKit.Bridges.MezzanineBridge`, which keeps the
 public contract in `app_kit_core` while routing the lower implementation through
 the internal app-kit mezzanine bridge service layer.
 
-The default query backend is read from `config :app_kit_core,
-:work_query_backend, ...` unless callers pass `:work_query_backend` directly in
-options.
+Standalone query backends can be read from `config :app_kit_core,
+:work_query_backend, ...`. Governed calls ignore that fallback when `:governed?`
+or authority-ref options are present; callers must pass `:work_query_backend`
+directly or use the compiled default bridge.
 
 Use `get_runtime_projection/3` for the coding-ops operator runtime view. The
 result is `AppKit.Core.SubjectRuntimeProjection`, assembled from source refs,

@@ -12,6 +12,8 @@ defmodule AppKit.ReviewSurface do
     SurfaceError
   }
 
+  alias AppKit.BackendConfig
+
   @spec list_pending(RequestContext.t(), PageRequest.t(), keyword()) ::
           {:ok, PageResult.t()} | {:error, SurfaceError.t()}
   def list_pending(%RequestContext{} = context, %PageRequest{} = page_request, opts \\ []) do
@@ -37,7 +39,6 @@ defmodule AppKit.ReviewSurface do
   end
 
   defp backend(opts) do
-    Keyword.get(opts, :review_backend) ||
-      Application.get_env(:app_kit_core, :review_backend, AppKit.Bridges.MezzanineBridge)
+    BackendConfig.resolve(opts, :review_backend, :review_backend, AppKit.Bridges.MezzanineBridge)
   end
 end

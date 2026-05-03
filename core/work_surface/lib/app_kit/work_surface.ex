@@ -15,6 +15,8 @@ defmodule AppKit.WorkSurface do
     SurfaceError
   }
 
+  alias AppKit.BackendConfig
+
   @spec ingest_subject(RequestContext.t(), map(), keyword()) ::
           {:ok, SubjectRef.t()} | {:error, SurfaceError.t()}
   def ingest_subject(%RequestContext{} = context, attrs, opts \\ []) when is_map(attrs) do
@@ -53,7 +55,11 @@ defmodule AppKit.WorkSurface do
   end
 
   defp backend(opts) do
-    Keyword.get(opts, :work_query_backend) ||
-      Application.get_env(:app_kit_core, :work_query_backend, AppKit.Bridges.MezzanineBridge)
+    BackendConfig.resolve(
+      opts,
+      :work_query_backend,
+      :work_query_backend,
+      AppKit.Bridges.MezzanineBridge
+    )
   end
 end
