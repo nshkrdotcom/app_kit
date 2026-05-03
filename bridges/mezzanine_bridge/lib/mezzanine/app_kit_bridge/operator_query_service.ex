@@ -48,15 +48,41 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
     :manifest_ref
   ]
   @trace_pivot_lookup Map.new(@trace_pivots, &{Atom.to_string(&1), &1})
-  @audit_fact_columns %{
-    "id" => :id,
-    "trace_id" => :trace_id,
-    "causation_id" => :causation_id,
-    "occurred_at" => :occurred_at,
-    "fact_kind" => :fact_kind,
-    "actor_ref" => :actor_ref,
-    "payload" => :payload
-  }
+  @trace_row_fields [
+    :id,
+    :trace_id,
+    :causation_id,
+    :occurred_at,
+    :fact_kind,
+    :actor_ref,
+    :payload,
+    :subject_id,
+    :dispatch_state,
+    :recipe_ref,
+    :compiled_pack_revision,
+    :lower_receipt,
+    :barrier_id,
+    :last_reconcile_wave_id,
+    :supersedes_execution_id,
+    :failure_kind,
+    :terminal_rejection_reason,
+    :inserted_at,
+    :updated_at,
+    :execution_id,
+    :decision_kind,
+    :lifecycle_state,
+    :decision_value,
+    :reason,
+    :resolved_at,
+    :evidence_kind,
+    :status,
+    :collector_ref,
+    :content_ref,
+    :metadata,
+    :collected_at,
+    :staleness_class
+  ]
+  @trace_row_columns Map.new(@trace_row_fields, &{Atom.to_string(&1), &1})
 
   @spec run_status(RunRef.t(), map(), keyword()) :: {:ok, map()} | {:error, atom()}
   def run_status(%RunRef{} = run_ref, attrs, opts \\ []) when is_map(attrs) and is_list(opts) do
@@ -272,8 +298,9 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
          {:ok, archived} <-
            ArchivalQuery.archived_trace_sources_by_pivot(installation_id, pivot, pivot_id),
          {:ok, query} <- build_unified_trace_query(attrs, installation_id, archived.trace_id),
+         normalized_sources <- normalize_trace_sources(archived.sources),
          {:ok, timeline} <-
-           UnifiedTrace.assemble(query, Map.put(archived.sources, :lower_facts, [])) do
+           UnifiedTrace.assemble(query, Map.put(normalized_sources, :lower_facts, [])) do
       {:ok,
        %{
          trace_id: timeline.trace_id,
@@ -674,7 +701,11 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   end
 
   defp normalize_trace_row(row) when is_map(row) do
-    row = Map.new(row)
+    row =
+      Map.new(row, fn
+        {key, value} when is_binary(key) -> {Map.get(@trace_row_columns, key, key), value}
+        {key, value} -> {key, value}
+      end)
 
     Map.put(
       row,
@@ -695,7 +726,7 @@ defmodule Mezzanine.AppKitBridge.OperatorQueryService do
   defp result_rows(%Postgrex.Result{columns: columns, rows: rows}) do
     Enum.map(rows, fn row ->
       Enum.zip(columns, row)
-      |> Map.new(fn {key, value} -> {Map.get(@audit_fact_columns, key, key), value} end)
+      |> Map.new(fn {key, value} -> {Map.get(@trace_row_columns, key, key), value} end)
     end)
   end
 

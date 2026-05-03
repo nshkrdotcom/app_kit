@@ -2680,11 +2680,32 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   defp ref_suffix(ref) when is_binary(ref) do
     ref
-    |> String.replace(~r/[^A-Za-z0-9]+/, "-")
+    |> ascii_alnum_dash()
     |> String.trim("-")
   end
 
   defp ref_suffix(ref), do: ref |> to_string() |> ref_suffix()
+
+  defp ascii_alnum_dash(value) do
+    value
+    |> :binary.bin_to_list()
+    |> Enum.reduce({[], false}, &ascii_alnum_dash_byte/2)
+    |> elem(0)
+    |> Enum.reverse()
+    |> List.to_string()
+  end
+
+  defp ascii_alnum_dash_byte(byte, {chars, _previous_dash?}) when byte in ?A..?Z,
+    do: {[byte | chars], false}
+
+  defp ascii_alnum_dash_byte(byte, {chars, _previous_dash?}) when byte in ?a..?z,
+    do: {[byte | chars], false}
+
+  defp ascii_alnum_dash_byte(byte, {chars, _previous_dash?}) when byte in ?0..?9,
+    do: {[byte | chars], false}
+
+  defp ascii_alnum_dash_byte(_byte, {chars, true}), do: {chars, true}
+  defp ascii_alnum_dash_byte(_byte, {chars, false}), do: {[?- | chars], true}
 
   defp runtime_row_from_map(row, now) do
     RuntimeRow.new(readback_row_attrs(row, now))

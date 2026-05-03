@@ -36,10 +36,16 @@ defmodule AppKit.Core.Substrate.Redaction do
   def safe_ref?(_value), do: false
 
   def absolute_path?(value) when is_binary(value) do
-    String.starts_with?(value, ["/", "~/"]) or Regex.match?(~r/^[A-Za-z]:[\\\/]/, value)
+    String.starts_with?(value, ["/", "~/"]) or windows_absolute_path?(value)
   end
 
   def absolute_path?(_value), do: false
+
+  defp windows_absolute_path?(<<drive, ?:, separator, _rest::binary>>) do
+    (drive in ?A..?Z or drive in ?a..?z) and separator in [?\\, ?/]
+  end
+
+  defp windows_absolute_path?(_value), do: false
 end
 
 defmodule AppKit.Core.Substrate.Dump do

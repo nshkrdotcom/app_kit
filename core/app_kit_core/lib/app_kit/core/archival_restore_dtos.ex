@@ -3,8 +3,6 @@ defmodule AppKit.Core.ArchivalRestoreSupport do
 
   alias AppKit.Core.RevisionEpochSupport
 
-  @sha256_regex ~r/\Asha256:[0-9a-f]{64}\z/
-
   @spec base_binary_fields() :: [atom()]
   def base_binary_fields, do: RevisionEpochSupport.base_binary_fields()
 
@@ -33,7 +31,14 @@ defmodule AppKit.Core.ArchivalRestoreSupport do
   def non_neg_integer?(value), do: RevisionEpochSupport.non_neg_integer?(value)
 
   @spec sha256?(term()) :: boolean()
-  def sha256?(value), do: is_binary(value) and Regex.match?(@sha256_regex, value)
+  def sha256?(<<"sha256:", digest::binary-size(64)>>), do: lower_hex?(digest)
+  def sha256?(_value), do: false
+
+  defp lower_hex?(value) do
+    value
+    |> :binary.bin_to_list()
+    |> Enum.all?(fn byte -> byte in ?0..?9 or byte in ?a..?f end)
+  end
 end
 
 defmodule AppKit.Core.ColdRestoreTraceProjection do

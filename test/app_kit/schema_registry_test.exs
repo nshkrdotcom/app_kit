@@ -79,8 +79,15 @@ defmodule AppKit.SchemaRegistryTest do
     assert manifest.schema_name == "operator_projection"
     assert manifest.schema_version == 1
     assert manifest.generator_command == "mix app_kit.gen.boundary operator_projection"
-    assert manifest.generated_artifacts.dto_hash =~ ~r/^[a-f0-9]{64}$/
-    assert manifest.generated_artifacts.mapper_hash =~ ~r/^[a-f0-9]{64}$/
-    assert manifest.generated_artifacts.mapper_test_hash =~ ~r/^[a-f0-9]{64}$/
+    assert lower_hex_64?(manifest.generated_artifacts.dto_hash)
+    assert lower_hex_64?(manifest.generated_artifacts.mapper_hash)
+    assert lower_hex_64?(manifest.generated_artifacts.mapper_test_hash)
+  end
+
+  defp lower_hex_64?(value) do
+    byte_size(value) == 64 and
+      value
+      |> :binary.bin_to_list()
+      |> Enum.all?(fn byte -> byte in ?a..?f or byte in ?0..?9 end)
   end
 end

@@ -5,7 +5,6 @@ defmodule AppKit.Core.TraceIdentity do
 
   @trace_id_length 32
   @zero_trace_id String.duplicate("0", @trace_id_length)
-  @trace_id_pattern ~r/\A[0-9a-f]{32}\z/
 
   @type trust_posture :: :trusted | :untrusted
 
@@ -25,7 +24,7 @@ defmodule AppKit.Core.TraceIdentity do
 
   @spec valid?(term()) :: boolean()
   def valid?(value) when is_binary(value) do
-    Regex.match?(@trace_id_pattern, value) and value != @zero_trace_id
+    byte_size(value) == @trace_id_length and value != @zero_trace_id and lower_hex?(value)
   end
 
   def valid?(_value), do: false
@@ -76,4 +75,10 @@ defmodule AppKit.Core.TraceIdentity do
   def normalize_trust("trusted"), do: :trusted
   def normalize_trust(true), do: :trusted
   def normalize_trust(_value), do: :untrusted
+
+  defp lower_hex?(value) do
+    value
+    |> :binary.bin_to_list()
+    |> Enum.all?(fn byte -> byte in ?0..?9 or byte in ?a..?f end)
+  end
 end

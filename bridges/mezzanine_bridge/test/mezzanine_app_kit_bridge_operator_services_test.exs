@@ -672,6 +672,7 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
       assert pivot_trace.trace_id == trace_id
       assert pivot_trace.metadata.archived_manifest_ref == manifest_ref
       assert pivot_trace.metadata.archive_pivot == Atom.to_string(pivot)
+      assert pivot_trace.steps != []
       assert Enum.all?(pivot_trace.steps, &(&1.staleness_class == :authoritative_archived))
     end
 

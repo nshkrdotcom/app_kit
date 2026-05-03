@@ -702,9 +702,30 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     defp ref_suffix(ref) do
       ref
-      |> String.replace(~r/[^A-Za-z0-9]+/, "-")
+      |> ascii_alnum_dash()
       |> String.trim("-")
     end
+
+    defp ascii_alnum_dash(value) do
+      value
+      |> :binary.bin_to_list()
+      |> Enum.reduce({[], false}, &ascii_alnum_dash_byte/2)
+      |> elem(0)
+      |> Enum.reverse()
+      |> List.to_string()
+    end
+
+    defp ascii_alnum_dash_byte(byte, {chars, _previous_dash?}) when byte in ?A..?Z,
+      do: {[byte | chars], false}
+
+    defp ascii_alnum_dash_byte(byte, {chars, _previous_dash?}) when byte in ?a..?z,
+      do: {[byte | chars], false}
+
+    defp ascii_alnum_dash_byte(byte, {chars, _previous_dash?}) when byte in ?0..?9,
+      do: {[byte | chars], false}
+
+    defp ascii_alnum_dash_byte(_byte, {chars, true}), do: {chars, true}
+    defp ascii_alnum_dash_byte(_byte, {chars, false}), do: {[?- | chars], true}
   end
 
   alias AppKit.Bridges.MezzanineBridge
@@ -1697,13 +1718,37 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
       refute contents =~ "Mezzanine.OpsDomain.Repo",
              "#{path} still references Mezzanine.OpsDomain.Repo"
 
-      refute Regex.match?(
-               ~r/Mezzanine\.(Programs|Work|Runs|Review|Evidence|Control)\b/,
-               contents
-             ),
+      refute deprecated_mezzanine_namespace?(contents),
              "#{path} still references direct ops_domain namespaces"
     end)
   end
+
+  defp deprecated_mezzanine_namespace?(contents) do
+    Enum.any?(
+      [
+        "Mezzanine.Programs",
+        "Mezzanine.Work",
+        "Mezzanine.Runs",
+        "Mezzanine.Review",
+        "Mezzanine.Evidence",
+        "Mezzanine.Control"
+      ],
+      &contains_namespace?(&1, contents)
+    )
+  end
+
+  defp contains_namespace?(namespace, contents) do
+    contents
+    |> String.split(namespace)
+    |> Enum.drop(1)
+    |> Enum.any?(fn
+      "" -> true
+      rest -> rest |> :binary.first() |> namespace_boundary?()
+    end)
+  end
+
+  defp namespace_boundary?(byte),
+    do: not (byte in ?a..?z or byte in ?A..?Z or byte in ?0..?9 or byte == ?_)
 
   defp request_context(metadata \\ %{}) do
     metadata =

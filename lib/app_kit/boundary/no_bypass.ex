@@ -34,17 +34,17 @@ defmodule AppKit.Boundary.NoBypass do
           | {:exclude, [String.t()] | String.t()}
 
   @product_forbidden [
-    {"AppKit.Bridges", ~r/\bAppKit\.Bridges?\./},
-    {"Citadel", ~r/\bCitadel\./},
-    {"Jido.Integration", ~r/\bJido\.Integration\b/},
-    {"ExecutionPlane", ~r/\bExecutionPlane\b/},
-    {"HostIngress", ~r/\bHostIngress\b/},
-    {"InvocationBridge", ~r/\bInvocationBridge\b/},
-    {"Mezzanine", ~r/\bMezzanine\.(?!Pack\b)/}
+    "AppKit.Bridges",
+    "Citadel",
+    "Jido.Integration",
+    "ExecutionPlane",
+    "HostIngress",
+    "InvocationBridge",
+    "Mezzanine"
   ]
 
   @hazmat_forbidden [
-    {"ExecutionPlane", ~r/\bExecutionPlane\b/}
+    "ExecutionPlane"
   ]
 
   @default_includes ["lib/**/*.ex"]
@@ -212,8 +212,8 @@ defmodule AppKit.Boundary.NoBypass do
     |> Enum.flat_map(fn {line, line_number} ->
       profile
       |> forbidden_patterns()
-      |> Enum.filter(fn {_name, pattern} -> Regex.match?(pattern, line) end)
-      |> Enum.map(fn {name, _pattern} ->
+      |> Enum.filter(&forbidden_line?(&1, line))
+      |> Enum.map(fn name ->
         %Violation{
           profile: profile,
           path: path,
@@ -241,4 +241,18 @@ defmodule AppKit.Boundary.NoBypass do
 
   defp forbidden_patterns(:product), do: @product_forbidden
   defp forbidden_patterns(:hazmat), do: @hazmat_forbidden
+
+  defp forbidden_line?("AppKit.Bridges", line),
+    do: String.contains?(line, ["AppKit.Bridge.", "AppKit.Bridges."])
+
+  defp forbidden_line?("Citadel", line), do: String.contains?(line, "Citadel.")
+  defp forbidden_line?("Jido.Integration", line), do: String.contains?(line, "Jido.Integration")
+  defp forbidden_line?("ExecutionPlane", line), do: String.contains?(line, "ExecutionPlane")
+  defp forbidden_line?("HostIngress", line), do: String.contains?(line, "HostIngress")
+  defp forbidden_line?("InvocationBridge", line), do: String.contains?(line, "InvocationBridge")
+
+  defp forbidden_line?("Mezzanine", line),
+    do: String.contains?(line, "Mezzanine.") and not String.contains?(line, "Mezzanine.Pack")
+
+  defp forbidden_line?(_name, _line), do: false
 end

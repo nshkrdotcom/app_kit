@@ -1,7 +1,6 @@
 defmodule AppKit.Core.MemoryControlSupport do
   @moduledoc false
 
-  @hash_regex ~r/\Asha256:[a-f0-9]{64}\z/
   @forbidden_payload_fields [
     :payload,
     :raw_payload,
@@ -68,8 +67,14 @@ defmodule AppKit.Core.MemoryControlSupport do
   def boolean?(value), do: is_boolean(value)
 
   @spec sha256?(term()) :: boolean()
-  def sha256?(value) when is_binary(value), do: Regex.match?(@hash_regex, value)
+  def sha256?(<<"sha256:", digest::binary-size(64)>>), do: lower_hex?(digest)
   def sha256?(_value), do: false
+
+  defp lower_hex?(value) do
+    value
+    |> :binary.bin_to_list()
+    |> Enum.all?(fn byte -> byte in ?0..?9 or byte in ?a..?f end)
+  end
 
   @spec enum?(term(), [term()]) :: boolean()
   def enum?(value, allowed), do: value in allowed

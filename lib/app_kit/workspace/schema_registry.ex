@@ -242,8 +242,6 @@ defmodule AppKit.Workspace.SchemaRegistry do
     "AppKit.Core.WorkspaceRef"
   ]
 
-  @core_module_pattern ~r/^defmodule\s+(AppKit\.Core\.[\w.]+)\s+do/m
-
   @spec entries() :: [map()]
   def entries, do: @entries
 
@@ -378,11 +376,32 @@ defmodule AppKit.Workspace.SchemaRegistry do
     |> Path.join("*.ex")
     |> Path.wildcard()
     |> Enum.flat_map(fn path ->
-      @core_module_pattern
-      |> Regex.scan(File.read!(path), capture: :all_but_first)
-      |> List.flatten()
+      path
+      |> File.read!()
+      |> String.split("\n")
+      |> Enum.flat_map(&core_module_from_line/1)
     end)
     |> Enum.uniq()
     |> Enum.sort()
+  end
+
+  defp core_module_from_line(line) do
+    line = String.trim_leading(line)
+
+    with true <- String.starts_with?(line, "defmodule "),
+         [module, rest] <-
+           line
+           |> String.replace_prefix("defmodule ", "")
+           |> String.split(" ", parts: 2),
+         module = String.trim_trailing(module, ","),
+         true <- core_module_line?(module, rest) do
+      [module]
+    else
+      _other -> []
+    end
+  end
+
+  defp core_module_line?(module, rest) do
+    String.starts_with?(module, "AppKit.Core.") and String.contains?(rest, "do")
   end
 end

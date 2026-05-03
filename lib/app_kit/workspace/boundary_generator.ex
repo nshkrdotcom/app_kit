@@ -39,7 +39,7 @@ defmodule AppKit.Workspace.BoundaryGenerator do
     slug =
       name
       |> Macro.underscore()
-      |> String.replace(~r/[^a-z0-9_]/, "")
+      |> keep_slug_chars()
       |> String.trim("_")
 
     if slug == "" do
@@ -47,6 +47,13 @@ defmodule AppKit.Workspace.BoundaryGenerator do
     else
       {:ok, slug}
     end
+  end
+
+  defp keep_slug_chars(value) do
+    value
+    |> :binary.bin_to_list()
+    |> Enum.filter(fn byte -> byte in ?a..?z or byte in ?0..?9 or byte == ?_ end)
+    |> List.to_string()
   end
 
   defp dto_path(output_root, namespace, slug) do
