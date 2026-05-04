@@ -7,6 +7,7 @@ defmodule AppKit.WorkspaceTest do
 
   test "lists workspace packages" do
     assert "core/app_kit_core" in Workspace.package_paths()
+    assert "core/authority_projections" in Workspace.package_paths()
     assert "bridges/domain_bridge" in Workspace.package_paths()
     assert "examples/reference_host" in Workspace.package_paths()
   end

@@ -32,7 +32,7 @@ defmodule AppKit.Build.WeldContract do
 
   def artifact do
     [
-      roots: ["core/app_kit_core"],
+      roots: ["core/app_kit_core", "core/authority_projections"],
       package: [
         name: "app_kit_core",
         otp_app: :app_kit_core,

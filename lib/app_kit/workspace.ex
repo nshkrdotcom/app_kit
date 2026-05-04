@@ -5,6 +5,7 @@ defmodule AppKit.Workspace do
 
   @package_paths [
     "core/app_kit_core",
+    "core/authority_projections",
     "core/chat_surface",
     "core/domain_surface",
     "core/installation_surface",
