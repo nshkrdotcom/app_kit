@@ -10,6 +10,8 @@ defmodule AppKit.AuthorityProjectionsTest do
     assert projection.provider_account_ref == "provider-account://tenant-1/claude/main"
     assert projection.credential_lease_ref == "credential-lease://tenant-1/claude/lease-1"
     assert projection.native_auth_assertion_ref == "native-auth-assertion://tenant-1/claude/1"
+    assert projection.provider_account_status == :asserted
+    assert projection.identity_introspection_limit == :ref_only
     assert projection.raw_material_present? == false
 
     assert AuthorityProjections.dump(projection)["provider_family"] == "claude"
@@ -45,8 +47,38 @@ defmodule AppKit.AuthorityProjectionsTest do
     assert dto["authority_packet_ref"] == "authority-packet://tenant-1/packet-1"
     assert dto["raw_material_present?"] == false
     assert dto["redaction_ref"] == "redaction://tenant-1/authority-projection/1"
+    assert dto["provider_account_status"] == :asserted
+    assert dto["identity_introspection_limit"] == :ref_only
     refute inspect(dto) =~ "secret"
     refute Map.has_key?(dto, "provider_payload")
+  end
+
+  test "bounds provider-account evidence status and identity introspection" do
+    assert {:ok, projection} =
+             valid_attrs()
+             |> Map.put(:provider_account_status, "rotated")
+             |> Map.put(:identity_introspection_limit, "redacted_summary")
+             |> AuthorityProjections.project()
+
+    assert projection.provider_account_status == :rotated
+    assert projection.identity_introspection_limit == :redacted_summary
+
+    assert {:error,
+            {:invalid_projection_enum, :provider_account_status, :stale, allowed_statuses}} =
+             valid_attrs()
+             |> Map.put(:provider_account_status, :stale)
+             |> AuthorityProjections.project()
+
+    assert allowed_statuses == AuthorityProjections.provider_account_statuses()
+
+    assert {:error,
+            {:invalid_projection_enum, :identity_introspection_limit, :full_payload,
+             allowed_limits}} =
+             valid_attrs()
+             |> Map.put(:identity_introspection_limit, :full_payload)
+             |> AuthorityProjections.project()
+
+    assert allowed_limits == AuthorityProjections.identity_introspection_limits()
   end
 
   defp valid_attrs do
@@ -65,7 +97,10 @@ defmodule AppKit.AuthorityProjectionsTest do
       operation_policy_ref: "operation-policy://tenant-1/claude/chat",
       evidence_ref: "evidence://tenant-1/authority/1",
       redaction_ref: "redaction://tenant-1/authority-projection/1",
-      trace_ref: "trace://tenant-1/authority/1"
+      trace_ref: "trace://tenant-1/authority/1",
+      provider_account_status: :asserted,
+      provider_account_evidence_ref: "evidence://tenant-1/provider-account/1",
+      identity_introspection_limit: :ref_only
     }
   end
 end

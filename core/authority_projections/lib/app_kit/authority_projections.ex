@@ -34,12 +34,38 @@ defmodule AppKit.AuthorityProjections do
     :token
   ]
 
-  @projection_fields @required_refs ++ [:trace_ref]
+  @provider_account_statuses [
+    :known,
+    :asserted,
+    :unknown,
+    :unavailable,
+    :revoked,
+    :rotated
+  ]
+
+  @identity_introspection_limits [
+    :not_attempted,
+    :ref_only,
+    :redacted_summary,
+    :unavailable
+  ]
+
+  @optional_projection_fields [
+    :trace_ref,
+    :provider_account_status,
+    :provider_account_evidence_ref,
+    :identity_introspection_limit
+  ]
+
+  @projection_fields @required_refs ++ @optional_projection_fields
 
   @enforce_keys @required_refs
   defstruct @required_refs ++
               [
                 :trace_ref,
+                provider_account_status: :unknown,
+                provider_account_evidence_ref: nil,
+                identity_introspection_limit: :ref_only,
                 raw_material_present?: false,
                 projection_schema: "AppKit.AuthorityProjection.v1"
               ]
@@ -60,6 +86,9 @@ defmodule AppKit.AuthorityProjections do
           evidence_ref: String.t(),
           redaction_ref: String.t(),
           trace_ref: String.t() | nil,
+          provider_account_status: atom(),
+          provider_account_evidence_ref: String.t() | nil,
+          identity_introspection_limit: atom(),
           raw_material_present?: false,
           projection_schema: String.t()
         }
@@ -70,18 +99,46 @@ defmodule AppKit.AuthorityProjections do
   @spec forbidden_material() :: [atom()]
   def forbidden_material, do: @forbidden_material
 
+  @spec provider_account_statuses() :: [atom()]
+  def provider_account_statuses, do: @provider_account_statuses
+
+  @spec identity_introspection_limits() :: [atom()]
+  def identity_introspection_limits, do: @identity_introspection_limits
+
   @spec project(map() | keyword()) ::
           {:ok, t()}
           | {:error, {:missing_required_refs, [atom()]}}
           | {:error, {:forbidden_projection_material, [atom()]}}
+          | {:error, {:invalid_projection_enum, atom(), term(), [atom()]}}
   def project(attrs) when is_map(attrs) or is_list(attrs) do
     attrs = normalize(attrs)
 
     case forbidden_material_present(attrs) do
       [] ->
-        case missing_required(attrs) do
-          [] -> {:ok, build_projection(attrs)}
-          missing -> {:error, {:missing_required_refs, missing}}
+        with [] <- missing_required(attrs),
+             {:ok, provider_account_status} <-
+               enum_value(
+                 attrs,
+                 :provider_account_status,
+                 @provider_account_statuses,
+                 :unknown
+               ),
+             {:ok, identity_introspection_limit} <-
+               enum_value(
+                 attrs,
+                 :identity_introspection_limit,
+                 @identity_introspection_limits,
+                 :ref_only
+               ) do
+          {:ok,
+           build_projection(
+             attrs,
+             provider_account_status,
+             identity_introspection_limit
+           )}
+        else
+          missing when is_list(missing) -> {:error, {:missing_required_refs, missing}}
+          {:error, reason} -> {:error, reason}
         end
 
       forbidden ->
@@ -113,10 +170,12 @@ defmodule AppKit.AuthorityProjections do
     |> Map.put("raw_material_present?", false)
   end
 
-  defp build_projection(attrs) do
+  defp build_projection(attrs, provider_account_status, identity_introspection_limit) do
     attrs =
       attrs
       |> Map.take(@projection_fields)
+      |> Map.put(:provider_account_status, provider_account_status)
+      |> Map.put(:identity_introspection_limit, identity_introspection_limit)
       |> Map.put(:raw_material_present?, false)
       |> Map.put(:projection_schema, "AppKit.AuthorityProjection.v1")
 
@@ -129,6 +188,26 @@ defmodule AppKit.AuthorityProjections do
 
   defp forbidden_material_present(attrs) do
     Enum.filter(@forbidden_material, &Map.has_key?(attrs, &1))
+  end
+
+  defp enum_value(attrs, field, allowed, default) do
+    case Map.get(attrs, field, default) do
+      value when is_atom(value) ->
+        if value in allowed do
+          {:ok, value}
+        else
+          {:error, {:invalid_projection_enum, field, value, allowed}}
+        end
+
+      value when is_binary(value) ->
+        case Enum.find(allowed, &(Atom.to_string(&1) == value)) do
+          nil -> {:error, {:invalid_projection_enum, field, value, allowed}}
+          atom -> {:ok, atom}
+        end
+
+      value ->
+        {:error, {:invalid_projection_enum, field, value, allowed}}
+    end
   end
 
   defp normalize(attrs) when is_list(attrs), do: attrs |> Map.new() |> normalize()
