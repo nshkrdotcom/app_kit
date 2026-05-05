@@ -1,9 +1,12 @@
 defmodule AppKit.WorkspaceTest do
   use ExUnit.Case, async: true
 
+  alias AppKit.Build.WeldContract
   alias AppKit.Workspace
   alias AppKit.Workspace.BoundaryGenerator
   alias AppKit.Workspace.MixProject
+
+  @compile {:no_warn_undefined, {WeldContract, :manifest, 0}}
 
   test "lists workspace packages" do
     assert "core/app_kit_core" in Workspace.package_paths()
@@ -41,6 +44,81 @@ defmodule AppKit.WorkspaceTest do
           :"release.archive"
         ] do
       refute Keyword.has_key?(aliases, alias_name)
+    end
+  end
+
+  test "headless surface projects only DTO contract dependencies" do
+    Code.require_file("../../build_support/weld.exs", __DIR__)
+
+    on_exit(fn ->
+      :code.purge(WeldContract)
+      :code.delete(WeldContract)
+    end)
+
+    deps =
+      Mix.Project.in_project(
+        :app_kit_headless_surface,
+        Path.expand("../../core/headless_surface", __DIR__),
+        fn _module -> Mix.Project.config()[:deps] end
+      )
+
+    manifest_deps = WeldContract.manifest()[:dependencies]
+
+    source_opts_by_app =
+      Map.new(deps, fn
+        {app, opts} -> {app, opts}
+        {app, _requirement, opts} -> {app, opts}
+      end)
+
+    manifest_apps = Keyword.keys(manifest_deps)
+
+    lower_runtime_apps = [
+      :app_kit_work_surface,
+      :citadel_governance,
+      :execution_plane,
+      :jido_integration_v2,
+      :mezzanine_archival_engine,
+      :mezzanine_audit_engine,
+      :mezzanine_barriers,
+      :mezzanine_config_registry,
+      :mezzanine_core,
+      :mezzanine_decision_engine,
+      :mezzanine_evidence_engine,
+      :mezzanine_execution_engine,
+      :mezzanine_integration_bridge,
+      :mezzanine_leasing,
+      :mezzanine_lifecycle_engine,
+      :mezzanine_m1_m2_runtime,
+      :mezzanine_object_engine,
+      :mezzanine_operator_engine,
+      :mezzanine_ops_domain,
+      :mezzanine_ops_model,
+      :mezzanine_pack_compiler,
+      :mezzanine_pack_model,
+      :mezzanine_projection_engine,
+      :mezzanine_runtime_scheduler,
+      :mezzanine_source_engine,
+      :mezzanine_workflow_runtime,
+      :mezzanine_workspace_build_model,
+      :temporalex
+    ]
+
+    for app <- lower_runtime_apps do
+      refute Map.has_key?(source_opts_by_app, app)
+      refute app in manifest_apps
+    end
+
+    assert source_opts_by_app[:mezzanine_headless_coding_ops][:runtime] == false
+    assert source_opts_by_app[:jido_integration_contracts][:runtime] == false
+    assert source_opts_by_app[:jido_integration_contracts][:override] == true
+
+    for app <- [
+          :jido_integration_contracts,
+          :mezzanine_headless_coding_ops
+        ] do
+      manifest_opts = Keyword.fetch!(manifest_deps, app)
+      assert manifest_opts[:opts][:override] == true
+      assert manifest_opts[:opts][:runtime] == false
     end
   end
 

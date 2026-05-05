@@ -29,7 +29,6 @@ defmodule AppKitHeadlessSurface.MixProject do
       {:app_kit_run_governance, path: "../run_governance", runtime: false},
       {:app_kit_runtime_gateway, path: "../runtime_gateway", runtime: false},
       {:app_kit_authority_projections, path: "../authority_projections", runtime: false},
-      {:app_kit_work_surface, path: "../work_surface", runtime: false},
       {:mezzanine_headless_coding_ops,
        path: "../../../mezzanine/core/headless_coding_ops", runtime: false},
       {:jido_integration_contracts,

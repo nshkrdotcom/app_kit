@@ -7,79 +7,46 @@ defmodule AppKit.Build.WeldContract do
   @jido_integration_repo_path Path.expand("../jido_integration", @repo_root)
   @mezzanine_repo_path Path.expand("../mezzanine", @repo_root)
 
-  @mezzanine_dependencies [
-    mezzanine_archival_engine: "core/archival_engine",
-    mezzanine_audit_engine: "core/audit_engine",
-    mezzanine_barriers: "core/barriers",
-    mezzanine_config_registry: "core/config_registry",
-    mezzanine_core: "core/mezzanine_core",
-    mezzanine_decision_engine: "core/decision_engine",
-    mezzanine_evidence_engine: "core/evidence_engine",
-    mezzanine_execution_engine: "core/execution_engine",
-    mezzanine_integration_bridge: "bridges/integration_bridge",
-    mezzanine_leasing: "core/leasing",
-    mezzanine_lifecycle_engine: "core/lifecycle_engine",
-    mezzanine_m1_m2_runtime: "core/m1_m2_runtime",
-    mezzanine_object_engine: "core/object_engine",
-    mezzanine_operator_engine: "core/operator_engine",
-    mezzanine_ops_domain: "core/ops_domain",
-    mezzanine_ops_model: "core/ops_model",
-    mezzanine_pack_compiler: "core/pack_compiler",
-    mezzanine_pack_model: "core/pack_model",
-    mezzanine_projection_engine: "core/projection_engine",
-    mezzanine_runtime_scheduler: "core/runtime_scheduler",
-    mezzanine_source_engine: "core/source_engine",
-    mezzanine_workflow_runtime: "core/workflow_runtime",
-    mezzanine_workspace_build_model: "core/workspace_build_model"
-  ]
-
   @dependencies [
-                  jido_integration_contracts: [
-                    opts:
-                      if File.dir?(@jido_integration_repo_path) do
-                        [git: @jido_integration_repo_path, subdir: "core/contracts"]
-                      else
-                        [
-                          github: "nshkrdotcom/jido_integration",
-                          branch: "main",
-                          subdir: "core/contracts"
-                        ]
-                      end
-                  ],
-                  mezzanine_headless_coding_ops: [
-                    opts:
-                      if File.dir?(@mezzanine_repo_path) do
-                        [
-                          git: @mezzanine_repo_path,
-                          subdir: "core/headless_coding_ops",
-                          override: true
-                        ]
-                      else
-                        [
-                          github: "nshkrdotcom/mezzanine",
-                          branch: "main",
-                          subdir: "core/headless_coding_ops",
-                          override: true
-                        ]
-                      end
-                  ]
-                ] ++
-                  Enum.map(@mezzanine_dependencies, fn {app, subdir} ->
-                    {app,
-                     [
-                       opts:
-                         if File.dir?(@mezzanine_repo_path) do
-                           [git: @mezzanine_repo_path, subdir: subdir, override: true]
-                         else
-                           [
-                             github: "nshkrdotcom/mezzanine",
-                             branch: "main",
-                             subdir: subdir,
-                             override: true
-                           ]
-                         end
-                     ]}
-                  end)
+    jido_integration_contracts: [
+      opts:
+        if File.dir?(@jido_integration_repo_path) do
+          [
+            git: @jido_integration_repo_path,
+            subdir: "core/contracts",
+            runtime: false,
+            override: true
+          ]
+        else
+          [
+            github: "nshkrdotcom/jido_integration",
+            branch: "main",
+            subdir: "core/contracts",
+            runtime: false,
+            override: true
+          ]
+        end
+    ],
+    mezzanine_headless_coding_ops: [
+      opts:
+        if File.dir?(@mezzanine_repo_path) do
+          [
+            git: @mezzanine_repo_path,
+            subdir: "core/headless_coding_ops",
+            runtime: false,
+            override: true
+          ]
+        else
+          [
+            github: "nshkrdotcom/mezzanine",
+            branch: "main",
+            subdir: "core/headless_coding_ops",
+            runtime: false,
+            override: true
+          ]
+        end
+    ]
+  ]
 
   @artifact_docs [
     "README.md",
