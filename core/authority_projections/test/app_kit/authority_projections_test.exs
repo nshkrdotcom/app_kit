@@ -81,6 +81,33 @@ defmodule AppKit.AuthorityProjectionsTest do
     assert allowed_limits == AuthorityProjections.identity_introspection_limits()
   end
 
+  test "projects connector admission fields as ref-only operator DTO evidence" do
+    assert {:ok, projection} =
+             valid_attrs()
+             |> Map.merge(%{
+               target_grant_ref: "target-grant://tenant-1/local-process/1",
+               tool_policy_ref: "tool-policy://tenant-1/claude/coding",
+               requested_operation: "agent.run",
+               admission_state: "admitted",
+               rejection_reason: nil,
+               proof_refs: ["proof://tenant-1/admission/1"],
+               scanner_refs: ["scanner://stack-lab/no-bypass/1"],
+               redaction_class: "ref_only"
+             })
+             |> AuthorityProjections.project()
+
+    dto = AuthorityProjections.operator_dto(projection)
+
+    assert dto["target_grant_ref"] == "target-grant://tenant-1/local-process/1"
+    assert dto["tool_policy_ref"] == "tool-policy://tenant-1/claude/coding"
+    assert dto["requested_operation"] == "agent.run"
+    assert dto["admission_state"] == :admitted
+    assert dto["proof_refs"] == ["proof://tenant-1/admission/1"]
+    assert dto["scanner_refs"] == ["scanner://stack-lab/no-bypass/1"]
+    assert dto["redaction_class"] == "ref_only"
+    refute inspect(dto) =~ "secret"
+  end
+
   defp valid_attrs do
     %{
       authority_packet_ref: "authority-packet://tenant-1/packet-1",

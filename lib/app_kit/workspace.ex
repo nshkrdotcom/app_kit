@@ -15,6 +15,7 @@ defmodule AppKit.Workspace do
     "core/work_control",
     "core/run_governance",
     "core/runtime_gateway",
+    "core/headless_surface",
     "core/conversation_bridge",
     "core/scope_objects",
     "core/app_config",

@@ -50,11 +50,27 @@ defmodule AppKit.AuthorityProjections do
     :unavailable
   ]
 
+  @admission_states [
+    :admitted,
+    :pending,
+    :rejected,
+    :rejected_duplicate,
+    :blocked
+  ]
+
   @optional_projection_fields [
     :trace_ref,
     :provider_account_status,
     :provider_account_evidence_ref,
-    :identity_introspection_limit
+    :identity_introspection_limit,
+    :target_grant_ref,
+    :tool_policy_ref,
+    :requested_operation,
+    :admission_state,
+    :rejection_reason,
+    :proof_refs,
+    :scanner_refs,
+    :redaction_class
   ]
 
   @projection_fields @required_refs ++ @optional_projection_fields
@@ -66,6 +82,14 @@ defmodule AppKit.AuthorityProjections do
                 provider_account_status: :unknown,
                 provider_account_evidence_ref: nil,
                 identity_introspection_limit: :ref_only,
+                target_grant_ref: nil,
+                tool_policy_ref: nil,
+                requested_operation: nil,
+                admission_state: :pending,
+                rejection_reason: nil,
+                proof_refs: [],
+                scanner_refs: [],
+                redaction_class: "ref_only",
                 raw_material_present?: false,
                 projection_schema: "AppKit.AuthorityProjection.v1"
               ]
@@ -105,6 +129,9 @@ defmodule AppKit.AuthorityProjections do
   @spec identity_introspection_limits() :: [atom()]
   def identity_introspection_limits, do: @identity_introspection_limits
 
+  @spec admission_states() :: [atom()]
+  def admission_states, do: @admission_states
+
   @spec project(map() | keyword()) ::
           {:ok, t()}
           | {:error, {:missing_required_refs, [atom()]}}
@@ -129,12 +156,20 @@ defmodule AppKit.AuthorityProjections do
                  :identity_introspection_limit,
                  @identity_introspection_limits,
                  :ref_only
+               ),
+             {:ok, admission_state} <-
+               enum_value(
+                 attrs,
+                 :admission_state,
+                 @admission_states,
+                 :pending
                ) do
           {:ok,
            build_projection(
              attrs,
              provider_account_status,
-             identity_introspection_limit
+             identity_introspection_limit,
+             admission_state
            )}
         else
           missing when is_list(missing) -> {:error, {:missing_required_refs, missing}}
@@ -170,12 +205,21 @@ defmodule AppKit.AuthorityProjections do
     |> Map.put("raw_material_present?", false)
   end
 
-  defp build_projection(attrs, provider_account_status, identity_introspection_limit) do
+  defp build_projection(
+         attrs,
+         provider_account_status,
+         identity_introspection_limit,
+         admission_state
+       ) do
     attrs =
       attrs
       |> Map.take(@projection_fields)
       |> Map.put(:provider_account_status, provider_account_status)
       |> Map.put(:identity_introspection_limit, identity_introspection_limit)
+      |> Map.put(:admission_state, admission_state)
+      |> Map.put(:proof_refs, List.wrap(Map.get(attrs, :proof_refs, [])))
+      |> Map.put(:scanner_refs, List.wrap(Map.get(attrs, :scanner_refs, [])))
+      |> Map.put(:redaction_class, Map.get(attrs, :redaction_class, "ref_only"))
       |> Map.put(:raw_material_present?, false)
       |> Map.put(:projection_schema, "AppKit.AuthorityProjection.v1")
 
