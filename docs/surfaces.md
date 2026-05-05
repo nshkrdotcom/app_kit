@@ -62,8 +62,9 @@ Generated BFF and SDK shapes are recorded by
 consumers, required enterprise envelope fields, runbooks, proofs, and
 release-manifest keys.
 
-Boundary generation is deterministic: `mix app_kit.gen.boundary <schema_name>`
-writes DTO, mapper, mapper-test, and generated-artifact manifest files. The
-manifest records artifact hashes so product packages can prove they are using
-AppKit-owned generated shapes rather than hand-edited DTOs or lower-truth
-imports.
+Boundary generation is deterministic and bounded:
+`mix app_kit.gen.boundary <schema_name>` accepts only AppKit-owned schema names
+from the generator registry, then writes DTO, mapper, mapper-test, and
+generated-artifact manifest files. The manifest records artifact hashes so
+product packages can prove they are using AppKit-owned generated shapes rather
+than hand-edited DTOs or lower-truth imports.

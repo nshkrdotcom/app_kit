@@ -3,7 +3,8 @@ defmodule Mix.Tasks.AppKit.Gen.Boundary do
 
   @moduledoc """
   Generates a DTO scaffold plus mezzanine-bridge mapper templates for an
-  opaque-envelope boundary type.
+  opaque-envelope boundary type. Boundary names are bounded by the
+  AppKit-owned generator registry.
 
       mix app_kit.gen.boundary operator_projection --output tmp/generated
   """

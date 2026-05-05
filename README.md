@@ -93,7 +93,8 @@ mix app_kit.schema_registry.verify
 ```
 
 `AppKit.Workspace.SchemaRegistry` is the AppKit-owned contract ledger for
-generated BFF/SDK DTOs. `mix app_kit.gen.boundary <schema_name>` emits the
+generated BFF/SDK DTOs. `mix app_kit.gen.boundary <schema_name>` accepts only
+AppKit-owned schema names from the bounded generator registry, then emits the
 DTO, mapper, mapper test, and a deterministic
 `generated_artifacts/<schema_name>_schema_registry.exs` manifest with artifact
 hashes for release-manifest and Stack Lab proof linkage.

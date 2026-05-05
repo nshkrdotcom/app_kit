@@ -84,6 +84,46 @@ defmodule AppKit.SchemaRegistryTest do
     assert lower_hex_64?(manifest.generated_artifacts.mapper_test_hash)
   end
 
+  test "boundary generator rejects unregistered schema names before writing artifacts" do
+    output_root =
+      Path.join(
+        System.tmp_dir!(),
+        "app_kit_unknown_schema_generator_#{System.unique_integer([:positive])}"
+      )
+
+    on_exit(fn -> File.rm_rf(output_root) end)
+
+    assert {:error, :unknown_boundary_schema} =
+             BoundaryGenerator.generate("operator_projection_runtime_variant", output_root,
+               module_namespace: "AppKit.Generated"
+             )
+
+    refute File.exists?(output_root)
+  end
+
+  test "boundary generator rejects unregistered module namespaces before writing artifacts" do
+    output_root =
+      Path.join(
+        System.tmp_dir!(),
+        "app_kit_unknown_namespace_generator_#{System.unique_integer([:positive])}"
+      )
+
+    on_exit(fn -> File.rm_rf(output_root) end)
+
+    assert {:error, :invalid_module_namespace} =
+             BoundaryGenerator.generate("operator_projection", output_root,
+               module_namespace: "AppKit.Generated.Dynamic"
+             )
+
+    refute File.exists?(output_root)
+  end
+
+  test "boundary generator does not create modules through runtime atom concatenation" do
+    source = File.read!("lib/app_kit/workspace/boundary_generator.ex")
+
+    refute String.contains?(source, "Module.concat")
+  end
+
   defp lower_hex_64?(value) do
     byte_size(value) == 64 and
       value

@@ -3,35 +3,66 @@ defmodule AppKit.Workspace.BoundaryGenerator do
   Generates scaffold files for opaque-envelope DTOs and bridge mappers.
   """
 
+  @default_module_namespace "AppKit.Generated"
+
+  @allowed_module_namespaces %{
+    @default_module_namespace => "app_kit/generated"
+  }
+
+  @allowed_schemas %{
+    "generated_artifact_ownership" => %{
+      dto_module: "AppKit.Generated.GeneratedArtifactOwnership",
+      mapper_module: "AppKit.Bridges.MezzanineBridge.GeneratedArtifactOwnershipMapper"
+    },
+    "operator_projection" => %{
+      dto_module: "AppKit.Generated.OperatorProjection",
+      mapper_module: "AppKit.Bridges.MezzanineBridge.OperatorProjectionMapper"
+    },
+    "product_bootstrap" => %{
+      dto_module: "AppKit.Generated.ProductBootstrap",
+      mapper_module: "AppKit.Bridges.MezzanineBridge.ProductBootstrapMapper"
+    },
+    "schema_registry_entry" => %{
+      dto_module: "AppKit.Generated.SchemaRegistryEntry",
+      mapper_module: "AppKit.Bridges.MezzanineBridge.SchemaRegistryEntryMapper"
+    }
+  }
+
   @spec generate(String.t(), Path.t(), keyword()) :: :ok | {:error, term()}
   def generate(name, output_root, opts \\ [])
       when is_binary(name) and is_binary(output_root) and is_list(opts) do
-    case normalize_slug(name) do
-      {:ok, slug} ->
-        namespace = Keyword.get(opts, :module_namespace, "AppKit.Generated")
-        dto_path = dto_path(output_root, namespace, slug)
-        mapper_path = mapper_path(output_root, slug)
-        mapper_test_path = mapper_test_path(output_root, slug)
-        manifest_path = manifest_path(output_root, slug)
+    with {:ok, slug} <- normalize_slug(name),
+         {:ok, namespace_path} <-
+           fetch_namespace_path(Keyword.get(opts, :module_namespace, @default_module_namespace)),
+         {:ok, schema} <- fetch_schema(slug) do
+      dto_path = dto_path(output_root, namespace_path, slug)
+      mapper_path = mapper_path(output_root, slug)
+      mapper_test_path = mapper_test_path(output_root, slug)
+      manifest_path = manifest_path(output_root, slug)
 
-        dto_contents = dto_template(namespace, slug)
-        mapper_contents = mapper_template(namespace, slug)
-        mapper_test_contents = mapper_test_template(namespace, slug)
+      dto_contents = dto_template(schema.dto_module)
+      mapper_contents = mapper_template(schema.dto_module, schema.mapper_module, slug)
+      mapper_test_contents = mapper_test_template(schema.dto_module, schema.mapper_module, slug)
 
-        :ok = write_file(dto_path, dto_contents)
-        :ok = write_file(mapper_path, mapper_contents)
-        :ok = write_file(mapper_test_path, mapper_test_contents)
+      :ok = write_file(dto_path, dto_contents)
+      :ok = write_file(mapper_path, mapper_contents)
+      :ok = write_file(mapper_test_path, mapper_test_contents)
 
-        :ok =
-          write_file(
-            manifest_path,
-            manifest_template(slug, dto_contents, mapper_contents, mapper_test_contents)
+      :ok =
+        write_file(
+          manifest_path,
+          manifest_template(
+            slug,
+            schema.dto_module,
+            dto_contents,
+            mapper_contents,
+            mapper_test_contents
           )
+        )
 
-        :ok
-
-      {:error, reason} ->
-        {:error, reason}
+      :ok
+    else
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -49,6 +80,20 @@ defmodule AppKit.Workspace.BoundaryGenerator do
     end
   end
 
+  defp fetch_namespace_path(namespace) do
+    case Map.fetch(@allowed_module_namespaces, namespace) do
+      {:ok, namespace_path} -> {:ok, namespace_path}
+      :error -> {:error, :invalid_module_namespace}
+    end
+  end
+
+  defp fetch_schema(slug) do
+    case Map.fetch(@allowed_schemas, slug) do
+      {:ok, schema} -> {:ok, schema}
+      :error -> {:error, :unknown_boundary_schema}
+    end
+  end
+
   defp keep_slug_chars(value) do
     value
     |> :binary.bin_to_list()
@@ -56,13 +101,13 @@ defmodule AppKit.Workspace.BoundaryGenerator do
     |> List.to_string()
   end
 
-  defp dto_path(output_root, namespace, slug) do
+  defp dto_path(output_root, namespace_path, slug) do
     Path.join([
       output_root,
       "core",
       "app_kit_core",
       "lib",
-      namespace_path(namespace),
+      namespace_path,
       "#{slug}.ex"
     ])
   end
@@ -97,17 +142,9 @@ defmodule AppKit.Workspace.BoundaryGenerator do
     Path.join([output_root, "generated_artifacts", "#{slug}_schema_registry.exs"])
   end
 
-  defp namespace_path(namespace) do
-    namespace
-    |> Macro.underscore()
-    |> String.replace(".", "/")
-  end
-
-  defp dto_template(namespace, slug) do
-    module_name = Module.concat([namespace, Macro.camelize(slug)]) |> inspect()
-
+  defp dto_template(dto_module) do
     """
-    defmodule #{module_name} do
+    defmodule #{dto_module} do
       @moduledoc \"\"\"
       Generated opaque-envelope DTO scaffold.
       \"\"\"
@@ -149,13 +186,7 @@ defmodule AppKit.Workspace.BoundaryGenerator do
     """
   end
 
-  defp mapper_template(namespace, slug) do
-    dto_module = Module.concat([namespace, Macro.camelize(slug)]) |> inspect()
-
-    mapper_module =
-      Module.concat(["AppKit.Bridges.MezzanineBridge", "#{Macro.camelize(slug)}Mapper"])
-      |> inspect()
-
+  defp mapper_template(dto_module, mapper_module, slug) do
     """
     defmodule #{mapper_module} do
       @moduledoc \"\"\"
@@ -181,13 +212,7 @@ defmodule AppKit.Workspace.BoundaryGenerator do
     """
   end
 
-  defp mapper_test_template(namespace, slug) do
-    mapper_module =
-      Module.concat(["AppKit.Bridges.MezzanineBridge", "#{Macro.camelize(slug)}Mapper"])
-      |> inspect()
-
-    dto_module = Module.concat([namespace, Macro.camelize(slug)]) |> inspect()
-
+  defp mapper_test_template(dto_module, mapper_module, slug) do
     """
     defmodule #{mapper_module}Test do
       use ExUnit.Case, async: true
@@ -207,12 +232,12 @@ defmodule AppKit.Workspace.BoundaryGenerator do
     """
   end
 
-  defp manifest_template(slug, dto_contents, mapper_contents, mapper_test_contents) do
+  defp manifest_template(slug, dto_module, dto_contents, mapper_contents, mapper_test_contents) do
     manifest = %{
       contract_name: "AppKit.SchemaRegistryEntry.v1",
       schema_name: slug,
       schema_version: 1,
-      dto_module: "AppKit.Generated.#{Macro.camelize(slug)}",
+      dto_module: dto_module,
       generator_command: "mix app_kit.gen.boundary #{slug}",
       owner_repo: "app_kit",
       replacement_version_policy: "big_bang_no_legacy",
