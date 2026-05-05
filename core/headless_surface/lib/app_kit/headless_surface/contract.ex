@@ -55,8 +55,16 @@ defmodule AppKit.HeadlessSurface.Contract do
               | :reassign_provider
               | :reassign_target
               | :request_human_input
+              | :revoke_authority
+              | :rotate_authority
               | :rotate_lease
+              | :renew_authority
+              | :rebind_authority
+              | :detach_authority
               | :detach_target
+              | :transfer_authority
+              | :inspect_authority
+              | :invalidate_authority
               | :resume_session,
             actor_ref: String.t() | nil,
             command_ref: String.t() | nil,
@@ -98,8 +106,16 @@ defmodule AppKit.HeadlessSurface.Contract do
     :reassign_provider,
     :reassign_target,
     :request_human_input,
+    :revoke_authority,
+    :rotate_authority,
     :rotate_lease,
+    :renew_authority,
+    :rebind_authority,
+    :detach_authority,
     :detach_target,
+    :transfer_authority,
+    :inspect_authority,
+    :invalidate_authority,
     :resume_session
   ]
   @action_lookup Map.new(@actions, &{Atom.to_string(&1), &1})
@@ -124,6 +140,9 @@ defmodule AppKit.HeadlessSurface.Contract do
         {:error, {:forbidden_headless_surface_material, forbidden}}
     end
   end
+
+  @spec actions() :: [atom()]
+  def actions, do: @actions
 
   @spec operator_command(map() | keyword()) ::
           {:ok, OperatorCommand.t()} | {:error, {:invalid_headless_surface_action, term()}}

@@ -24,6 +24,29 @@ defmodule AppKit.HeadlessSurface.ContractTest do
   end
 
   test "operator commands are bounded to product-safe controls" do
+    required_authority_actions = [
+      :revoke_authority,
+      :rotate_authority,
+      :renew_authority,
+      :rebind_authority,
+      :detach_authority,
+      :transfer_authority,
+      :inspect_authority,
+      :invalidate_authority
+    ]
+
+    assert Enum.all?(required_authority_actions, &(&1 in Contract.actions()))
+
+    Enum.each(required_authority_actions, fn action ->
+      assert {:ok, %Contract.OperatorCommand{action: ^action}} =
+               Contract.operator_command(%{
+                 action: Atom.to_string(action),
+                 actor_ref: "actor://tenant-1/operator/1",
+                 command_ref: "headless-command://tenant-1/#{action}",
+                 authority_refs: ["authority://tenant-1/#{action}/1"]
+               })
+    end)
+
     assert {:ok, command} =
              Contract.operator_command(%{
                action: "detach_target",
