@@ -10,6 +10,10 @@ defmodule AppKit.HeadlessSurface.ContractTest do
     assert accepted.command_ref == "headless-command://tenant-1/idempotency-1"
     assert accepted.authority_projection_ref == "authority-projection://tenant-1/headless/1"
     assert accepted.runtime_invocation_ref == "runtime-invocation://tenant-1/headless/1"
+    assert accepted.credential_handle_ref == "credential-handle://tenant-1/claude/main"
+    assert accepted.native_auth_assertion_ref == "native-auth://tenant-1/claude/main"
+    assert accepted.attach_grant_ref == "attach-grant://tenant-1/local-process/1"
+    assert accepted.trace_ref == "trace://tenant-1/headless/1"
     refute inspect(accepted) =~ "secret"
   end
 
@@ -73,10 +77,14 @@ defmodule AppKit.HeadlessSurface.ContractTest do
       authority_projection_ref: "authority-projection://tenant-1/headless/1",
       provider_account_ref: "provider-account://tenant-1/claude/main",
       connector_binding_ref: "connector-binding://tenant-1/claude/default",
+      credential_handle_ref: "credential-handle://tenant-1/claude/main",
       credential_lease_ref: "credential-lease://tenant-1/claude/lease-1",
+      native_auth_assertion_ref: "native-auth://tenant-1/claude/main",
       target_ref: "target://tenant-1/local-process/1",
+      attach_grant_ref: "attach-grant://tenant-1/local-process/1",
       operation_policy_ref: "operation-policy://tenant-1/claude/coding",
       runtime_invocation_ref: "runtime-invocation://tenant-1/headless/1",
+      trace_ref: "trace://tenant-1/headless/1",
       idempotency_key: "idempotency-1",
       correlation_id: "correlation://tenant-1/headless/1"
     }
