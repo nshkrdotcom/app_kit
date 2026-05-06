@@ -79,12 +79,27 @@ defmodule AppKit.Core.ExtensionSupplyChainTest do
              |> ConnectorAdmissionProjection.new()
 
     assert projection.contract_name == "AppKit.ConnectorAdmissionProjection.v1"
-    assert projection.status == "admitted"
+    assert projection.admission_status == "admitted"
+    assert projection.manifest_hash == @hash
+    assert projection.operation_count == 1
+    assert projection.trigger_count == 0
   end
 
   test "rejects duplicate connector admission evidence without duplicate ref" do
     assert {:error, :invalid_connector_admission_projection} =
-             connector_admission_attrs("rejected_duplicate")
+             connector_admission_attrs("rejected_duplicate_capability")
+             |> ConnectorAdmissionProjection.new()
+  end
+
+  test "rejects connector admission projection with raw provider account or secret fields" do
+    assert {:error, :invalid_connector_admission_projection} =
+             connector_admission_attrs("admitted")
+             |> Map.put(:provider_account_id, "provider-account:tenant-alpha:github")
+             |> ConnectorAdmissionProjection.new()
+
+    assert {:error, :invalid_connector_admission_projection} =
+             connector_admission_attrs("admitted")
+             |> Map.put(:secret_metadata, %{field: "api_token"})
              |> ConnectorAdmissionProjection.new()
   end
 
@@ -92,11 +107,19 @@ defmodule AppKit.Core.ExtensionSupplyChainTest do
     base_attrs()
     |> Map.merge(%{
       connector_ref: "connector:github:v2",
-      pack_ref: "pack:expense-approval@1.0.0",
-      signature_ref: "sig:phase4-expense-approval",
-      schema_ref: "schema:extension-pack:v1",
+      manifest_hash: @hash,
+      contract_version: "connector-sdk.v1",
+      operation_count: 1,
+      trigger_count: 0,
+      auth_profiles: ["default_manual_secret"],
+      scopes: ["github:issues:read"],
+      duplicate_capabilities: [],
+      conformance_status: "passed",
+      admission_status: status,
+      persistence_profile: "memory-default",
+      trace_ref: "trace:connector-admission:github",
+      app_config_ref: "app-config:tenant-alpha:github-companion",
       admission_idempotency_key: "admission:tenant-alpha:github",
-      status: status,
       source_contract_name: "Platform.ConnectorAdmission.v1"
     })
   end

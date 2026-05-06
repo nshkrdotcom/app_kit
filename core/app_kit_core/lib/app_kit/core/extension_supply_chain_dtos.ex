@@ -37,6 +37,10 @@ defmodule AppKit.Core.ExtensionSupplyChainSupport do
   end
 
   def non_empty_binary_list?(_values), do: false
+
+  @spec binary_list?(term()) :: boolean()
+  def binary_list?(values) when is_list(values), do: Enum.all?(values, &present_binary?/1)
+  def binary_list?(_values), do: false
 end
 
 defmodule AppKit.Core.ExtensionPackSignatureProjection do
@@ -206,19 +210,50 @@ defmodule AppKit.Core.ConnectorAdmissionProjection do
 
   @contract_name "AppKit.ConnectorAdmissionProjection.v1"
   @source_contract_name "Platform.ConnectorAdmission.v1"
-  @statuses ["admitted", "rejected_duplicate", "rejected_signature", "rejected_schema"]
+  @statuses [
+    "admitted",
+    "rejected_manifest_collision",
+    "rejected_duplicate_capability",
+    "rejected_unsafe_scope",
+    "rejected_unsupported_auth_profile",
+    "rejected_missing_conformance",
+    "rejected_contract_mismatch",
+    "rejected_tenant_mismatch",
+    "rejected_durable_adapter"
+  ]
+  @conformance_statuses ["passed", "missing", "failed", "contract_mismatch"]
   @required_binary_fields ExtensionSupplyChainSupport.base_binary_fields() ++
                             [
                               :connector_ref,
-                              :pack_ref,
-                              :signature_ref,
-                              :schema_ref,
+                              :manifest_hash,
+                              :contract_version,
                               :admission_idempotency_key,
-                              :status,
+                              :conformance_status,
+                              :admission_status,
+                              :persistence_profile,
+                              :trace_ref,
+                              :app_config_ref,
                               :source_contract_name
                             ]
+  @required_non_neg_integer_fields [:operation_count, :trigger_count]
   @optional_binary_fields ExtensionSupplyChainSupport.optional_actor_fields() ++
-                            [:duplicate_of_ref]
+                            [
+                              :duplicate_of_ref
+                            ]
+  @forbidden_fields [
+    :provider_account_id,
+    "provider_account_id",
+    :secret_metadata,
+    "secret_metadata",
+    :authorization_header,
+    "authorization_header",
+    :auth_header,
+    "auth_header",
+    :raw_secret,
+    "raw_secret",
+    :raw_token,
+    "raw_token"
+  ]
 
   defstruct [
     :contract_name,
@@ -237,12 +272,20 @@ defmodule AppKit.Core.ConnectorAdmissionProjection do
     :correlation_id,
     :release_manifest_ref,
     :connector_ref,
-    :pack_ref,
-    :signature_ref,
-    :schema_ref,
+    :manifest_hash,
+    :contract_version,
+    :operation_count,
+    :trigger_count,
+    :auth_profiles,
+    :scopes,
+    :duplicate_capabilities,
+    :conformance_status,
+    :admission_status,
+    :persistence_profile,
+    :trace_ref,
+    :app_config_ref,
     :admission_idempotency_key,
     :duplicate_of_ref,
-    :status,
     :source_contract_name
   ]
 
@@ -256,12 +299,20 @@ defmodule AppKit.Core.ConnectorAdmissionProjection do
           | {:error, {:missing_required_fields, [atom()]}}
           | {:error, :invalid_connector_admission_projection}
   def new(attrs) do
-    with {:ok, attrs} <- ExtensionSupplyChainSupport.normalize_attrs(attrs),
+    with true <- no_forbidden_fields?(attrs),
+         {:ok, attrs} <- ExtensionSupplyChainSupport.normalize_attrs(attrs),
          [] <-
-           ExtensionSupplyChainSupport.missing_required_fields(attrs, @required_binary_fields, []),
+           ExtensionSupplyChainSupport.missing_required_fields(
+             attrs,
+             @required_binary_fields,
+             @required_non_neg_integer_fields
+           ),
          true <-
            ExtensionSupplyChainSupport.optional_binary_fields?(attrs, @optional_binary_fields),
-         true <- Map.fetch!(attrs, :status) in @statuses,
+         true <- Map.fetch!(attrs, :admission_status) in @statuses,
+         true <- Map.fetch!(attrs, :conformance_status) in @conformance_statuses,
+         true <- ExtensionSupplyChainSupport.sha256?(Map.fetch!(attrs, :manifest_hash)),
+         true <- safe_lists?(attrs),
          true <- duplicate_ref_valid?(attrs),
          true <- Map.fetch!(attrs, :source_contract_name) == @source_contract_name do
       {:ok, struct!(__MODULE__, Map.put(attrs, :contract_name, @contract_name))}
@@ -271,9 +322,24 @@ defmodule AppKit.Core.ConnectorAdmissionProjection do
     end
   end
 
-  defp duplicate_ref_valid?(%{status: "rejected_duplicate"} = attrs) do
+  defp duplicate_ref_valid?(%{admission_status: "rejected_duplicate_capability"} = attrs) do
     ExtensionSupplyChainSupport.present_binary?(Map.get(attrs, :duplicate_of_ref))
   end
 
   defp duplicate_ref_valid?(_attrs), do: true
+
+  defp safe_lists?(attrs) do
+    ExtensionSupplyChainSupport.binary_list?(Map.get(attrs, :auth_profiles)) and
+      ExtensionSupplyChainSupport.binary_list?(Map.get(attrs, :scopes)) and
+      ExtensionSupplyChainSupport.binary_list?(Map.get(attrs, :duplicate_capabilities))
+  end
+
+  defp no_forbidden_fields?(attrs) when is_list(attrs),
+    do: attrs |> Map.new() |> no_forbidden_fields?()
+
+  defp no_forbidden_fields?(attrs) when is_map(attrs) do
+    Enum.all?(@forbidden_fields, fn field -> not Map.has_key?(attrs, field) end)
+  end
+
+  defp no_forbidden_fields?(_attrs), do: false
 end
