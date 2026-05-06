@@ -27,6 +27,12 @@ defmodule AppKit.Workspace do
     "core/replay_surface",
     "core/cost_surface",
     "core/budget_surface",
+    "web/components",
+    "web/operator_console",
+    "web/replay_viewer",
+    "web/policy_authoring",
+    "web/cost_dashboard",
+    "web/eval_studio",
     "bridges/outer_brain_bridge",
     "bridges/domain_bridge",
     "bridges/mezzanine_bridge",
@@ -35,7 +41,7 @@ defmodule AppKit.Workspace do
     "examples/reference_host"
   ]
 
-  @active_project_globs [".", "core/*", "bridges/*", "examples/*"]
+  @active_project_globs [".", "core/*", "bridges/*", "web/*", "examples/*"]
 
   @spec package_paths() :: [String.t()]
   def package_paths, do: @package_paths

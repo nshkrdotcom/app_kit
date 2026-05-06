@@ -139,6 +139,12 @@ defmodule AppKit.Build.WeldContract do
           "core/replay_surface",
           "core/cost_surface",
           "core/budget_surface",
+          "web/components",
+          "web/operator_console",
+          "web/replay_viewer",
+          "web/policy_authoring",
+          "web/cost_dashboard",
+          "web/eval_studio",
           "examples/reference_host"
         ]
       ],

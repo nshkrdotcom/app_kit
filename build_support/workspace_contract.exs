@@ -25,6 +25,12 @@ defmodule AppKit.Build.WorkspaceContract do
     "core/replay_surface",
     "core/cost_surface",
     "core/budget_surface",
+    "web/components",
+    "web/operator_console",
+    "web/replay_viewer",
+    "web/policy_authoring",
+    "web/cost_dashboard",
+    "web/eval_studio",
     "bridges/outer_brain_bridge",
     "bridges/domain_bridge",
     "bridges/integration_bridge",
@@ -33,7 +39,7 @@ defmodule AppKit.Build.WorkspaceContract do
     "examples/reference_host"
   ]
 
-  @active_project_globs [".", "core/*", "bridges/*", "examples/*"]
+  @active_project_globs [".", "core/*", "bridges/*", "web/*", "examples/*"]
 
   def package_paths, do: @package_paths
   def active_project_globs, do: @active_project_globs

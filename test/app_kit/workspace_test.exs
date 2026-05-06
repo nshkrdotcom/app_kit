@@ -11,6 +11,7 @@ defmodule AppKit.WorkspaceTest do
   test "lists workspace packages" do
     assert "core/app_kit_core" in Workspace.package_paths()
     assert "core/authority_projections" in Workspace.package_paths()
+    assert "web/operator_console" in Workspace.package_paths()
     assert "bridges/domain_bridge" in Workspace.package_paths()
     assert "examples/reference_host" in Workspace.package_paths()
   end
@@ -20,6 +21,7 @@ defmodule AppKit.WorkspaceTest do
              ".",
              "core/*",
              "bridges/*",
+             "web/*",
              "examples/*"
            ]
   end
@@ -127,9 +129,10 @@ defmodule AppKit.WorkspaceTest do
           "bridges/domain_bridge/mix.exs",
           "bridges/outer_brain_bridge/mix.exs",
           "core/domain_surface/mix.exs",
+          "web/operator_console/mix.exs",
           "examples/reference_host/mix.exs"
         ] do
-      refute File.read!(path) =~ "/home/home/p/g/n/"
+      refute String.contains?(File.read!(path), "/home/home/p/g/n/")
     end
   end
 
@@ -166,10 +169,10 @@ defmodule AppKit.WorkspaceTest do
     assert File.exists?(mapper_path)
     assert File.exists?(mapper_test_path)
 
-    assert File.read!(dto_path) =~ "schema_ref"
-    assert File.read!(dto_path) =~ "schema_version"
-    assert File.read!(dto_path) =~ "payload"
-    assert File.read!(mapper_path) =~ "Map.get(payload, :payload, %{})"
-    assert File.read!(mapper_test_path) =~ "opaque payload envelope"
+    assert String.contains?(File.read!(dto_path), "schema_ref")
+    assert String.contains?(File.read!(dto_path), "schema_version")
+    assert String.contains?(File.read!(dto_path), "payload")
+    assert String.contains?(File.read!(mapper_path), "Map.get(payload, :payload, %{})")
+    assert String.contains?(File.read!(mapper_test_path), "opaque payload envelope")
   end
 end
