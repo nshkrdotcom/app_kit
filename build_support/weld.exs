@@ -6,6 +6,7 @@ defmodule AppKit.Build.WeldContract do
   @repo_root Path.expand("..", __DIR__)
   @jido_integration_repo_path Path.expand("../jido_integration", @repo_root)
   @mezzanine_repo_path Path.expand("../mezzanine", @repo_root)
+  @outer_brain_repo_path Path.expand("../outer_brain", @repo_root)
 
   @dependencies [
     jido_integration_contracts: [
@@ -45,6 +46,21 @@ defmodule AppKit.Build.WeldContract do
             override: true
           ]
         end
+    ],
+    outer_brain_memory_contracts: [
+      opts:
+        if File.dir?(@outer_brain_repo_path) do
+          [
+            git: @outer_brain_repo_path,
+            sparse: "core/memory_contracts"
+          ]
+        else
+          [
+            github: "nshkrdotcom/outer_brain",
+            branch: "main",
+            sparse: "core/memory_contracts"
+          ]
+        end
     ]
   ]
 
@@ -67,7 +83,12 @@ defmodule AppKit.Build.WeldContract do
         proofs: ["examples/reference_host"]
       ],
       publication: [
-        internal_only: [".", "examples/reference_host"]
+        internal_only: [
+          ".",
+          "core/memory_surface",
+          "core/context_budget_surface",
+          "examples/reference_host"
+        ]
       ],
       dependencies: @dependencies,
       artifacts: [
