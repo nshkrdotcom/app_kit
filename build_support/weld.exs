@@ -137,6 +137,8 @@ defmodule AppKit.Build.WeldContract do
           "core/guardrail_surface",
           "core/eval_surface",
           "core/replay_surface",
+          "core/cost_surface",
+          "core/budget_surface",
           "examples/reference_host"
         ]
       ],
