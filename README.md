@@ -17,8 +17,8 @@ AppKit is the northbound application-surface workspace for the nshkr platform
 core.
 
 It exists so product applications can consume stable chat, domain, operator,
-work-control, runtime-gateway, and conversation surfaces without stitching the
-lower stack manually.
+work-control, runtime-gateway, model inventory, optimization, and conversation
+surfaces without stitching the lower stack manually.
 
 AppKit is also the product boundary enforcement point. Product repos must use
 AppKit surfaces for governed writes, operator reads, reviews, installation
@@ -49,6 +49,7 @@ for the canonical `sha256:` checksum used by that v1 posture.
 - runtime gateways and conversation bridges
 - skill admission, invocation, projection, and trace-ref DTOs
 - host-scope and managed-target helpers
+- governed model inventory and optimization candidate review surfaces
 - default cross-stack composition
 
 ## Status

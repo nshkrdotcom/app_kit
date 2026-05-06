@@ -10,6 +10,8 @@ defmodule AppKit.SchemaRegistryTest do
     assert "AppKit.ProductBootstrap.v1" in contract_names
     assert "AppKit.SchemaRegistryEntry.v1" in contract_names
     assert "Platform.GeneratedArtifactOwnership.v1" in contract_names
+    assert "AppKit.ModelSurface.v1" in contract_names
+    assert "AppKit.OptimizationSurface.v1" in contract_names
 
     assert {:ok, entry} = SchemaRegistry.fetch("AppKit.ProductBootstrap.v1")
     assert entry.owner_repo == "app_kit"
@@ -17,6 +19,12 @@ defmodule AppKit.SchemaRegistryTest do
 
     assert "stack_lab/proofs/scenario_045_appkit_sdk_contract_failure.md" ==
              entry.proof_artifact_path
+
+    assert {:ok, model_surface} = SchemaRegistry.fetch("AppKit.ModelSurface.v1")
+    assert "jido_integration" in model_surface.producer_repos
+
+    assert {:ok, optimization_surface} = SchemaRegistry.fetch("AppKit.OptimizationSurface.v1")
+    assert "mezzanine" in optimization_surface.producer_repos
   end
 
   test "registry entries require the enterprise pre-cut fields" do

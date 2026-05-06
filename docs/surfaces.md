@@ -9,6 +9,9 @@ AppKit exposes seven main surface families:
 - `RunGovernance` for evidence and decision shaping
 - `RuntimeGateway` for app-facing runtime gateway descriptors
 - `ConversationBridge` for follow-up and live-update bridging
+- `ModelSurface` for governed model and endpoint inventory projection
+- `OptimizationSurface` for GEPA run, candidate, promotion, and rollback
+  projection
 - `SkillSurface` for governed skill admission, invocation, projection, and
   trace refs
 - `HiveSurface` for multi-agent coordination projections and trace refs

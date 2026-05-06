@@ -13,6 +13,8 @@ It owns the reusable app-facing seams that products should consume directly:
 - conversation bridges
 - scope and target helpers
 - normalized app config
+- model and endpoint inventory projection
+- optimization run, candidate, promotion, and rollback projection
 
 The repo is intentionally northbound. It does not own semantic authority,
 policy authority, lower durable truth, or execution-plane realization.

@@ -11,7 +11,9 @@
 - `./core/conversation_bridge/mix.exs`: Reusable follow-up and live-update helpers for the AppKit workspace
 - `./core/domain_surface/mix.exs`: Typed app-facing composition above citadel_domain_surface
 - `./core/installation_surface/mix.exs`: Typed installation lifecycle surface for the AppKit workspace
+- `./core/model_surface/mix.exs`: Product-safe model and endpoint inventory projection surface
 - `./core/operator_surface/mix.exs`: Operator-facing composition around review and projection reads
+- `./core/optimization_surface/mix.exs`: Product-safe GEPA optimization command and projection surface
 - `./core/review_surface/mix.exs`: Typed review-queue and decision surface for the AppKit workspace
 - `./core/run_governance/mix.exs`: Reusable run-governance helpers for the AppKit workspace
 - `./core/runtime_gateway/mix.exs`: App-facing runtime gateway descriptors for the AppKit workspace

@@ -129,6 +129,68 @@ defmodule AppKit.Workspace.SchemaRegistry do
       proof_artifact_path: "stack_lab/proofs/scenario_081_generated_artifact_law.md",
       release_manifest_key: "contracts.Platform.GeneratedArtifactOwnership.v1",
       replacement_version_policy: "big_bang_no_legacy"
+    },
+    %{
+      contract_name: "AppKit.ModelSurface.v1",
+      contract_version: "1.0.0",
+      owner_repo: "app_kit",
+      boundary_owner: "governed model inventory projection boundary",
+      producer_repos: ["app_kit", "jido_integration"],
+      consumer_repos: ["extravaganza", "stack_lab", "jido_brainstorm"],
+      dto_packet_table_resource_names: [
+        "AppKit.ModelSurface.ModelProfileProjection",
+        "AppKit.ModelSurface.EndpointProfileProjection",
+        "AppKit.ModelSurface.CatalogProjection",
+        "AppKit.ModelSurface.AdmissionRequest"
+      ],
+      required_fields:
+        @enterprise_fields ++
+          [
+            "model_profile_ref",
+            "endpoint_profile_ref",
+            "capability_refs",
+            "readiness_ref",
+            "operation_policy_ref",
+            "cost_posture_ref"
+          ],
+      optional_fields: ["admission_ref"],
+      generator_command: "manual AppKit model surface DTO package",
+      runbook_path: "runbooks/appkit_model_surface_contract_failure.md",
+      proof_artifact_path: "stack_lab/proofs/scenario_aoc_034_model_surface.md",
+      release_manifest_key: "contracts.AppKit.ModelSurface.v1",
+      replacement_version_policy: "big_bang_no_legacy"
+    },
+    %{
+      contract_name: "AppKit.OptimizationSurface.v1",
+      contract_version: "1.0.0",
+      owner_repo: "app_kit",
+      boundary_owner: "governed optimization command and projection boundary",
+      producer_repos: ["app_kit", "mezzanine"],
+      consumer_repos: ["extravaganza", "stack_lab", "jido_brainstorm"],
+      dto_packet_table_resource_names: [
+        "AppKit.OptimizationSurface.RunCreateRequest",
+        "AppKit.OptimizationSurface.CandidateProjection",
+        "AppKit.OptimizationSurface.CandidateComparison",
+        "AppKit.OptimizationSurface.PromotionDecisionProjection",
+        "AppKit.OptimizationSurface.LineageProjection"
+      ],
+      required_fields:
+        @enterprise_fields ++
+          [
+            "optimization_run_ref",
+            "candidate_ref",
+            "eval_ref",
+            "replay_ref",
+            "budget_ref",
+            "promotion_ref",
+            "rollback_ref"
+          ],
+      optional_fields: ["shadow_ref", "canary_ref"],
+      generator_command: "manual AppKit optimization surface DTO package",
+      runbook_path: "runbooks/appkit_optimization_surface_contract_failure.md",
+      proof_artifact_path: "stack_lab/proofs/scenario_aoc_035_optimization_surface.md",
+      release_manifest_key: "contracts.AppKit.OptimizationSurface.v1",
+      replacement_version_policy: "big_bang_no_legacy"
     }
   ]
 

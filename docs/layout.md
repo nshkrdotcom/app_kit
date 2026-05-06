@@ -14,6 +14,8 @@ Key groups:
 - `core/conversation_bridge`
 - `core/scope_objects`
 - `core/app_config`
+- `core/model_surface`
+- `core/optimization_surface`
 - `bridges/*`
 - `examples/reference_host`
 
