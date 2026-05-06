@@ -119,7 +119,11 @@ defmodule AppKit.SchemaRegistryTest do
   end
 
   test "boundary generator does not create modules through runtime atom concatenation" do
-    source = File.read!("lib/app_kit/workspace/boundary_generator.ex")
+    source =
+      __DIR__
+      |> Path.join("../../lib/app_kit/workspace/boundary_generator.ex")
+      |> Path.expand()
+      |> File.read!()
 
     refute String.contains?(source, "Module.concat")
   end

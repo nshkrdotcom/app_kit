@@ -85,3 +85,7 @@ Do not invent raw `temporal server start-dev` commands for normal work. Do not r
 If a lower primitive is missing, add it in the lower owner repo first, then
 return to AppKit.
 <!-- gn-ten:repo-agent:end -->
+
+## Blitz 0.3.0 operational note
+
+Root workspace Blitz uses published Hex `~> 0.3.0` by default; `.blitz/` is committed compact impact state after green QC. Source and `mix.exs` changes cascade through reverse workspace dependencies; docs-only changes should stay owner-local.
