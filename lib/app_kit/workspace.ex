@@ -28,6 +28,7 @@ defmodule AppKit.Workspace do
     "core/cost_surface",
     "core/budget_surface",
     "core/skill_surface",
+    "core/hive_surface",
     "web/components",
     "web/operator_console",
     "web/replay_viewer",

@@ -11,6 +11,7 @@ AppKit exposes seven main surface families:
 - `ConversationBridge` for follow-up and live-update bridging
 - `SkillSurface` for governed skill admission, invocation, projection, and
   trace refs
+- `HiveSurface` for multi-agent coordination projections and trace refs
 
 These surfaces are intentionally reusable and app-facing. They are not a second
 policy kernel and not a second lower control plane.
@@ -19,8 +20,8 @@ policy kernel and not a second lower control plane.
 
 Products consume these surfaces instead of lower repos. Governed writes,
 reviews, installation lifecycle, operator actions, trace lookup, semantic assist,
-and lower-backed reads all enter through AppKit and then move through the owning
-lower layer.
+multi-agent coordination projection, and lower-backed reads all enter through
+AppKit and then move through the owning lower layer.
 
 `mix app_kit.no_bypass` enforces this split. The `product` profile rejects direct
 product imports into lower governed-write APIs while allowing pure

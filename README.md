@@ -22,7 +22,8 @@ lower stack manually.
 
 AppKit is also the product boundary enforcement point. Product repos must use
 AppKit surfaces for governed writes, operator reads, reviews, installation
-bootstrap, semantic assist, trace lookup, and leased lower read access. Direct
+bootstrap, semantic assist, trace lookup, leased lower read access, and
+multi-agent coordination projection. Direct
 product calls into Mezzanine, Citadel, Jido Integration, or Execution Plane are
 boundary violations unless the product is authoring a pure `Mezzanine.Pack`
 model contract.

@@ -49,6 +49,82 @@ defmodule AppKit.Build.WeldContract do
           ]
         end
     ],
+    jido_hive_agent_coordinator: [
+      opts:
+        if File.dir?(@jido_hive_repo_path) do
+          [
+            git: @jido_hive_repo_path,
+            subdir: "core/agent_coordinator",
+            runtime: false,
+            override: true
+          ]
+        else
+          [
+            github: "nshkrdotcom/jido_hive",
+            branch: "main",
+            subdir: "core/agent_coordinator",
+            runtime: false,
+            override: true
+          ]
+        end
+    ],
+    jido_hive_inter_agent_messaging: [
+      opts:
+        if File.dir?(@jido_hive_repo_path) do
+          [
+            git: @jido_hive_repo_path,
+            subdir: "core/inter_agent_messaging",
+            runtime: false,
+            override: true
+          ]
+        else
+          [
+            github: "nshkrdotcom/jido_hive",
+            branch: "main",
+            subdir: "core/inter_agent_messaging",
+            runtime: false,
+            override: true
+          ]
+        end
+    ],
+    jido_hive_shared_memory_facade: [
+      opts:
+        if File.dir?(@jido_hive_repo_path) do
+          [
+            git: @jido_hive_repo_path,
+            subdir: "core/shared_memory_facade",
+            runtime: false,
+            override: true
+          ]
+        else
+          [
+            github: "nshkrdotcom/jido_hive",
+            branch: "main",
+            subdir: "core/shared_memory_facade",
+            runtime: false,
+            override: true
+          ]
+        end
+    ],
+    jido_hive_coordination_patterns: [
+      opts:
+        if File.dir?(@jido_hive_repo_path) do
+          [
+            git: @jido_hive_repo_path,
+            subdir: "core/coordination_patterns",
+            runtime: false,
+            override: true
+          ]
+        else
+          [
+            github: "nshkrdotcom/jido_hive",
+            branch: "main",
+            subdir: "core/coordination_patterns",
+            runtime: false,
+            override: true
+          ]
+        end
+    ],
     mezzanine_headless_coding_ops: [
       opts:
         if File.dir?(@mezzanine_repo_path) do
@@ -160,6 +236,7 @@ defmodule AppKit.Build.WeldContract do
           "core/cost_surface",
           "core/budget_surface",
           "core/skill_surface",
+          "core/hive_surface",
           "web/components",
           "web/operator_console",
           "web/replay_viewer",
