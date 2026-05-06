@@ -21,6 +21,8 @@ defmodule AppKit.Build.WorkspaceContract do
     "core/context_budget_surface",
     "core/prompt_surface",
     "core/guardrail_surface",
+    "core/eval_surface",
+    "core/replay_surface",
     "bridges/outer_brain_bridge",
     "bridges/domain_bridge",
     "bridges/integration_bridge",

@@ -7,6 +7,7 @@ defmodule AppKit.Build.WeldContract do
   @jido_integration_repo_path Path.expand("../jido_integration", @repo_root)
   @mezzanine_repo_path Path.expand("../mezzanine", @repo_root)
   @outer_brain_repo_path Path.expand("../outer_brain", @repo_root)
+  @aitrace_repo_path Path.expand("../AITrace", @repo_root)
 
   @dependencies [
     jido_integration_contracts: [
@@ -91,6 +92,21 @@ defmodule AppKit.Build.WeldContract do
             sparse: "core/guardrail_contracts"
           ]
         end
+    ],
+    ai_trace_replay_contracts: [
+      opts:
+        if File.dir?(@aitrace_repo_path) do
+          [
+            git: @aitrace_repo_path,
+            sparse: "core/replay_contracts"
+          ]
+        else
+          [
+            github: "nshkrdotcom/AITrace",
+            branch: "main",
+            sparse: "core/replay_contracts"
+          ]
+        end
     ]
   ]
 
@@ -119,6 +135,8 @@ defmodule AppKit.Build.WeldContract do
           "core/context_budget_surface",
           "core/prompt_surface",
           "core/guardrail_surface",
+          "core/eval_surface",
+          "core/replay_surface",
           "examples/reference_host"
         ]
       ],
