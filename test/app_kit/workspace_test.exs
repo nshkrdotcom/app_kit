@@ -11,6 +11,7 @@ defmodule AppKit.WorkspaceTest do
   test "lists workspace packages" do
     assert "core/app_kit_core" in Workspace.package_paths()
     assert "core/authority_projections" in Workspace.package_paths()
+    assert "core/skill_surface" in Workspace.package_paths()
     assert "web/operator_console" in Workspace.package_paths()
     assert "bridges/domain_bridge" in Workspace.package_paths()
     assert "examples/reference_host" in Workspace.package_paths()
@@ -116,6 +117,7 @@ defmodule AppKit.WorkspaceTest do
 
     for app <- [
           :jido_integration_contracts,
+          :jido_hive_skill_contracts,
           :mezzanine_headless_coding_ops
         ] do
       manifest_opts = Keyword.fetch!(manifest_deps, app)
@@ -129,6 +131,7 @@ defmodule AppKit.WorkspaceTest do
           "bridges/domain_bridge/mix.exs",
           "bridges/outer_brain_bridge/mix.exs",
           "core/domain_surface/mix.exs",
+          "core/skill_surface/mix.exs",
           "web/operator_console/mix.exs",
           "examples/reference_host/mix.exs"
         ] do

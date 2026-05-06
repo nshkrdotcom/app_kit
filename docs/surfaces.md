@@ -9,6 +9,8 @@ AppKit exposes seven main surface families:
 - `RunGovernance` for evidence and decision shaping
 - `RuntimeGateway` for app-facing runtime gateway descriptors
 - `ConversationBridge` for follow-up and live-update bridging
+- `SkillSurface` for governed skill admission, invocation, projection, and
+  trace refs
 
 These surfaces are intentionally reusable and app-facing. They are not a second
 policy kernel and not a second lower control plane.

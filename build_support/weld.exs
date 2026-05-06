@@ -5,6 +5,7 @@ defmodule AppKit.Build.WeldContract do
 
   @repo_root Path.expand("..", __DIR__)
   @jido_integration_repo_path Path.expand("../jido_integration", @repo_root)
+  @jido_hive_repo_path Path.expand("../jido_hive", @repo_root)
   @mezzanine_repo_path Path.expand("../mezzanine", @repo_root)
   @outer_brain_repo_path Path.expand("../outer_brain", @repo_root)
   @aitrace_repo_path Path.expand("../AITrace", @repo_root)
@@ -24,6 +25,25 @@ defmodule AppKit.Build.WeldContract do
             github: "nshkrdotcom/jido_integration",
             branch: "main",
             subdir: "core/contracts",
+            runtime: false,
+            override: true
+          ]
+        end
+    ],
+    jido_hive_skill_contracts: [
+      opts:
+        if File.dir?(@jido_hive_repo_path) do
+          [
+            git: @jido_hive_repo_path,
+            subdir: "core/skill_contracts",
+            runtime: false,
+            override: true
+          ]
+        else
+          [
+            github: "nshkrdotcom/jido_hive",
+            branch: "main",
+            subdir: "core/skill_contracts",
             runtime: false,
             override: true
           ]
@@ -139,6 +159,7 @@ defmodule AppKit.Build.WeldContract do
           "core/replay_surface",
           "core/cost_surface",
           "core/budget_surface",
+          "core/skill_surface",
           "web/components",
           "web/operator_console",
           "web/replay_viewer",

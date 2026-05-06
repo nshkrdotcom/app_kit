@@ -25,6 +25,7 @@ defmodule AppKit.Build.WorkspaceContract do
     "core/replay_surface",
     "core/cost_surface",
     "core/budget_surface",
+    "core/skill_surface",
     "web/components",
     "web/operator_console",
     "web/replay_viewer",

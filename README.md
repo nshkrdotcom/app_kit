@@ -46,6 +46,7 @@ for the canonical `sha256:` checksum used by that v1 posture.
 - operator-facing surfaces
 - reusable work-control and governed-run surfaces
 - runtime gateways and conversation bridges
+- skill admission, invocation, projection, and trace-ref DTOs
 - host-scope and managed-target helpers
 - default cross-stack composition
 
