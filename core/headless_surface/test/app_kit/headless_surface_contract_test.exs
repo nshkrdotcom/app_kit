@@ -14,7 +14,7 @@ defmodule AppKit.HeadlessSurface.ContractTest do
     assert accepted.native_auth_assertion_ref == "native-auth://tenant-1/claude/main"
     assert accepted.attach_grant_ref == "attach-grant://tenant-1/local-process/1"
     assert accepted.trace_ref == "trace://tenant-1/headless/1"
-    refute inspect(accepted) =~ "secret"
+    refute String.contains?(inspect(accepted), "secret")
   end
 
   test "rejects raw product bypass material before Mezzanine dispatch" do

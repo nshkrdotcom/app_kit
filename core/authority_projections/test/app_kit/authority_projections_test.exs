@@ -49,7 +49,7 @@ defmodule AppKit.AuthorityProjectionsTest do
     assert dto["redaction_ref"] == "redaction://tenant-1/authority-projection/1"
     assert dto["provider_account_status"] == :asserted
     assert dto["identity_introspection_limit"] == :ref_only
-    refute inspect(dto) =~ "secret"
+    refute String.contains?(inspect(dto), "secret")
     refute Map.has_key?(dto, "provider_payload")
   end
 
@@ -105,7 +105,7 @@ defmodule AppKit.AuthorityProjectionsTest do
     assert dto["proof_refs"] == ["proof://tenant-1/admission/1"]
     assert dto["scanner_refs"] == ["scanner://stack-lab/no-bypass/1"]
     assert dto["redaction_class"] == "ref_only"
-    refute inspect(dto) =~ "secret"
+    refute String.contains?(inspect(dto), "secret")
   end
 
   defp valid_attrs do

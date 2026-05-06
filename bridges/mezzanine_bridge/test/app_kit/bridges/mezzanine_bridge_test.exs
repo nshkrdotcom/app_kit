@@ -1555,10 +1555,10 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     |> Enum.each(fn path ->
       contents = File.read!(path)
 
-      refute contents =~ "Jido.Integration.V2.StorePostgres",
+      refute String.contains?(contents, "Jido.Integration.V2.StorePostgres"),
              "#{path} imports the lower memory store directly"
 
-      refute contents =~ "MemoryTierStore",
+      refute String.contains?(contents, "MemoryTierStore"),
              "#{path} bypasses the Mezzanine memory-control facade"
     end)
   end
@@ -1634,7 +1634,8 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     |> Path.join("lib/**/*.ex")
     |> Path.wildcard(match_dot: true)
     |> Enum.each(fn path ->
-      refute File.read!(path) =~ "MezzanineOpsModel", "#{path} still references MezzanineOpsModel"
+      refute String.contains?(File.read!(path), "MezzanineOpsModel"),
+             "#{path} still references MezzanineOpsModel"
     end)
   end
 
@@ -1653,7 +1654,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     |> Path.join("lib/**/*.ex")
     |> Path.wildcard(match_dot: true)
     |> Enum.each(fn path ->
-      refute File.read!(path) =~ "Mezzanine.WorkAudit",
+      refute String.contains?(File.read!(path), "Mezzanine.WorkAudit"),
              "#{path} still references Mezzanine.WorkAudit"
     end)
   end
@@ -1673,7 +1674,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     |> Path.join("lib/**/*.ex")
     |> Path.wildcard(match_dot: true)
     |> Enum.each(fn path ->
-      refute File.read!(path) =~ "Mezzanine.Control",
+      refute String.contains?(File.read!(path), "Mezzanine.Control"),
              "#{path} still references Mezzanine.Control"
     end)
   end
@@ -1693,7 +1694,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     |> Path.join("lib/**/*.ex")
     |> Path.wildcard(match_dot: true)
     |> Enum.each(fn path ->
-      refute File.read!(path) =~ "Mezzanine.Assurance",
+      refute String.contains?(File.read!(path), "Mezzanine.Assurance"),
              "#{path} still references Mezzanine.Assurance"
     end)
   end
@@ -1715,7 +1716,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     |> Enum.each(fn path ->
       contents = File.read!(path)
 
-      refute contents =~ "Mezzanine.OpsDomain.Repo",
+      refute String.contains?(contents, "Mezzanine.OpsDomain.Repo"),
              "#{path} still references Mezzanine.OpsDomain.Repo"
 
       refute deprecated_mezzanine_namespace?(contents),

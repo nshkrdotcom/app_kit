@@ -73,7 +73,7 @@ defmodule AppKit.SchemaRegistryTest do
 
     assert File.exists?(manifest_path)
 
-    {manifest, _binding} = Code.eval_file(manifest_path)
+    manifest = manifest_from_file!(manifest_path)
 
     assert manifest.contract_name == "AppKit.SchemaRegistryEntry.v1"
     assert manifest.schema_name == "operator_projection"
@@ -134,4 +134,18 @@ defmodule AppKit.SchemaRegistryTest do
       |> :binary.bin_to_list()
       |> Enum.all?(fn byte -> byte in ?a..?f or byte in ?0..?9 end)
   end
+
+  defp manifest_from_file!(path) do
+    path
+    |> File.read!()
+    |> Code.string_to_quoted!()
+    |> literal_term!()
+  end
+
+  defp literal_term!({:%{}, _metadata, pairs}) do
+    Map.new(pairs, fn {key, value} -> {literal_term!(key), literal_term!(value)} end)
+  end
+
+  defp literal_term!(value) when is_atom(value) or is_binary(value) or is_integer(value),
+    do: value
 end
