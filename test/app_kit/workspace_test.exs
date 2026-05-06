@@ -13,6 +13,7 @@ defmodule AppKit.WorkspaceTest do
     assert "core/authority_projections" in Workspace.package_paths()
     assert "core/model_surface" in Workspace.package_paths()
     assert "core/optimization_surface" in Workspace.package_paths()
+    assert "core/coordination_surface" in Workspace.package_paths()
     assert "core/skill_surface" in Workspace.package_paths()
     assert "core/hive_surface" in Workspace.package_paths()
     assert "web/operator_console" in Workspace.package_paths()
@@ -140,6 +141,7 @@ defmodule AppKit.WorkspaceTest do
           "core/domain_surface/mix.exs",
           "core/model_surface/mix.exs",
           "core/optimization_surface/mix.exs",
+          "core/coordination_surface/mix.exs",
           "core/skill_surface/mix.exs",
           "core/hive_surface/mix.exs",
           "web/operator_console/mix.exs",

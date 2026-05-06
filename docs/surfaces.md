@@ -1,6 +1,6 @@
 # Surfaces
 
-AppKit exposes seven main surface families:
+AppKit exposes the main app-facing surface families:
 
 - `ChatSurface` for chat-oriented host ingress above `outer_brain`
 - `DomainSurface` for typed host ingress above `citadel_domain_surface`
@@ -12,6 +12,8 @@ AppKit exposes seven main surface families:
 - `ModelSurface` for governed model and endpoint inventory projection
 - `OptimizationSurface` for GEPA run, candidate, promotion, and rollback
   projection
+- `CoordinationSurface` for TRINITY run, router decision, role selection,
+  provider pool, verifier, timeline, intervention, retry, and replay refs
 - `SkillSurface` for governed skill admission, invocation, projection, and
   trace refs
 - `HiveSurface` for multi-agent coordination projections and trace refs

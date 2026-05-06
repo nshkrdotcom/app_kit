@@ -16,6 +16,7 @@ Key groups:
 - `core/app_config`
 - `core/model_surface`
 - `core/optimization_surface`
+- `core/coordination_surface`
 - `bridges/*`
 - `examples/reference_host`
 

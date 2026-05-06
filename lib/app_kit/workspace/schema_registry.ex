@@ -191,6 +191,40 @@ defmodule AppKit.Workspace.SchemaRegistry do
       proof_artifact_path: "stack_lab/proofs/scenario_aoc_035_optimization_surface.md",
       release_manifest_key: "contracts.AppKit.OptimizationSurface.v1",
       replacement_version_policy: "big_bang_no_legacy"
+    },
+    %{
+      contract_name: "AppKit.CoordinationSurface.v1",
+      contract_version: "1.0.0",
+      owner_repo: "app_kit",
+      boundary_owner: "governed TRINITY coordination command and projection boundary",
+      producer_repos: ["app_kit", "mezzanine", "trinity_framework"],
+      consumer_repos: ["extravaganza", "stack_lab", "jido_brainstorm"],
+      dto_packet_table_resource_names: [
+        "AppKit.CoordinationSurface.RunCreateRequest",
+        "AppKit.CoordinationSurface.CoordinationProjection",
+        "AppKit.CoordinationSurface.RouterDecisionProjection",
+        "AppKit.CoordinationSurface.ProviderPoolProjection",
+        "AppKit.CoordinationSurface.ReplayBundleProjection"
+      ],
+      required_fields:
+        @enterprise_fields ++
+          [
+            "coordination_run_ref",
+            "router_decision_ref",
+            "role_selection_ref",
+            "provider_pool_ref",
+            "verifier_state_ref",
+            "turn_timeline_ref",
+            "memory_context_ref",
+            "context_budget_ref",
+            "replay_bundle_ref"
+          ],
+      optional_fields: ["human_intervention_ref", "retry_turn_ref"],
+      generator_command: "manual AppKit coordination surface DTO package",
+      runbook_path: "runbooks/appkit_coordination_surface_contract_failure.md",
+      proof_artifact_path: "stack_lab/proofs/scenario_aoc_036_coordination_surface.md",
+      release_manifest_key: "contracts.AppKit.CoordinationSurface.v1",
+      replacement_version_policy: "big_bang_no_legacy"
     }
   ]
 

@@ -12,6 +12,7 @@ defmodule AppKit.SchemaRegistryTest do
     assert "Platform.GeneratedArtifactOwnership.v1" in contract_names
     assert "AppKit.ModelSurface.v1" in contract_names
     assert "AppKit.OptimizationSurface.v1" in contract_names
+    assert "AppKit.CoordinationSurface.v1" in contract_names
 
     assert {:ok, entry} = SchemaRegistry.fetch("AppKit.ProductBootstrap.v1")
     assert entry.owner_repo == "app_kit"
@@ -25,6 +26,10 @@ defmodule AppKit.SchemaRegistryTest do
 
     assert {:ok, optimization_surface} = SchemaRegistry.fetch("AppKit.OptimizationSurface.v1")
     assert "mezzanine" in optimization_surface.producer_repos
+
+    assert {:ok, coordination_surface} = SchemaRegistry.fetch("AppKit.CoordinationSurface.v1")
+    assert "mezzanine" in coordination_surface.producer_repos
+    assert "trinity_framework" in coordination_surface.producer_repos
   end
 
   test "registry entries require the enterprise pre-cut fields" do

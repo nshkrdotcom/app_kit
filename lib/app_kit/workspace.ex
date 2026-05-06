@@ -29,6 +29,7 @@ defmodule AppKit.Workspace do
     "core/budget_surface",
     "core/model_surface",
     "core/optimization_surface",
+    "core/coordination_surface",
     "core/skill_surface",
     "core/hive_surface",
     "web/components",
