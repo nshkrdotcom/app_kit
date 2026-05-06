@@ -19,6 +19,8 @@ defmodule AppKit.Build.WorkspaceContract do
     "core/app_config",
     "core/memory_surface",
     "core/context_budget_surface",
+    "core/prompt_surface",
+    "core/guardrail_surface",
     "bridges/outer_brain_bridge",
     "bridges/domain_bridge",
     "bridges/integration_bridge",

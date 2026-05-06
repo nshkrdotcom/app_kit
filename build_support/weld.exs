@@ -61,6 +61,36 @@ defmodule AppKit.Build.WeldContract do
             sparse: "core/memory_contracts"
           ]
         end
+    ],
+    outer_brain_prompt_fabric: [
+      opts:
+        if File.dir?(@outer_brain_repo_path) do
+          [
+            git: @outer_brain_repo_path,
+            sparse: "core/prompt_fabric"
+          ]
+        else
+          [
+            github: "nshkrdotcom/outer_brain",
+            branch: "main",
+            sparse: "core/prompt_fabric"
+          ]
+        end
+    ],
+    outer_brain_guardrail_contracts: [
+      opts:
+        if File.dir?(@outer_brain_repo_path) do
+          [
+            git: @outer_brain_repo_path,
+            sparse: "core/guardrail_contracts"
+          ]
+        else
+          [
+            github: "nshkrdotcom/outer_brain",
+            branch: "main",
+            sparse: "core/guardrail_contracts"
+          ]
+        end
     ]
   ]
 
@@ -87,6 +117,8 @@ defmodule AppKit.Build.WeldContract do
           ".",
           "core/memory_surface",
           "core/context_budget_surface",
+          "core/prompt_surface",
+          "core/guardrail_surface",
           "examples/reference_host"
         ]
       ],
