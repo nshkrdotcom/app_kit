@@ -14,6 +14,8 @@ AppKit exposes the main app-facing surface families:
   projection
 - `CoordinationSurface` for TRINITY run, router decision, role selection,
   provider pool, verifier, timeline, intervention, retry, and replay refs
+- `AdaptiveControlSurface` for closed-loop shadow, canary, threshold, budget,
+  approval, promotion, rollback, artifact lock, stale rejection, and audit refs
 - `SkillSurface` for governed skill admission, invocation, projection, and
   trace refs
 - `HiveSurface` for multi-agent coordination projections and trace refs

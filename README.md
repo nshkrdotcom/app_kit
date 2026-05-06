@@ -51,6 +51,7 @@ for the canonical `sha256:` checksum used by that v1 posture.
 - host-scope and managed-target helpers
 - governed model inventory and optimization candidate review surfaces
 - governed TRINITY coordination projection and run-control surfaces
+- governed adaptive-control approval, promotion, rollback, and audit surfaces
 - default cross-stack composition
 
 ## Status

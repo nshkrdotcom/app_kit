@@ -238,6 +238,7 @@ defmodule AppKit.Build.WeldContract do
           "core/model_surface",
           "core/optimization_surface",
           "core/coordination_surface",
+          "core/adaptive_control_surface",
           "core/skill_surface",
           "core/hive_surface",
           "web/components",

@@ -225,6 +225,42 @@ defmodule AppKit.Workspace.SchemaRegistry do
       proof_artifact_path: "stack_lab/proofs/scenario_aoc_036_coordination_surface.md",
       release_manifest_key: "contracts.AppKit.CoordinationSurface.v1",
       replacement_version_policy: "big_bang_no_legacy"
+    },
+    %{
+      contract_name: "AppKit.AdaptiveControlSurface.v1",
+      contract_version: "1.0.0",
+      owner_repo: "app_kit",
+      boundary_owner: "governed adaptive-control operator projection boundary",
+      producer_repos: ["app_kit", "mezzanine", "ground_plane"],
+      consumer_repos: ["extravaganza", "stack_lab", "jido_brainstorm"],
+      dto_packet_table_resource_names: [
+        "AppKit.AdaptiveControlSurface.OperatorProjection",
+        "AppKit.AdaptiveControlSurface.ShadowComparisonProjection",
+        "AppKit.AdaptiveControlSurface.CanaryStateProjection",
+        "AppKit.AdaptiveControlSurface.PromotionReadinessProjection",
+        "AppKit.AdaptiveControlSurface.RollbackProjection"
+      ],
+      required_fields:
+        @enterprise_fields ++
+          [
+            "adaptive_control_run_ref",
+            "shadow_comparison_ref",
+            "canary_state_ref",
+            "threshold_status_ref",
+            "budget_impact_ref",
+            "approval_decision_ref",
+            "promotion_readiness_ref",
+            "rollback_ref",
+            "artifact_lock_ref",
+            "stale_artifact_rejection_ref",
+            "audit_ref"
+          ],
+      optional_fields: ["operator_review_ref"],
+      generator_command: "manual AppKit adaptive-control surface DTO package",
+      runbook_path: "runbooks/appkit_adaptive_control_surface_contract_failure.md",
+      proof_artifact_path: "stack_lab/proofs/scenario_aoc_037_adaptive_control_surface.md",
+      release_manifest_key: "contracts.AppKit.AdaptiveControlSurface.v1",
+      replacement_version_policy: "big_bang_no_legacy"
     }
   ]
 

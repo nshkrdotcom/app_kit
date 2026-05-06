@@ -17,6 +17,7 @@ Key groups:
 - `core/model_surface`
 - `core/optimization_surface`
 - `core/coordination_surface`
+- `core/adaptive_control_surface`
 - `bridges/*`
 - `examples/reference_host`
 
