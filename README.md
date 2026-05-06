@@ -146,6 +146,12 @@ tenant refs, schema versions, authority refs, workflow refs, and proof bundles
 into release-manifest-ready smoke evidence. Product implementations still route
 through AppKit surfaces; these DTOs do not authorize direct lower-stack imports.
 
+Phase 15 product no-bypass proof extends that boundary to adaptive controls:
+products may use `AppKit.AdaptiveControlSurface` and the operator console
+`adaptive_controls` section, but product code must not import GEPA, TRINITY,
+provider SDKs, generated SDKs, lower runtimes, DB repos, or trace writers to
+review candidates, inspect shadow/canary state, promote, roll back, or audit.
+
 The welded `app_kit_core` artifact is tracked through the prepared bundle flow:
 
 ```bash

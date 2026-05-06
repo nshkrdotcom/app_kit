@@ -36,11 +36,33 @@ defmodule AppKit.Boundary.NoBypass do
   @product_forbidden [
     "AppKit.Bridges",
     "Citadel",
+    "GepaFramework",
+    "GepaBuildout",
+    "TrinityFramework",
+    "TrinityCoordinator",
+    "Pristine",
+    "Prismatic",
+    "GitHubEx",
+    "Notion",
+    "Linear",
+    "ReqLlmNext",
+    "ReqLLM",
+    "GeminiEx",
+    "Gemini",
+    "ClaudeAgent",
+    "Codex",
+    "Amp",
+    "LlamaCpp",
+    "Inference",
+    "SelfHostedInferenceCore",
     "Jido.Integration",
+    "GroundPlane",
+    "AITrace",
     "ExecutionPlane",
     "HostIngress",
     "InvocationBridge",
-    "Mezzanine"
+    "Mezzanine",
+    "Repo"
   ]
 
   @hazmat_forbidden [
@@ -246,13 +268,43 @@ defmodule AppKit.Boundary.NoBypass do
     do: String.contains?(line, ["AppKit.Bridge.", "AppKit.Bridges."])
 
   defp forbidden_line?("Citadel", line), do: String.contains?(line, "Citadel.")
+  defp forbidden_line?("GepaFramework", line), do: String.contains?(line, "GepaFramework.")
+  defp forbidden_line?("GepaBuildout", line), do: String.contains?(line, "GepaBuildout.")
+  defp forbidden_line?("TrinityFramework", line), do: String.contains?(line, "TrinityFramework.")
+
+  defp forbidden_line?("TrinityCoordinator", line),
+    do: String.contains?(line, "TrinityCoordinator.")
+
+  defp forbidden_line?("Pristine", line), do: String.contains?(line, "Pristine.")
+  defp forbidden_line?("Prismatic", line), do: String.contains?(line, "Prismatic.")
+  defp forbidden_line?("GitHubEx", line), do: String.contains?(line, "GitHubEx.")
+  defp forbidden_line?("Notion", line), do: String.contains?(line, "Notion.")
+  defp forbidden_line?("Linear", line), do: String.contains?(line, "Linear.")
+  defp forbidden_line?("ReqLlmNext", line), do: String.contains?(line, "ReqLlmNext.")
+  defp forbidden_line?("ReqLLM", line), do: String.contains?(line, "ReqLLM.")
+  defp forbidden_line?("GeminiEx", line), do: String.contains?(line, "GeminiEx.")
+  defp forbidden_line?("Gemini", line), do: String.contains?(line, "Gemini.")
+  defp forbidden_line?("ClaudeAgent", line), do: String.contains?(line, "ClaudeAgent.")
+  defp forbidden_line?("Codex", line), do: String.contains?(line, "Codex.")
+  defp forbidden_line?("Amp", line), do: String.contains?(line, "Amp.")
+  defp forbidden_line?("LlamaCpp", line), do: String.contains?(line, "LlamaCpp.")
+  defp forbidden_line?("Inference", line), do: String.contains?(line, "Inference.")
+
+  defp forbidden_line?("SelfHostedInferenceCore", line),
+    do: String.contains?(line, "SelfHostedInferenceCore.")
+
   defp forbidden_line?("Jido.Integration", line), do: String.contains?(line, "Jido.Integration")
+  defp forbidden_line?("GroundPlane", line), do: String.contains?(line, "GroundPlane.")
+  defp forbidden_line?("AITrace", line), do: String.contains?(line, "AITrace.")
   defp forbidden_line?("ExecutionPlane", line), do: String.contains?(line, "ExecutionPlane")
   defp forbidden_line?("HostIngress", line), do: String.contains?(line, "HostIngress")
   defp forbidden_line?("InvocationBridge", line), do: String.contains?(line, "InvocationBridge")
 
   defp forbidden_line?("Mezzanine", line),
     do: String.contains?(line, "Mezzanine.") and not String.contains?(line, "Mezzanine.Pack")
+
+  defp forbidden_line?("Repo", line),
+    do: String.contains?(line, [".Repo", " Repo", "Repo."])
 
   defp forbidden_line?(_name, _line), do: false
 end

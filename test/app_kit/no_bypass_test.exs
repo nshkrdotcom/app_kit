@@ -73,6 +73,7 @@ defmodule AppKit.NoBypassTest do
       alias AppKit.ReviewSurface
       alias AppKit.RuntimeGateway
       alias AppKit.DomainSurface
+      alias AppKit.AdaptiveControlSurface
       """)
 
     assert {:ok, report} =
@@ -83,6 +84,38 @@ defmodule AppKit.NoBypassTest do
              )
 
     assert report.checked_files == 1
+  end
+
+  test "product profile rejects direct adaptive lower and provider imports" do
+    root =
+      write_product_file!("""
+      alias GepaFramework.Runner
+      alias TrinityFramework.Router
+      alias Pristine.Client
+      alias Prismatic.Client
+      alias GitHubEx.Client
+      alias GroundPlane.LeaseFence
+      alias AITrace.Event
+      alias Product.Repo
+      """)
+
+    assert {:error, report} =
+             NoBypass.scan(
+               root: root,
+               profiles: [:product],
+               include: ["lib/**/*.ex"]
+             )
+
+    assert Enum.map(report.violations, & &1.forbidden) == [
+             "GepaFramework",
+             "TrinityFramework",
+             "Pristine",
+             "Prismatic",
+             "GitHubEx",
+             "GroundPlane",
+             "AITrace",
+             "Repo"
+           ]
   end
 
   test "product profile rejects direct AppKit bridge imports" do

@@ -54,6 +54,7 @@ defmodule AppKit.OperatorConsole do
   end
 
   @section_names [
+    :adaptive_controls,
     :memory,
     :prompts,
     :guards,
