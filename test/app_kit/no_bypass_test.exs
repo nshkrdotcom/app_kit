@@ -95,6 +95,7 @@ defmodule AppKit.NoBypassTest do
       alias Prismatic.Client
       alias GitHubEx.Client
       alias GroundPlane.LeaseFence
+      alias OuterBrain.Persistence.Store
       alias AITrace.Event
       alias Product.Repo
       """)
@@ -113,6 +114,7 @@ defmodule AppKit.NoBypassTest do
              "Prismatic",
              "GitHubEx",
              "GroundPlane",
+             "OuterBrain",
              "AITrace",
              "Repo"
            ]

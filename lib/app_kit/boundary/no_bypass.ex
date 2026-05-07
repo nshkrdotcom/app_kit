@@ -57,6 +57,7 @@ defmodule AppKit.Boundary.NoBypass do
     "SelfHostedInferenceCore",
     "Jido.Integration",
     "GroundPlane",
+    "OuterBrain",
     "AITrace",
     "AshPostgres",
     "Ecto",
@@ -300,6 +301,7 @@ defmodule AppKit.Boundary.NoBypass do
 
   defp forbidden_line?("Jido.Integration", line), do: String.contains?(line, "Jido.Integration")
   defp forbidden_line?("GroundPlane", line), do: String.contains?(line, "GroundPlane.")
+  defp forbidden_line?("OuterBrain", line), do: String.contains?(line, "OuterBrain.")
   defp forbidden_line?("AITrace", line), do: String.contains?(line, "AITrace.")
   defp forbidden_line?("AshPostgres", line), do: String.contains?(line, "AshPostgres")
   defp forbidden_line?("Ecto", line), do: String.contains?(line, ["Ecto.", "use Ecto"])

@@ -113,3 +113,7 @@ northbound contract set and are not treated as temporary coexistence shims.
 Default runtime backend configuration for the surface packages belongs under
 the `:app_kit_core` OTP application. The workspace no longer uses a synthetic
 `:app_kit` config namespace for surface backends.
+
+## Persistence Documentation
+
+See `docs/persistence.md` for tiers, defaults, adapters, unsupported selections, config examples, restart claims, durability claims, debug sidecar behavior, redaction guarantees, migration or preflight behavior, and no-bypass scope when applicable.

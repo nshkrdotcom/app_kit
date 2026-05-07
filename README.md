@@ -90,6 +90,8 @@ Execution Plane usage so attach and stream behavior stays behind AppKit and
 Mezzanine leases.
 The default scan excludes `lib/app_kit/boundary/no_bypass.ex` itself so the
 scanner's rule table can name forbidden modules without creating a self-hit.
+See `docs/product_no_bypass.md` for product-surface scan scope, owner-package
+exclusions, and forbidden lower-store imports.
 
 The Phase 4 schema registry is also part of root CI:
 
@@ -178,6 +180,8 @@ release boundary exists.
 - `docs/layout.md`
 - `docs/surfaces.md`
 - `docs/composition.md`
+- `docs/persistence.md`
+- `docs/product_no_bypass.md`
 - `CHANGELOG.md`
 
 This project is licensed under the MIT License.
@@ -206,3 +210,7 @@ just temporal-ui
 Expected local contract: `127.0.0.1:7233`, UI `http://127.0.0.1:8233`, namespace `default`, native service `mezzanine-temporal-dev.service`, persistent state `~/.local/share/temporal/dev-server.db`.
 
 See `docs/temporal_operator_surface.md` for the AppKit boundary around Temporal-backed operator state. AppKit consumes Mezzanine workflow projections/facades, treats Mezzanine's retained Oban outbox/GC queues as local runtime internals, and must not import Temporal directly or inspect Oban rows as workflow truth.
+
+## Persistence Documentation
+
+See `docs/persistence.md` for tiers, defaults, adapters, unsupported selections, config examples, restart claims, durability claims, debug sidecar behavior, redaction guarantees, migration or preflight behavior, and no-bypass scope when applicable.

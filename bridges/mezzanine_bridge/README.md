@@ -86,3 +86,7 @@ registration summaries.
 The bridge does not expose connector loading, context-adapter code loading, or
 platform deployment fields. Those remain rejected by the AppKit DTO and by the
 Mezzanine authoring bundle validator before runtime activation.
+
+## Persistence Documentation
+
+See `docs/persistence.md` for tiers, defaults, adapters, unsupported selections, config examples, restart claims, durability claims, debug sidecar behavior, redaction guarantees, migration or preflight behavior, and no-bypass scope when applicable.

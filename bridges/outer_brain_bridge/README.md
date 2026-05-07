@@ -22,3 +22,7 @@ Phase 7 keeps OuterBrain projection evidence ref-only through this bridge.
 Persistence posture, capture level, receipt refs, and redaction refs may be
 forwarded, but raw prompt bodies, provider payload bodies, token files, and
 unredacted provider account ids remain outside AppKit bridge payloads.
+
+## Persistence Documentation
+
+See `docs/persistence.md` for tiers, defaults, adapters, unsupported selections, config examples, restart claims, durability claims, debug sidecar behavior, redaction guarantees, migration or preflight behavior, and no-bypass scope when applicable.
