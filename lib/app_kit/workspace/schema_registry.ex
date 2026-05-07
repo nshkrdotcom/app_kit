@@ -325,6 +325,7 @@ defmodule AppKit.Workspace.SchemaRegistry do
     "AppKit.Core.PageRequest",
     "AppKit.Core.PageResult",
     "AppKit.Core.PendingObligation",
+    "AppKit.Core.PersistencePosture",
     "AppKit.Core.PrincipalRef",
     "AppKit.Core.ProductBoundaryNoBypassScan",
     "AppKit.Core.ProductCertification",

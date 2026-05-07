@@ -416,6 +416,11 @@ defmodule AppKit.Core.ContractTest do
 
     assert runtime_projection.runtime.authority["credential_redaction"] == "ref_only"
 
+    assert runtime_projection.persistence_posture.persistence_profile_ref ==
+             "persistence-profile://mickey-mouse"
+
+    assert runtime_projection.persistence_posture.raw_payload_persistence? == false
+
     assert [%EvidenceProjection{evidence_kind: "github_pr"}] = runtime_projection.evidence
     assert runtime_projection.review.status == "pending"
 

@@ -58,11 +58,16 @@ defmodule AppKit.Boundary.NoBypass do
     "Jido.Integration",
     "GroundPlane",
     "AITrace",
+    "AshPostgres",
+    "Ecto",
     "ExecutionPlane",
     "HostIngress",
     "InvocationBridge",
     "Mezzanine",
-    "Repo"
+    "Oban",
+    "Postgrex",
+    "Repo",
+    "Temporalex"
   ]
 
   @hazmat_forbidden [
@@ -296,6 +301,8 @@ defmodule AppKit.Boundary.NoBypass do
   defp forbidden_line?("Jido.Integration", line), do: String.contains?(line, "Jido.Integration")
   defp forbidden_line?("GroundPlane", line), do: String.contains?(line, "GroundPlane.")
   defp forbidden_line?("AITrace", line), do: String.contains?(line, "AITrace.")
+  defp forbidden_line?("AshPostgres", line), do: String.contains?(line, "AshPostgres")
+  defp forbidden_line?("Ecto", line), do: String.contains?(line, ["Ecto.", "use Ecto"])
   defp forbidden_line?("ExecutionPlane", line), do: String.contains?(line, "ExecutionPlane")
   defp forbidden_line?("HostIngress", line), do: String.contains?(line, "HostIngress")
   defp forbidden_line?("InvocationBridge", line), do: String.contains?(line, "InvocationBridge")
@@ -305,6 +312,10 @@ defmodule AppKit.Boundary.NoBypass do
 
   defp forbidden_line?("Repo", line),
     do: String.contains?(line, [".Repo", " Repo", "Repo."])
+
+  defp forbidden_line?("Oban", line), do: String.contains?(line, "Oban.")
+  defp forbidden_line?("Postgrex", line), do: String.contains?(line, "Postgrex")
+  defp forbidden_line?("Temporalex", line), do: String.contains?(line, "Temporalex.")
 
   defp forbidden_line?(_name, _line), do: false
 end

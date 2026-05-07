@@ -12,9 +12,27 @@ defmodule AppKit.AuthorityProjectionsTest do
     assert projection.native_auth_assertion_ref == "native-auth-assertion://tenant-1/claude/1"
     assert projection.provider_account_status == :asserted
     assert projection.identity_introspection_limit == :ref_only
+
+    assert projection.persistence_posture.persistence_profile_ref ==
+             "persistence-profile://mickey-mouse"
+
+    assert projection.persistence_posture.retained? == true
+    assert projection.persistence_posture.raw_payload_persistence? == false
     assert projection.raw_material_present? == false
 
     assert AuthorityProjections.dump(projection)["provider_family"] == "claude"
+  end
+
+  test "supports optional projection retention off without changing authority refs" do
+    assert {:ok, projection} =
+             valid_attrs()
+             |> Map.put(:persistence_profile, :off)
+             |> AuthorityProjections.project()
+
+    assert projection.authority_packet_ref == "authority-packet://tenant-1/packet-1"
+    assert projection.persistence_posture.retained? == false
+    assert projection.persistence_posture.store_set_ref == "store-set://off"
+    assert projection.persistence_posture.raw_payload_persistence? == false
   end
 
   test "rejects missing ref families and reports exact missing fields" do

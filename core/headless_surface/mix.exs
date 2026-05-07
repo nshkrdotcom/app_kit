@@ -8,6 +8,7 @@ defmodule AppKitHeadlessSurface.MixProject do
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      dialyzer: [plt_add_deps: :apps_tree],
       description: "HTTP-safe headless surface contracts over governed coding ops",
       docs: [main: "readme", extras: ["README.md"]],
       name: "AppKit Headless Surface"
@@ -24,7 +25,7 @@ defmodule AppKitHeadlessSurface.MixProject do
 
   defp deps do
     [
-      {:app_kit_core, path: "../app_kit_core", runtime: false},
+      {:app_kit_core, path: "../app_kit_core"},
       {:app_kit_scope_objects, path: "../scope_objects", runtime: false},
       {:app_kit_run_governance, path: "../run_governance", runtime: false},
       {:app_kit_runtime_gateway, path: "../runtime_gateway", runtime: false},

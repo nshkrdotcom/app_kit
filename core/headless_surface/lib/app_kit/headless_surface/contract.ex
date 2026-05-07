@@ -3,6 +3,8 @@ defmodule AppKit.HeadlessSurface.Contract do
   Product-safe headless surface contracts.
   """
 
+  alias AppKit.Core.PersistencePosture
+
   defmodule Accepted do
     @moduledoc """
     Product-safe accepted-command projection for headless surfaces.
@@ -26,6 +28,7 @@ defmodule AppKit.HeadlessSurface.Contract do
             idempotency_key: String.t(),
             correlation_id: String.t(),
             command_ref: String.t(),
+            persistence_posture: PersistencePosture.t(),
             accepted?: true
           }
 
@@ -47,6 +50,7 @@ defmodule AppKit.HeadlessSurface.Contract do
       :idempotency_key,
       :correlation_id,
       :command_ref,
+      :persistence_posture,
       accepted?: true
     ]
   end
@@ -133,6 +137,8 @@ defmodule AppKit.HeadlessSurface.Contract do
   @action_lookup Map.new(@actions, &{Atom.to_string(&1), &1})
   @known_fields @required_submit_refs ++
                   @forbidden_material ++ [:action, :command_ref, :authority_refs]
+  @known_fields @known_fields ++
+                  [:persistence_posture, :persistence_profile, :persistence_profile_ref]
 
   @spec submit(map() | keyword()) ::
           {:ok, Accepted.t()}
@@ -194,7 +200,8 @@ defmodule AppKit.HeadlessSurface.Contract do
       trace_ref: Map.fetch!(attrs, :trace_ref),
       idempotency_key: Map.fetch!(attrs, :idempotency_key),
       correlation_id: Map.fetch!(attrs, :correlation_id),
-      command_ref: "headless-command://tenant-1/#{Map.fetch!(attrs, :idempotency_key)}"
+      command_ref: "headless-command://tenant-1/#{Map.fetch!(attrs, :idempotency_key)}",
+      persistence_posture: PersistencePosture.resolve(:headless_surface, attrs)
     }
   end
 

@@ -12,6 +12,11 @@ credential lease, native-auth assertion, target attach, trace, operation, and
 idempotency refs so product ingress cannot resume a headless session from raw
 provider or target material.
 
+Phase 7 headless projection/readback contracts carry
+`AppKit.Core.PersistencePosture` evidence. The default profile is memory/
+ref-only; retained projection state is optional and can be selected `:off`
+without blocking status, cancel, readback, or provider-effect flow.
+
 QC:
 
 ```bash

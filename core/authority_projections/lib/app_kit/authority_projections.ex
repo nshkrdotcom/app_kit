@@ -3,6 +3,8 @@ defmodule AppKit.AuthorityProjections do
   Ref-only authority projection DTOs for AppKit surfaces.
   """
 
+  alias AppKit.Core.PersistencePosture
+
   @required_refs [
     :authority_packet_ref,
     :system_authorization_ref,
@@ -70,10 +72,11 @@ defmodule AppKit.AuthorityProjections do
     :rejection_reason,
     :proof_refs,
     :scanner_refs,
-    :redaction_class
+    :redaction_class,
+    :persistence_posture
   ]
-
   @projection_fields @required_refs ++ @optional_projection_fields
+  @known_projection_fields @projection_fields ++ [:persistence_profile, :persistence_profile_ref]
 
   @enforce_keys @required_refs
   defstruct @required_refs ++
@@ -90,6 +93,7 @@ defmodule AppKit.AuthorityProjections do
                 proof_refs: [],
                 scanner_refs: [],
                 redaction_class: "ref_only",
+                persistence_posture: PersistencePosture.memory(:authority_projection),
                 raw_material_present?: false,
                 projection_schema: "AppKit.AuthorityProjection.v1"
               ]
@@ -113,6 +117,7 @@ defmodule AppKit.AuthorityProjections do
           provider_account_status: atom(),
           provider_account_evidence_ref: String.t() | nil,
           identity_introspection_limit: atom(),
+          persistence_posture: PersistencePosture.t(),
           raw_material_present?: false,
           projection_schema: String.t()
         }
@@ -220,6 +225,10 @@ defmodule AppKit.AuthorityProjections do
       |> Map.put(:proof_refs, List.wrap(Map.get(attrs, :proof_refs, [])))
       |> Map.put(:scanner_refs, List.wrap(Map.get(attrs, :scanner_refs, [])))
       |> Map.put(:redaction_class, Map.get(attrs, :redaction_class, "ref_only"))
+      |> Map.put(
+        :persistence_posture,
+        PersistencePosture.resolve(:authority_projection, attrs)
+      )
       |> Map.put(:raw_material_present?, false)
       |> Map.put(:projection_schema, "AppKit.AuthorityProjection.v1")
 
@@ -263,7 +272,7 @@ defmodule AppKit.AuthorityProjections do
   defp normalize_key(key) when is_atom(key), do: key
 
   defp normalize_key(key) when is_binary(key) do
-    Enum.find(@projection_fields ++ @forbidden_material, key, fn candidate ->
+    Enum.find(@known_projection_fields ++ @forbidden_material, key, fn candidate ->
       Atom.to_string(candidate) == key
     end)
   end

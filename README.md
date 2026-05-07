@@ -152,6 +152,14 @@ products may use `AppKit.AdaptiveControlSurface` and the operator console
 provider SDKs, generated SDKs, lower runtimes, DB repos, or trace writers to
 review candidates, inspect shadow/canary state, promote, roll back, or audit.
 
+Phase 7 persistence posture is carried as projection evidence only. Authority
+projections, headless DTOs, runtime readback/projection DTOs, evidence-audit
+DTOs, and projection bridge payloads default to memory/ref-only posture under
+`:mickey_mouse`; optional projection retention `:off` disables retention
+without blocking provider effects or runtime readback. Product code configures
+persistence through AppKit/product surfaces, and the no-bypass scanner rejects
+direct product imports of lower store modules.
+
 The welded `app_kit_core` artifact is tracked through the prepared bundle flow:
 
 ```bash

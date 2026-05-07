@@ -14,7 +14,24 @@ defmodule AppKit.HeadlessSurface.ContractTest do
     assert accepted.native_auth_assertion_ref == "native-auth://tenant-1/claude/main"
     assert accepted.attach_grant_ref == "attach-grant://tenant-1/local-process/1"
     assert accepted.trace_ref == "trace://tenant-1/headless/1"
+
+    assert accepted.persistence_posture.persistence_profile_ref ==
+             "persistence-profile://mickey-mouse"
+
+    assert accepted.persistence_posture.raw_payload_persistence? == false
     refute String.contains?(inspect(accepted), "secret")
+  end
+
+  test "headless optional retention off preserves accepted command semantics" do
+    assert {:ok, accepted} =
+             valid_submit()
+             |> Map.put(:persistence_profile, :off)
+             |> Contract.submit()
+
+    assert accepted.accepted? == true
+    assert accepted.command_ref == "headless-command://tenant-1/idempotency-1"
+    assert accepted.persistence_posture.retained? == false
+    assert accepted.persistence_posture.store_set_ref == "store-set://off"
   end
 
   test "rejects raw product bypass material before Mezzanine dispatch" do

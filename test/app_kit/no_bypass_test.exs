@@ -118,6 +118,33 @@ defmodule AppKit.NoBypassTest do
            ]
   end
 
+  test "product profile rejects direct lower persistence imports" do
+    root =
+      write_product_file!("""
+      alias Ecto.Repo
+      alias AshPostgres.DataLayer
+      alias Postgrex
+      alias Temporalex.Client
+      alias Oban.Job
+      """)
+
+    assert {:error, report} =
+             NoBypass.scan(
+               root: root,
+               profiles: [:product],
+               include: ["lib/**/*.ex"]
+             )
+
+    assert Enum.map(report.violations, & &1.forbidden) == [
+             "Ecto",
+             "Repo",
+             "AshPostgres",
+             "Postgrex",
+             "Temporalex",
+             "Oban"
+           ]
+  end
+
   test "product profile rejects direct AppKit bridge imports" do
     root = write_product_file!("alias AppKit.Bridges.MezzanineBridge\n")
 

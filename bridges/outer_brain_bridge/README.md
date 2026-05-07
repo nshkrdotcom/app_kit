@@ -17,3 +17,8 @@ tenant, semantic-session, causal-unit, request-trace, provenance, and operator
 message defaults from `HostScope` and the request edge, while preserving any
 provenance supplied by the semantic runtime. AppKit does not interpret provider
 memory, RAG, or model-specific details.
+
+Phase 7 keeps OuterBrain projection evidence ref-only through this bridge.
+Persistence posture, capture level, receipt refs, and redaction refs may be
+forwarded, but raw prompt bodies, provider payload bodies, token files, and
+unredacted provider account ids remain outside AppKit bridge payloads.

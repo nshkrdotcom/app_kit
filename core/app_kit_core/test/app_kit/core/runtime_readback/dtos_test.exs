@@ -5,6 +5,7 @@ defmodule AppKit.Core.RuntimeReadback.DtosTest do
     CommandReconciliation,
     CommandResult,
     Diagnostic,
+    RuntimeRow,
     RuntimeRunDetail,
     RuntimeStateSnapshot,
     WorkspaceRef
@@ -47,6 +48,13 @@ defmodule AppKit.Core.RuntimeReadback.DtosTest do
              })
 
     assert Enum.map(snapshot.rows, & &1.subject_ref) == ["subject://new", "subject://old"]
+
+    assert snapshot.persistence_posture.persistence_profile_ref ==
+             "persistence-profile://mickey-mouse"
+
+    assert Enum.all?(snapshot.rows, fn %RuntimeRow{} = row ->
+             row.persistence_posture.raw_payload_persistence? == false
+           end)
   end
 
   test "run detail sorts events deterministically and preserves unknown event kinds" do
@@ -71,6 +79,7 @@ defmodule AppKit.Core.RuntimeReadback.DtosTest do
 
     assert Enum.map(detail.events, & &1.event_ref) == ["event://a", "event://b"]
     assert Enum.at(detail.events, 1).event_kind == "future_async_wait"
+    assert detail.persistence_posture.raw_payload_persistence? == false
   end
 
   test "command result supports inspect_memory_proof without fabricating proof refs" do
@@ -89,6 +98,22 @@ defmodule AppKit.Core.RuntimeReadback.DtosTest do
 
     assert result.workflow_effect_state == "not_available"
     assert result.receipt_ref == nil
+
+    assert result.persistence_posture.persistence_tier_ref ==
+             "persistence-tier://memory-ephemeral"
+  end
+
+  test "runtime readback supports retention-off posture without blocking readback" do
+    assert {:ok, snapshot} =
+             RuntimeStateSnapshot.new(%{
+               tenant_ref: "tenant://one",
+               installation_ref: "installation://one",
+               persistence_profile: :off
+             })
+
+    assert snapshot.rows == []
+    assert snapshot.persistence_posture.retained? == false
+    assert snapshot.persistence_posture.store_set_ref == "store-set://off"
   end
 
   test "diagnostics bound severity strings without accepting unknown atom names" do

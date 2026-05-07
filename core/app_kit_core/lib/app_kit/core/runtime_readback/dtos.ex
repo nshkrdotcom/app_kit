@@ -1,6 +1,7 @@
 defmodule AppKit.Core.RuntimeReadback.Support do
   @moduledoc false
 
+  alias AppKit.Core.PersistencePosture
   alias AppKit.Core.Substrate.{Dump, Support}
 
   @type error :: {:error, atom()}
@@ -63,6 +64,9 @@ defmodule AppKit.Core.RuntimeReadback.Support do
   end
 
   def nested_list(_values, _module), do: {:error, :invalid_nested}
+
+  def persistence_posture(attrs, component \\ :runtime_projection),
+    do: PersistencePosture.resolve(component, attrs)
 
   def dump_struct(%_{} = value) do
     value
@@ -478,6 +482,7 @@ end
 defmodule AppKit.Core.RuntimeReadback.RuntimeRow do
   @moduledoc "State-list row for runtime readback."
 
+  alias AppKit.Core.PersistencePosture
   alias AppKit.Core.RuntimeReadback.{PollingState, SessionRef, Support, TokenTotals, WorkspaceRef}
 
   @enforce_keys [:subject_ref, :run_ref, :state, :updated_at]
@@ -493,6 +498,7 @@ defmodule AppKit.Core.RuntimeReadback.RuntimeRow do
     :workspace_ref,
     :polling_state,
     :token_totals,
+    persistence_posture: PersistencePosture.memory(:runtime_projection),
     provider_refs: %{},
     extensions: %{}
   ]
@@ -523,6 +529,7 @@ defmodule AppKit.Core.RuntimeReadback.RuntimeRow do
            Support.nested(Support.optional(attrs, :polling_state), PollingState),
          {:ok, token_totals} <-
            Support.nested(Support.optional(attrs, :token_totals), TokenTotals),
+         persistence_posture <- Support.persistence_posture(attrs),
          provider_refs <- Support.optional(attrs, :provider_refs, %{}),
          true <- is_map(provider_refs),
          extensions <- Support.optional(attrs, :extensions, %{}),
@@ -540,6 +547,7 @@ defmodule AppKit.Core.RuntimeReadback.RuntimeRow do
          workspace_ref: workspace_ref,
          polling_state: polling_state,
          token_totals: token_totals,
+         persistence_posture: persistence_posture,
          provider_refs: provider_refs,
          extensions: extensions
        }}
@@ -566,6 +574,7 @@ defmodule AppKit.Core.RuntimeReadback.CommandResult do
   effect such as `applied`, `signal_rejected`, or `timed_out`.
   """
 
+  alias AppKit.Core.PersistencePosture
   alias AppKit.Core.RuntimeReadback.{Diagnostic, Support}
 
   @command_kinds [
@@ -621,6 +630,7 @@ defmodule AppKit.Core.RuntimeReadback.CommandResult do
     :idempotency_key,
     :message,
     :terminal_reason,
+    persistence_posture: PersistencePosture.memory(:runtime_projection),
     diagnostics: []
   ]
 
@@ -661,6 +671,7 @@ defmodule AppKit.Core.RuntimeReadback.CommandResult do
          true <- is_nil(message) or is_binary(message),
          terminal_reason <- Support.optional(attrs, :terminal_reason),
          true <- terminal_reason?(workflow_effect_state, terminal_reason),
+         persistence_posture <- Support.persistence_posture(attrs),
          {:ok, diagnostics} <-
            Support.nested_list(Support.optional(attrs, :diagnostics, []), Diagnostic) do
       {:ok,
@@ -680,6 +691,7 @@ defmodule AppKit.Core.RuntimeReadback.CommandResult do
          idempotency_key: idempotency_key,
          message: message,
          terminal_reason: terminal_reason,
+         persistence_posture: persistence_posture,
          diagnostics: diagnostics
        }}
     else
@@ -823,6 +835,8 @@ end
 defmodule AppKit.Core.RuntimeReadback.RuntimeStateSnapshot do
   @moduledoc "Aggregate M1 state snapshot exposed by `AppKit.HeadlessSurface`."
 
+  alias AppKit.Core.PersistencePosture
+
   alias AppKit.Core.RuntimeReadback.{
     Diagnostic,
     PollingState,
@@ -845,6 +859,7 @@ defmodule AppKit.Core.RuntimeReadback.RuntimeStateSnapshot do
     retry_rows: [],
     rate_limits: [],
     diagnostics: [],
+    persistence_posture: PersistencePosture.memory(:runtime_projection),
     page: %{page_size: 25, cursor: nil, total_entries: 0}
   ]
 
@@ -875,6 +890,7 @@ defmodule AppKit.Core.RuntimeReadback.RuntimeStateSnapshot do
            Support.nested_list(Support.optional(attrs, :diagnostics, []), Diagnostic),
          retry_rows <- Support.optional(attrs, :retry_rows, []),
          true <- is_list(retry_rows),
+         persistence_posture <- Support.persistence_posture(attrs),
          page <-
            Support.optional(attrs, :page, %{
              page_size: 25,
@@ -895,6 +911,7 @@ defmodule AppKit.Core.RuntimeReadback.RuntimeStateSnapshot do
          retry_rows: retry_rows,
          rate_limits: rate_limits,
          diagnostics: diagnostics,
+         persistence_posture: persistence_posture,
          page: page
        }}
     else
@@ -908,6 +925,7 @@ end
 defmodule AppKit.Core.RuntimeReadback.RuntimeSubjectDetail do
   @moduledoc "Subject detail readback DTO."
 
+  alias AppKit.Core.PersistencePosture
   alias AppKit.Core.RuntimeReadback.{Diagnostic, RuntimeEventRow, RuntimeRow, Support}
 
   @enforce_keys [:schema_ref, :schema_version, :subject_ref]
@@ -919,6 +937,7 @@ defmodule AppKit.Core.RuntimeReadback.RuntimeSubjectDetail do
     :runtime_row,
     events: [],
     runs: [],
+    persistence_posture: PersistencePosture.memory(:runtime_projection),
     diagnostics: []
   ]
 
@@ -940,6 +959,7 @@ defmodule AppKit.Core.RuntimeReadback.RuntimeSubjectDetail do
            Support.nested_list(Support.optional(attrs, :events, []), RuntimeEventRow),
          runs <- Support.optional(attrs, :runs, []),
          true <- is_list(runs),
+         persistence_posture <- Support.persistence_posture(attrs),
          {:ok, diagnostics} <-
            Support.nested_list(Support.optional(attrs, :diagnostics, []), Diagnostic) do
       {:ok,
@@ -951,6 +971,7 @@ defmodule AppKit.Core.RuntimeReadback.RuntimeSubjectDetail do
          runtime_row: runtime_row,
          events: Enum.sort_by(events, &RuntimeEventRow.sort_key/1),
          runs: runs,
+         persistence_posture: persistence_posture,
          diagnostics: diagnostics
        }}
     else
@@ -964,6 +985,7 @@ end
 defmodule AppKit.Core.RuntimeReadback.RuntimeRunDetail do
   @moduledoc "Run detail readback DTO with deterministic event ordering."
 
+  alias AppKit.Core.PersistencePosture
   alias AppKit.Core.RuntimeReadback.{Diagnostic, RetryRow, RuntimeEventRow, RuntimeRow, Support}
 
   @enforce_keys [:schema_ref, :schema_version, :run_ref]
@@ -979,6 +1001,7 @@ defmodule AppKit.Core.RuntimeReadback.RuntimeRunDetail do
     candidate_fact_refs: [],
     memory_proof_refs: [],
     agent_loop_diagnostics: [],
+    persistence_posture: PersistencePosture.memory(:runtime_projection),
     diagnostics: []
   ]
 
@@ -1008,6 +1031,7 @@ defmodule AppKit.Core.RuntimeReadback.RuntimeRunDetail do
          true <- is_list(memory_proof_refs) and Enum.all?(memory_proof_refs, &Support.safe_ref?/1),
          {:ok, agent_loop_diagnostics} <-
            Support.nested_list(Support.optional(attrs, :agent_loop_diagnostics, []), Diagnostic),
+         persistence_posture <- Support.persistence_posture(attrs),
          {:ok, diagnostics} <-
            Support.nested_list(Support.optional(attrs, :diagnostics, []), Diagnostic) do
       {:ok,
@@ -1023,6 +1047,7 @@ defmodule AppKit.Core.RuntimeReadback.RuntimeRunDetail do
          candidate_fact_refs: candidate_fact_refs,
          memory_proof_refs: memory_proof_refs,
          agent_loop_diagnostics: agent_loop_diagnostics,
+         persistence_posture: persistence_posture,
          diagnostics: diagnostics
        }}
     else

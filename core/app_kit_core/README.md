@@ -101,6 +101,12 @@ selectors such as GitHub issue numbers, Linear issue ids, PR numbers, Codex
 session ids, and workflow ids because those identifiers must be discovered or
 carried by lower receipts before they can appear in an operator projection.
 
+`AppKit.Core.PersistencePosture` is the Phase 7 projection posture helper.
+Runtime projection, runtime readback, evidence audit, and headless DTOs carry
+its memory/ref-only defaults as evidence only. Durable or retained refs may be
+selected by explicit profile attrs, while `:off` marks optional projection
+retention disabled without changing provider-effect or readback semantics.
+
 `AppKit.Core.Result` and `AppKit.Core.RunRef` remain part of the current
 northbound contract set and are not treated as temporary coexistence shims.
 

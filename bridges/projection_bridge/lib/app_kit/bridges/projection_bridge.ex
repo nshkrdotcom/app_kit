@@ -3,7 +3,7 @@ defmodule AppKit.Bridges.ProjectionBridge do
   App-facing bridge for operator-facing projection reads.
   """
 
-  alias AppKit.Core.RunRef
+  alias AppKit.Core.{PersistencePosture, RunRef}
   alias AppKit.ScopeObjects
 
   @spec operator_projection(RunRef.t(), map()) :: {:ok, map()} | {:error, atom()}
@@ -18,7 +18,8 @@ defmodule AppKit.Bridges.ProjectionBridge do
        %{
          run_id: run_ref.run_id,
          route_status: route_status,
-         last_event: Map.get(attrs, :last_event, :none)
+         last_event: Map.get(attrs, :last_event, :none),
+         persistence_posture: PersistencePosture.resolve(:projection_bridge, attrs)
        }}
     end
   end

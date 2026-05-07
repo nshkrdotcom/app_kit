@@ -547,6 +547,7 @@ defmodule AppKit.Core.SubjectRuntimeProjection do
     ExecutionStateProjection,
     LowerReceiptSummary,
     OperatorCommandProjection,
+    PersistencePosture,
     ReviewProjection,
     RuntimeFactsProjection,
     RuntimeProjectionSupport,
@@ -570,6 +571,7 @@ defmodule AppKit.Core.SubjectRuntimeProjection do
     updated_at: nil,
     schema_ref: nil,
     schema_version: nil,
+    persistence_posture: PersistencePosture.memory(:runtime_projection),
     payload: %{}
   ]
 
@@ -587,6 +589,7 @@ defmodule AppKit.Core.SubjectRuntimeProjection do
           updated_at: DateTime.t() | nil,
           schema_ref: String.t() | nil,
           schema_version: non_neg_integer() | nil,
+          persistence_posture: PersistencePosture.t(),
           payload: map()
         }
 
@@ -650,6 +653,7 @@ defmodule AppKit.Core.SubjectRuntimeProjection do
          true <- RuntimeProjectionSupport.present_binary?(schema_ref),
          schema_version <- Map.get(attrs, :schema_version),
          true <- is_integer(schema_version) and schema_version >= 0,
+         persistence_posture <- PersistencePosture.resolve(:runtime_projection, attrs),
          payload <- Map.get(attrs, :payload, %{}),
          true <- RuntimeProjectionSupport.map?(payload) do
       {:ok,
@@ -667,6 +671,7 @@ defmodule AppKit.Core.SubjectRuntimeProjection do
          updated_at: updated_at,
          schema_ref: schema_ref,
          schema_version: schema_version,
+         persistence_posture: persistence_posture,
          payload: payload
        }}
     else

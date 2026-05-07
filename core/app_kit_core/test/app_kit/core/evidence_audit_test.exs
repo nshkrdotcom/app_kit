@@ -10,6 +10,11 @@ defmodule AppKit.Core.EvidenceAuditTest do
     assert projection.contract_name == "AppKit.AuditHashChainProjection.v1"
     assert projection.source_contract_name == "Platform.AuditHashChain.v1"
     assert projection.previous_hash == "genesis"
+
+    assert projection.persistence_posture.persistence_profile_ref ==
+             "persistence-profile://mickey-mouse"
+
+    assert projection.persistence_posture.raw_payload_persistence? == false
   end
 
   test "rejects audit projection with invalid hash or source contract" do
@@ -27,6 +32,17 @@ defmodule AppKit.Core.EvidenceAuditTest do
     assert projection.contract_name == "AppKit.SuppressionVisibilityProjection.v1"
     assert projection.source_contract_name == "Platform.SuppressionVisibility.v1"
     assert projection.recovery_action_refs == ["recovery-action:m13:072"]
+    assert projection.persistence_posture.component_ref == "component://app-kit/evidence-audit"
+  end
+
+  test "audit projections support durable posture as redacted evidence only" do
+    assert {:ok, projection} =
+             base_audit_projection()
+             |> Map.put(:persistence_profile, :durable_projection)
+             |> AuditHashChainProjection.new()
+
+    assert projection.persistence_posture.durable? == true
+    assert projection.persistence_posture.raw_payload_persistence? == false
   end
 
   test "rejects hidden suppression and missing recovery action refs" do

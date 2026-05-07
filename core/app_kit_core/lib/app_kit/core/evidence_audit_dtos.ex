@@ -2,6 +2,7 @@ defmodule AppKit.Core.EvidenceAuditSupport do
   @moduledoc false
 
   alias AppKit.Core.ArchivalRestoreSupport
+  alias AppKit.Core.PersistencePosture
   alias AppKit.Core.RevisionEpochSupport
 
   @spec base_binary_fields() :: [atom()]
@@ -35,6 +36,9 @@ defmodule AppKit.Core.EvidenceAuditSupport do
   @spec previous_hash?(term()) :: boolean()
   def previous_hash?("genesis"), do: true
   def previous_hash?(value), do: sha256?(value)
+
+  @spec persistence_posture(map() | keyword()) :: PersistencePosture.t()
+  def persistence_posture(attrs), do: PersistencePosture.resolve(:evidence_audit, attrs)
 end
 
 defmodule AppKit.Core.AuditHashChainProjection do
@@ -45,6 +49,7 @@ defmodule AppKit.Core.AuditHashChainProjection do
   """
 
   alias AppKit.Core.EvidenceAuditSupport
+  alias AppKit.Core.PersistencePosture
 
   @contract_name "AppKit.AuditHashChainProjection.v1"
   @source_contract_name "Platform.AuditHashChain.v1"
@@ -82,7 +87,8 @@ defmodule AppKit.Core.AuditHashChainProjection do
     :chain_head_hash,
     :writer_ref,
     :immutability_proof_ref,
-    :source_contract_name
+    :source_contract_name,
+    persistence_posture: PersistencePosture.memory(:evidence_audit)
   ]
 
   @type t :: %__MODULE__{}
@@ -102,12 +108,20 @@ defmodule AppKit.Core.AuditHashChainProjection do
          true <- EvidenceAuditSupport.sha256?(Map.get(attrs, :event_hash)),
          true <- EvidenceAuditSupport.sha256?(Map.get(attrs, :chain_head_hash)),
          true <- Map.fetch!(attrs, :source_contract_name) == @source_contract_name do
-      {:ok, struct!(__MODULE__, Map.put(attrs, :contract_name, @contract_name))}
+      attrs =
+        attrs
+        |> Map.put(:contract_name, @contract_name)
+        |> Map.put(:persistence_posture, EvidenceAuditSupport.persistence_posture(attrs))
+        |> struct_attrs()
+
+      {:ok, struct!(__MODULE__, attrs)}
     else
       fields when is_list(fields) -> {:error, {:missing_required_fields, fields}}
       _error -> {:error, :invalid_audit_hash_chain_projection}
     end
   end
+
+  defp struct_attrs(attrs), do: Map.take(attrs, Map.keys(%__MODULE__{}) -- [:__struct__])
 end
 
 defmodule AppKit.Core.SuppressionVisibilityProjection do
@@ -118,6 +132,7 @@ defmodule AppKit.Core.SuppressionVisibilityProjection do
   """
 
   alias AppKit.Core.EvidenceAuditSupport
+  alias AppKit.Core.PersistencePosture
 
   @contract_name "AppKit.SuppressionVisibilityProjection.v1"
   @source_contract_name "Platform.SuppressionVisibility.v1"
@@ -156,7 +171,8 @@ defmodule AppKit.Core.SuppressionVisibilityProjection do
     :operator_visibility,
     :recovery_action_refs,
     :diagnostics_ref,
-    :source_contract_name
+    :source_contract_name,
+    persistence_posture: PersistencePosture.memory(:evidence_audit)
   ]
 
   @type t :: %__MODULE__{}
@@ -174,12 +190,20 @@ defmodule AppKit.Core.SuppressionVisibilityProjection do
          true <- EvidenceAuditSupport.optional_binary_fields?(attrs, @optional_binary_fields),
          true <- Map.fetch!(attrs, :operator_visibility) == "visible",
          true <- Map.fetch!(attrs, :source_contract_name) == @source_contract_name do
-      {:ok, struct!(__MODULE__, Map.put(attrs, :contract_name, @contract_name))}
+      attrs =
+        attrs
+        |> Map.put(:contract_name, @contract_name)
+        |> Map.put(:persistence_posture, EvidenceAuditSupport.persistence_posture(attrs))
+        |> struct_attrs()
+
+      {:ok, struct!(__MODULE__, attrs)}
     else
       fields when is_list(fields) -> {:error, {:missing_required_fields, fields}}
       _error -> {:error, :invalid_suppression_visibility_projection}
     end
   end
+
+  defp struct_attrs(attrs), do: Map.take(attrs, Map.keys(%__MODULE__{}) -- [:__struct__])
 
   defp missing_required_fields(attrs) do
     EvidenceAuditSupport.missing_required_fields(attrs, @required_binary_fields, []) ++
