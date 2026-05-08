@@ -323,6 +323,67 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert Enum.any?(pending_reviews, &(&1.decision_ref.id == result.payload.review_unit_id))
   end
 
+  test "typed work-control start_run preserves phase 2 run metadata for workflow handoff" do
+    %{tenant_id: tenant_id, program: program, work_class: work_class} =
+      fixture_stack("tenant-bridge-phase2-start-run")
+
+    assert {:ok, subject} =
+             WorkQueryService.ingest_subject(%{
+               tenant_id: tenant_id,
+               program_id: program.id,
+               work_class_id: work_class.id,
+               external_ref: "linear:ENG-602",
+               title: "Phase 2 metadata subject",
+               payload: %{"issue_id" => "ENG-602"},
+               source_kind: "linear"
+             })
+
+    assert {:ok, context} =
+             RequestContext.new(%{
+               trace_id: TraceIdentity.mint(),
+               actor_ref: %{id: "ops_lead", kind: :human},
+               tenant_ref: %{id: tenant_id},
+               idempotency_key: "idem-phase2-run",
+               metadata: %{program_id: program.id, work_class_id: work_class.id}
+             })
+
+    run_metadata = %{
+      "pack_revision" => 7,
+      "runtime_profile_ref" => "codex_session",
+      "runtime_profile_kind" => "temporal_local",
+      "runtime_profile_revision" => 3,
+      "lower_runtime_kind" => "codex_session",
+      "requested_capability_ids" => ["codex.session.turn", "linear.comments.update"],
+      "requested_action_ids" => ["codex.session.turn"],
+      "source_binding_refs" => ["linear_primary"],
+      "resource_scope_refs" => ["source_binding://linear_primary"],
+      "workspace_policy_ref" => "workspace-policy://extravaganza/coding",
+      "live_provider_allowed" => false,
+      "evidence_profile_ref" => "github_pr_plus_workpad",
+      "redaction_profile_ref" => "redaction://extravaganza/default",
+      "prompt_context_recipe_refs" => ["coding_agent_system"]
+    }
+
+    assert {:ok, run_request} =
+             RunRequest.new(%{
+               subject_ref: %{id: subject.subject_id, subject_kind: "work_object"},
+               recipe_ref: "coding_operations",
+               params: %{
+                 "runtime_policy_config" => %{"run" => %{"capability" => "codex.session.turn"}}
+               },
+               metadata: run_metadata
+             })
+
+    assert {:ok, result} = WorkControlService.start_run(context, run_request, [])
+
+    assert result.payload.run_request_metadata["idempotency_key"] == "idem-phase2-run"
+    assert result.payload.run_request_metadata["runtime_profile_ref"] == "codex_session"
+    assert result.payload.run_request_metadata["requested_action_ids"] == ["codex.session.turn"]
+    assert result.payload.run_ref.metadata.idempotency_key == "idem-phase2-run"
+    assert result.payload.run_ref.metadata.pack_revision == 7
+    assert result.payload.run_ref.metadata.runtime_profile_ref == "codex_session"
+  end
+
   test "program context service resolves durable routing ids from product metadata" do
     %{tenant_id: tenant_id, program: program, work_class: work_class} =
       fixture_stack("tenant-bridge-routing-context")
@@ -430,7 +491,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     run:
       profile: default_session
       runtime_class: session
-      capability: linear.issue.execute
+      capability: codex.session.turn
       target: linear-default
     approval:
       mode: manual
@@ -458,9 +519,9 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
       gates:
         - operator
     capability_grants:
-      - capability_id: linear.issue.read
+      - capability_id: linear.issues.retrieve
         mode: allow
-      - capability_id: linear.issue.update
+      - capability_id: linear.issues.update
         mode: allow
     ---
     # Operator Prompt

@@ -132,16 +132,18 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
     RunRef.new(%{
       run_id: run.id,
       scope_id: Keyword.get(opts, :scope_id, "program/#{work_object.program_id}"),
-      metadata: %{
-        tenant_id: context.tenant_ref.id,
-        work_object_id: work_object.id,
-        plan_id: plan.id,
-        program_id: work_object.program_id,
-        review_required: review_required?(plan),
-        review_unit_id: review_unit_id(review_unit),
-        recipe_ref: run_request.recipe_ref || map_value(first_run_intent(plan), :intent_id),
-        trace_id: context.trace_id
-      }
+      metadata:
+        %{
+          tenant_id: context.tenant_ref.id,
+          work_object_id: work_object.id,
+          plan_id: plan.id,
+          program_id: work_object.program_id,
+          review_required: review_required?(plan),
+          review_unit_id: review_unit_id(review_unit),
+          recipe_ref: run_request.recipe_ref || map_value(first_run_intent(plan), :intent_id),
+          trace_id: context.trace_id
+        }
+        |> Map.merge(run_ref_phase2_metadata(context, run_request, run))
     })
     |> normalize_result(:invalid_run_ref)
   end
@@ -167,6 +169,7 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
         plan_id: plan.id,
         recipe_ref: run_request.recipe_ref,
         params: run_request.params,
+        run_request_metadata: run_request_metadata(context, run_request),
         run_intent: first_run_intent(plan),
         review_required: review_required?(plan),
         review_unit_id: review_unit_id(review_unit)
@@ -195,7 +198,7 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
   defp fetch_tenant_id(_context, opts), do: fetch_tenant_id(opts)
 
   defp lower_start_attrs(%RequestContext{} = context, %RunRequest{} = run_request) do
-    %{
+    base = %{
       trace_id: context.trace_id,
       actor_ref: context.actor_ref.id,
       recipe_ref: run_request.recipe_ref,
@@ -203,6 +206,34 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
         Map.get(run_request.metadata, :reviewer_actor) ||
           Map.get(run_request.metadata, "reviewer_actor")
     }
+
+    base
+    |> maybe_put(:idempotency_key, context.idempotency_key)
+    |> maybe_put(:runtime_policy_config, map_value(run_request.params, :runtime_policy_config))
+    |> Map.merge(run_request.metadata || %{})
+  end
+
+  defp run_request_metadata(%RequestContext{} = context, %RunRequest{} = run_request) do
+    (run_request.metadata || %{})
+    |> maybe_put_new("idempotency_key", context.idempotency_key)
+  end
+
+  defp run_ref_phase2_metadata(
+         %RequestContext{} = context,
+         %RunRequest{} = run_request,
+         run
+       ) do
+    runtime_profile = Map.get(run, :runtime_profile) || %{}
+
+    %{}
+    |> maybe_put(:idempotency_key, context.idempotency_key)
+    |> maybe_put(:pack_revision, map_value(run_request.metadata, :pack_revision))
+    |> maybe_put(:runtime_profile_ref, map_value(runtime_profile, :runtime_profile_ref))
+    |> maybe_put(:runtime_profile_kind, map_value(runtime_profile, :runtime_profile_kind))
+    |> maybe_put(:runtime_profile_revision, map_value(runtime_profile, :runtime_profile_revision))
+    |> maybe_put(:lower_runtime_kind, map_value(runtime_profile, :lower_runtime_kind))
+    |> maybe_put(:requested_action_ids, map_value(runtime_profile, :requested_action_ids))
+    |> maybe_put(:requested_capability_ids, map_value(runtime_profile, :requested_capability_ids))
   end
 
   defp fetch_string_value(attrs, opts, key, error) do
@@ -221,6 +252,12 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
   defp review_unit_id(%{id: review_unit_id}), do: review_unit_id
 
   defp map_value(map, key), do: AdapterSupport.map_value(map, key)
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp maybe_put_new(map, _key, nil), do: map
+  defp maybe_put_new(map, key, value), do: Map.put_new(map, key, value)
 
   defp normalize_result({:ok, value}, _fallback), do: {:ok, value}
   defp normalize_result({:error, _reason}, fallback), do: {:error, fallback}
