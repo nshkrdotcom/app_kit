@@ -89,9 +89,11 @@ defmodule Mezzanine.AppKitBridge.WorkQueryService do
 
   defp default_runtime_projection_fetch(installation_id, subject_id, _opts) do
     projection_row = Module.concat([Mezzanine, Projections, ProjectionRow])
+    projection_repo = Module.concat([Mezzanine, Projections, Repo])
 
     if Code.ensure_loaded?(projection_row) and
-         function_exported?(projection_row, :row_by_key, 3) do
+         function_exported?(projection_row, :row_by_key, 3) and
+         projection_repo_started?(projection_repo) do
       projection_row.row_by_key(
         installation_id,
         @runtime_projection_name,
@@ -100,6 +102,10 @@ defmodule Mezzanine.AppKitBridge.WorkQueryService do
     else
       :not_found
     end
+  end
+
+  defp projection_repo_started?(projection_repo) do
+    Code.ensure_loaded?(projection_repo) and is_pid(Process.whereis(projection_repo))
   end
 
   defp runtime_projection_from_row(row, subject_id) do

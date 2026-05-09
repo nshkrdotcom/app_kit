@@ -6,6 +6,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
 
   alias Mezzanine.Archival.ArchivalManifest
   alias Mezzanine.Archival.Repo, as: ArchivalRepo
+  alias Mezzanine.Execution.Repo, as: ExecutionRepo
 
   alias Mezzanine.AppKitBridge.{
     ProgramContextService,
@@ -309,6 +310,27 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert result.payload.run_ref.metadata.work_object_id == subject.subject_id
     assert result.payload.run_ref.metadata.program_id == program.id
     assert is_binary(result.payload.review_unit_id)
+    assert String.starts_with?(result.payload.workflow_start_ref, "workflow-start-outbox://")
+    assert String.starts_with?(result.payload.workflow_start_outbox_id, "workflow-start:")
+    assert result.payload.workflow_dispatch_state == "queued"
+    assert result.payload.run_ref.metadata.workflow_start_ref == result.payload.workflow_start_ref
+
+    assert %{
+             rows: [[outbox_id, workflow_id, idempotency_key, dispatch_state]]
+           } =
+             ExecutionRepo.query!(
+               """
+               SELECT outbox_id, workflow_id, idempotency_key, dispatch_state
+               FROM workflow_start_outbox
+               WHERE outbox_id = $1
+               """,
+               [result.payload.workflow_start_outbox_id]
+             )
+
+    assert outbox_id == result.payload.workflow_start_outbox_id
+    assert String.starts_with?(workflow_id, "tenant:#{tenant_id}:resource:work-object://")
+    assert is_binary(idempotency_key)
+    assert dispatch_state == "queued"
 
     assert {:ok, detail} = WorkQueryService.get_subject_detail(tenant_id, subject.subject_id)
     assert detail.active_run_id == result.payload.run_ref.run_id
@@ -382,6 +404,14 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert result.payload.run_ref.metadata.idempotency_key == "idem-phase2-run"
     assert result.payload.run_ref.metadata.pack_revision == 7
     assert result.payload.run_ref.metadata.runtime_profile_ref == "codex_session"
+    assert String.starts_with?(result.payload.workflow_start_ref, "workflow-start-outbox://")
+    assert result.payload.workflow_start_ref == result.payload.run_ref.metadata.workflow_start_ref
+
+    assert result.payload.workflow_start_outbox_id ==
+             result.payload.run_ref.metadata.workflow_start_outbox_id
+
+    assert result.payload.workflow_dispatch_state == "queued"
+    assert is_binary(result.payload.workflow_start_evidence_ref)
   end
 
   test "program context service resolves durable routing ids from product metadata" do
