@@ -129,7 +129,14 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
                source_kind: "linear_issue",
                external_system: "linear",
                source_state: "In Review",
-               workpad_refs: ["source-workpad://linear/tenant-1/subj-1"]
+               workpad_refs: ["source-workpad://linear/tenant-1/subj-1"],
+               metadata: %{
+                 "source_publication_receipt_ref" =>
+                   "source-publication://linear_primary/receipt-1",
+                 "capability_id" => "linear.comments.update",
+                 "provider_response_ref" => "artifact://linear/comment-update",
+                 "redaction_manifest_ref" => "redaction://linear/workpad"
+               }
              }
            ],
            workspace: %{id: "workspace-1", tenant_id: "tenant-1"},
@@ -833,6 +840,14 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     assert hd(typed_runtime_projection.source_bindings).source_ref ==
              "source://linear/tenant-1/subj-1"
+
+    assert hd(typed_runtime_projection.source_bindings).metadata[
+             "source_publication_receipt_ref"
+           ] ==
+             "source-publication://linear_primary/receipt-1"
+
+    assert hd(typed_runtime_projection.source_bindings).metadata["capability_id"] ==
+             "linear.comments.update"
 
     assert typed_runtime_projection.workspace_ref.id == "workspace-1"
     assert typed_runtime_projection.execution_state.execution_ref.id == "exec-1"
