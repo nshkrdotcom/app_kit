@@ -150,14 +150,28 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
              "receipt_state" => "success",
              "lower_receipt_ref" => "lower-receipt://run-1/attempt-1",
              "run_id" => "run-1",
-             "attempt_id" => "attempt-1"
+             "attempt_id" => "attempt-1",
+             "metadata" => %{
+               "lower_request_ref" => "lower-request://codex/session-turn",
+               "lower_runtime_kind" => "codex_session",
+               "capability_id" => "codex.session.turn"
+             }
            },
            runtime: %{
              "token_totals" => %{"input" => 120, "output" => 45},
+             "token_dedupe" => %{
+               "accepted_count" => 2,
+               "duplicate_count" => 1,
+               "token_hash_refs" => ["sha256:token-1", "sha256:token-2"]
+             },
              "rate_limit" => %{"remaining" => 80},
+             "retry_queue" => [
+               %{"retry_ref" => "retry://receipt/1", "reason" => "rate_limited"}
+             ],
              "event_counts" => %{"tool_call" => 2}
            },
            evidence: %{
+             "aitrace" => %{"evidence_receipt_ref" => "aitrace://receipt/1"},
              "evidence_refs" => [
                %{
                  "evidence_id" => "evidence-1",
@@ -166,6 +180,49 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
                  "status" => "present"
                }
              ]
+           },
+           prompt: %{"prompt_hash" => "sha256:prompt"},
+           semantic: %{"failure" => %{"kind" => "semantic_insufficient_context"}},
+           authority: %{"credential_ref" => "credential://lease/redacted"},
+           run: %{
+             "run_ref" => "lower-run-1",
+             "attempt_ref" => "lower-attempt-1",
+             "runtime_profile_ref" => "runtime-profile://codex/default",
+             "runtime_profile_kind" => "codex_session"
+           },
+           lower_envelope: %{
+             "lower_request_ref" => "lower-request://codex/session-turn",
+             "lower_runtime_kind" => "codex_session",
+             "capability_id" => "codex.session.turn",
+             "sandbox_profile_ref" => "sandbox://local/read-write"
+           },
+           governance: %{
+             "authority_ref" => "authority-decision://codex/session-turn",
+             "connector_manifest_refs" => ["manifest://jido/connectors/codex_cli@local"],
+             "capability_negotiation_refs" => ["cap-neg://codex/session-turn"]
+           },
+           incident_bundles: [
+             %{
+               "incident_ref" => "incident://lower-runtime-failed",
+               "incident_class" => "lower_runtime_failed"
+             }
+           ],
+           retry_receipts: [
+             %{"retry_receipt_ref" => "retry-receipt://safe", "retry_safety_class" => "safe"}
+           ],
+           acceptance: %{
+             "scenario_refs" => ["stacklab://scenario/local-single-node"],
+             "claim_refs" => ["claim://extravaganza/local-run"]
+           },
+           github_pr: %{
+             "provider" => "github",
+             "evidence_ref" => "evidence://github-pr/pr-dynamic",
+             "content_ref" => "github-pr://nshkrdotcom/extravaganza/17"
+           },
+           source_publication: %{
+             "source_publication_receipt_ref" => "source-publication://linear_primary/receipt-1",
+             "status" => "published",
+             "capability_id" => "linear.comments.update"
            },
            review: %{"pending_decision_ids" => ["dec-1"]},
            available_actions: [
@@ -856,6 +913,41 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
              "lower-receipt://run-1/attempt-1"
 
     assert typed_runtime_projection.runtime.token_totals == %{"input" => 120, "output" => 45}
+    assert typed_runtime_projection.runtime.token_dedupe["duplicate_count"] == 1
+    assert hd(typed_runtime_projection.runtime.retry_queue)["retry_ref"] == "retry://receipt/1"
+
+    assert typed_runtime_projection.runtime.aitrace["evidence_receipt_ref"] ==
+             "aitrace://receipt/1"
+
+    assert typed_runtime_projection.runtime.prompt["prompt_hash"] == "sha256:prompt"
+
+    assert typed_runtime_projection.runtime.semantic["failure"]["kind"] ==
+             "semantic_insufficient_context"
+
+    assert typed_runtime_projection.runtime.authority["credential_ref"] ==
+             "credential://lease/redacted"
+
+    assert typed_runtime_projection.runtime.metadata["lower_envelope"]["lower_runtime_kind"] ==
+             "codex_session"
+
+    assert typed_runtime_projection.runtime.metadata["governance"]["connector_manifest_refs"] == [
+             "manifest://jido/connectors/codex_cli@local"
+           ]
+
+    assert typed_runtime_projection.runtime.metadata["incident_bundles"] == [
+             %{
+               "incident_ref" => "incident://lower-runtime-failed",
+               "incident_class" => "lower_runtime_failed"
+             }
+           ]
+
+    assert typed_runtime_projection.runtime.metadata["acceptance"]["scenario_refs"] == [
+             "stacklab://scenario/local-single-node"
+           ]
+
+    assert hd(typed_runtime_projection.lower_receipts).metadata["lower_request_ref"] ==
+             "lower-request://codex/session-turn"
+
     assert hd(typed_runtime_projection.runtime.events).event_kind == "tool_call"
     assert hd(typed_runtime_projection.evidence).content_ref == "evidence://github-pr/pr-dynamic"
     assert hd(typed_runtime_projection.review.pending_decision_refs).id == "dec-1"
@@ -956,6 +1048,16 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
              )
 
     assert action_result.status == :completed
+
+    assert {:ok, by_id_result} =
+             MezzanineBridge.record_decision_by_id(
+               context,
+               "dec-1",
+               %{decision: :accept},
+               review_action_service: FakeReviewActionService
+             )
+
+    assert by_id_result.status == :completed
 
     assert {:ok, template} =
              InstallTemplate.new(%{

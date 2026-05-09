@@ -56,6 +56,7 @@ defmodule AppKitMezzanineBridge.MixProject do
       {:mezzanine_leasing, path: "../../../mezzanine/core/leasing"},
       {:mezzanine_m1_m2_runtime, path: "../../../mezzanine/core/m1_m2_runtime"},
       {:mezzanine_operator_engine, path: "../../../mezzanine/core/operator_engine"},
+      {:mezzanine_projection_engine, path: "../../../mezzanine/core/projection_engine"},
       {:mezzanine_source_engine, path: "../../../mezzanine/core/source_engine"},
       {:mezzanine_decision_engine, path: "../../../mezzanine/core/decision_engine"},
       {:mezzanine_evidence_engine, path: "../../../mezzanine/core/evidence_engine"},

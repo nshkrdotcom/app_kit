@@ -49,6 +49,19 @@ defmodule AppKit.ReviewSurfaceTest do
         metadata: %{backend: :fake}
       })
     end
+
+    @impl true
+    def record_decision_by_id(%RequestContext{} = _context, decision_id, attrs, _opts) do
+      ActionResult.new(%{
+        status: :completed,
+        action_ref: %{
+          id: "#{decision_id}:accept",
+          action_kind: "review_accept"
+        },
+        message: Map.get(attrs, :reason),
+        metadata: %{backend: :fake, by_id?: true}
+      })
+    end
   end
 
   alias AppKit.Core.{DecisionRef, PageRequest, RequestContext, SubjectRef}
@@ -94,6 +107,17 @@ defmodule AppKit.ReviewSurfaceTest do
     assert review.backend == :fake
     assert action_result.metadata.backend == :fake
     assert action_result.message == "looks good"
+
+    assert {:ok, by_id_result} =
+             ReviewSurface.record_decision_by_id(
+               context,
+               "dec-1",
+               %{reason: "by id"},
+               review_backend: FakeReviewBackend
+             )
+
+    assert by_id_result.metadata.by_id? == true
+    assert by_id_result.action_ref.id == "dec-1:accept"
   end
 
   defp request_context do

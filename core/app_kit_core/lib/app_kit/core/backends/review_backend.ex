@@ -20,4 +20,9 @@ defmodule AppKit.Core.Backends.ReviewBackend do
 
   @callback record_decision(RequestContext.t(), DecisionRef.t(), map(), keyword()) ::
               {:ok, ActionResult.t()} | {:error, SurfaceError.t()}
+
+  @callback record_decision_by_id(RequestContext.t(), String.t(), map(), keyword()) ::
+              {:ok, ActionResult.t()} | {:error, SurfaceError.t()}
+
+  @optional_callbacks record_decision_by_id: 4
 end

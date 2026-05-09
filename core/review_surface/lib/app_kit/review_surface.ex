@@ -38,7 +38,38 @@ defmodule AppKit.ReviewSurface do
     backend(opts).record_decision(context, decision_ref, attrs, opts)
   end
 
+  @spec record_decision_by_id(RequestContext.t(), String.t(), map(), keyword()) ::
+          {:ok, ActionResult.t()} | {:error, SurfaceError.t()}
+  def record_decision_by_id(
+        %RequestContext{} = context,
+        decision_id,
+        attrs,
+        opts \\ []
+      )
+      when is_binary(decision_id) and is_map(attrs) do
+    backend = backend(opts)
+
+    if function_exported?(backend, :record_decision_by_id, 4) do
+      backend.record_decision_by_id(context, decision_id, attrs, opts)
+    else
+      unsupported_backend_error(:record_decision_by_id)
+    end
+  end
+
   defp backend(opts) do
     BackendConfig.resolve(opts, :review_backend, :review_backend, AppKit.Bridges.MezzanineBridge)
+  end
+
+  defp unsupported_backend_error(feature) do
+    {:ok, error} =
+      SurfaceError.new(%{
+        code: "unsupported_review_backend",
+        message: "Review backend does not support #{feature}",
+        kind: :boundary,
+        retryable: false,
+        details: %{feature: feature}
+      })
+
+    {:error, error}
   end
 end

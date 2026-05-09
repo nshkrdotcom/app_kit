@@ -248,6 +248,30 @@ defmodule AppKit.Bridges.MezzanineBridge do
   end
 
   @impl true
+  def record_decision_by_id(%RequestContext{} = context, decision_id, attrs, opts)
+      when is_binary(decision_id) and is_map(attrs) and is_list(opts) do
+    with {:ok, tenant_id} <- tenant_id(context),
+         {:ok, program_id} <- program_id(context, opts),
+         merged_attrs <-
+           attrs
+           |> Map.new()
+           |> Map.put_new(:program_id, program_id)
+           |> Map.put_new(:actor_ref, context.actor_ref.id),
+         {:ok, bridge_result} <-
+           review_action_service(opts).record_decision(
+             tenant_id,
+             decision_id,
+             merged_attrs,
+             opts
+           ),
+         {:ok, action_result} <- action_result_from_bridge(bridge_result) do
+      {:ok, action_result}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
   def create_installation(%RequestContext{} = context, %InstallTemplate{} = template, opts)
       when is_list(opts) do
     with {:ok, tenant_id} <- tenant_id(context),
@@ -963,14 +987,60 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp runtime_facts_projection(projection) do
     runtime = fetch_value(projection, :runtime) || %{}
 
-    with {:ok, events} <- runtime_event_summaries(fetch_value(runtime, :event_counts) || %{}) do
-      RuntimeFactsProjection.new(%{
-        token_totals: fetch_value(runtime, :token_totals) || %{},
-        rate_limit: fetch_value(runtime, :rate_limit) || %{},
-        events: events,
-        metadata: fetch_value(runtime, :metadata) || %{}
-      })
+    with {:ok, events} <- runtime_event_summaries(runtime_event_counts(runtime)) do
+      RuntimeFactsProjection.new(runtime_facts_attrs(projection, runtime, events))
     end
+  end
+
+  defp runtime_facts_attrs(projection, runtime, events) do
+    %{
+      token_totals: fetch_value(runtime, :token_totals) || %{},
+      token_dedupe: fetch_value(runtime, :token_dedupe) || %{},
+      rate_limit: fetch_value(runtime, :rate_limit) || %{},
+      retry_queue: fetch_value(runtime, :retry_queue) || [],
+      aitrace: runtime_aitrace(projection, runtime),
+      prompt: projection_or_runtime(projection, runtime, :prompt),
+      semantic: projection_or_runtime(projection, runtime, :semantic),
+      authority: projection_or_runtime(projection, runtime, :authority),
+      events: events,
+      metadata: runtime_facts_metadata(projection, runtime)
+    }
+  end
+
+  defp runtime_event_counts(runtime), do: fetch_value(runtime, :event_counts) || %{}
+
+  defp runtime_aitrace(projection, runtime) do
+    evidence = fetch_value(projection, :evidence) || %{}
+
+    fetch_value(evidence, :aitrace) || fetch_value(runtime, :aitrace) || %{}
+  end
+
+  defp projection_or_runtime(projection, runtime, key) do
+    fetch_value(projection, key) || fetch_value(runtime, key) || %{}
+  end
+
+  defp runtime_facts_metadata(projection, runtime) do
+    runtime_metadata = fetch_value(runtime, :metadata) || %{}
+
+    projection_metadata =
+      %{
+        "run" => fetch_value(projection, :run),
+        "lower_envelope" => fetch_value(projection, :lower_envelope),
+        "governance" => fetch_value(projection, :governance),
+        "incident_bundles" => fetch_value(projection, :incident_bundles),
+        "retry_receipts" => fetch_value(projection, :retry_receipts),
+        "acceptance" => fetch_value(projection, :acceptance),
+        "github_pr" => fetch_value(projection, :github_pr),
+        "source_publication" => fetch_value(projection, :source_publication),
+        "diagnostics" => fetch_value(projection, :diagnostics)
+      }
+      |> compact_projection_metadata()
+
+    Map.merge(runtime_metadata, projection_metadata)
+  end
+
+  defp compact_projection_metadata(map) do
+    Map.reject(map, fn {_key, value} -> value in [nil, %{}, []] end)
   end
 
   defp runtime_event_summaries(event_counts) when is_map(event_counts) do
