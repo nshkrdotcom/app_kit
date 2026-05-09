@@ -18,9 +18,9 @@ defmodule AppKit.RunGovernanceTest do
     assert workload.contract_name == "GovernedAgentWorkloadContract.v1"
     assert workload.ingress_ref == "app_kit_operator_surface_via_mezzanine_bridge"
     assert workload.synthetic_operator_driver_ref == "operator_script_in_app_kit"
-    assert workload.work_class_ref == "extravaganza/work_classes/coding_operations"
-    assert workload.pack_ref == "mezzanine/packs/extravaganza_coding_ops@1"
-    assert workload.subject_kind == "coding_task"
+    assert workload.work_class_ref == "stack_lab/work_classes/service_operations"
+    assert workload.pack_ref == "mezzanine/packs/stack_lab_service_ops@1"
+    assert workload.subject_kind == "service_task"
 
     assert workload.lifecycle_states == [
              :submitted,
@@ -42,7 +42,7 @@ defmodule AppKit.RunGovernanceTest do
                state: :awaiting_review,
                surface: :app_kit_review_surface,
                action: :list_pending,
-               review_gate_ref: "extravaganza/review_gates/operator_review"
+               review_gate_ref: "stack_lab/review_gates/operator_review"
              },
              %{
                state: :completed,
@@ -107,8 +107,8 @@ defmodule AppKit.RunGovernanceTest do
     assert RunGovernance.scale_pressure_seed(workload) == %{
              contract_name: "ScalePressureProfile.v1",
              workload_contract_ref: "GovernedAgentWorkloadContract.v1",
-             workload_ref: "workloads/extravaganza-coding-ops",
-             profile_id: "profiles/extravaganza/local_default",
+             workload_ref: "workloads/stack-lab-service-ops",
+             profile_id: "profiles/stack_lab/local_default",
              tenant_count: 2,
              agents_per_tenant: 3,
              work_items_per_agent: 5,
@@ -118,12 +118,12 @@ defmodule AppKit.RunGovernanceTest do
 
   defp valid_workload_attrs do
     %{
-      workload_ref: "workloads/extravaganza-coding-ops",
-      profile_id: "profiles/extravaganza/local_default",
+      workload_ref: "workloads/stack-lab-service-ops",
+      profile_id: "profiles/stack_lab/local_default",
       ingress_ref: "app_kit_operator_surface_via_mezzanine_bridge",
-      work_class_ref: "extravaganza/work_classes/coding_operations",
-      pack_ref: "mezzanine/packs/extravaganza_coding_ops@1",
-      subject_kind: "coding_task",
+      work_class_ref: "stack_lab/work_classes/service_operations",
+      pack_ref: "mezzanine/packs/stack_lab_service_ops@1",
+      subject_kind: "service_task",
       lifecycle_states: [
         :submitted,
         :retry_submission,
@@ -132,7 +132,7 @@ defmodule AppKit.RunGovernanceTest do
         :rejected,
         :expired
       ],
-      review_gate_ref: "extravaganza/review_gates/operator_review",
+      review_gate_ref: "stack_lab/review_gates/operator_review",
       tenant_count: 1,
       agent_count: 1,
       runs_per_agent: 1,

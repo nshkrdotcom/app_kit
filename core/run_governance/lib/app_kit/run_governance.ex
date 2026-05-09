@@ -7,9 +7,6 @@ defmodule AppKit.RunGovernance do
   @scale_pressure_profile_contract "ScalePressureProfile.v1"
   @canonical_ingress "app_kit_operator_surface_via_mezzanine_bridge"
   @operator_script_driver "operator_script_in_app_kit"
-  @coding_operations_work_class "extravaganza/work_classes/coding_operations"
-  @coding_task_subject_kind "coding_task"
-  @pack_ref_prefix "mezzanine/packs/extravaganza_coding_ops"
   @review_gate_skip_refs ["skip", "skipped", "review_gate_skipped_for_speed"]
   @bare_asm_driver_refs ["task_async_stream_of_asm_calls", "bare_asm_calls"]
   @lifecycle_states [
@@ -177,7 +174,7 @@ defmodule AppKit.RunGovernance do
          :ok <- validate_review_gate(attrs),
          :ok <- validate_operator_driver(attrs),
          :ok <- validate_canonical_ingress(attrs),
-         :ok <- validate_extravaganza_pack_subject(attrs),
+         :ok <- validate_pack_subject(attrs),
          {:ok, lifecycle_states} <- normalize_lifecycle_states(Map.get(attrs, :lifecycle_states)),
          :ok <- validate_scale_shape(attrs) do
       {:ok, build_governed_agent_workload(attrs, lifecycle_states)}
@@ -288,22 +285,30 @@ defmodule AppKit.RunGovernance do
       else: {:error, :invalid_governed_ingress}
   end
 
-  defp validate_extravaganza_pack_subject(attrs) do
+  defp validate_pack_subject(attrs) do
     pack_ref = Map.get(attrs, :pack_ref)
+    work_class_ref = Map.get(attrs, :work_class_ref)
+    subject_kind = Map.get(attrs, :subject_kind)
 
     cond do
-      Map.get(attrs, :work_class_ref) != @coding_operations_work_class ->
+      not valid_ref?(work_class_ref) ->
         {:error, :invalid_work_class_ref}
 
-      Map.get(attrs, :subject_kind) != @coding_task_subject_kind ->
+      not valid_subject_kind?(subject_kind) ->
         {:error, :invalid_subject_kind}
 
-      not is_binary(pack_ref) or not String.starts_with?(pack_ref, @pack_ref_prefix) ->
+      not is_binary(pack_ref) or not String.starts_with?(pack_ref, "mezzanine/packs/") ->
         {:error, :invalid_pack_ref}
 
       true ->
         :ok
     end
+  end
+
+  defp valid_ref?(value), do: is_binary(value) and String.contains?(value, "/")
+
+  defp valid_subject_kind?(value) do
+    is_binary(value) and value != "" and value == String.downcase(value)
   end
 
   defp normalize_lifecycle_states(states) when is_list(states) do
