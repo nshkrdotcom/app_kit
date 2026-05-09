@@ -182,6 +182,15 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
              ]
            },
            prompt: %{"prompt_hash" => "sha256:prompt"},
+           memory_context: %{
+             "memory_profile_ref" => "private_facts_v1",
+             "context_pack_ref" => "context-pack://app-kit/run-1",
+             "context_hash" => "sha256:context-pack",
+             "fragment_refs" => ["fragment-memory-1"],
+             "memory_query_ref" => "memory-query://run-1",
+             "memory_evidence_refs" => ["memory-evidence://workspace/main/1"],
+             "redaction_policy_ref" => "policy://hash"
+           },
            semantic: %{"failure" => %{"kind" => "semantic_insufficient_context"}},
            authority: %{"credential_ref" => "credential://lease/redacted"},
            run: %{
@@ -920,6 +929,16 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
              "aitrace://receipt/1"
 
     assert typed_runtime_projection.runtime.prompt["prompt_hash"] == "sha256:prompt"
+
+    assert typed_runtime_projection.runtime.metadata["memory_context"] == %{
+             "memory_profile_ref" => "private_facts_v1",
+             "context_pack_ref" => "context-pack://app-kit/run-1",
+             "context_hash" => "sha256:context-pack",
+             "fragment_refs" => ["fragment-memory-1"],
+             "memory_query_ref" => "memory-query://run-1",
+             "memory_evidence_refs" => ["memory-evidence://workspace/main/1"],
+             "redaction_policy_ref" => "policy://hash"
+           }
 
     assert typed_runtime_projection.runtime.semantic["failure"]["kind"] ==
              "semantic_insufficient_context"

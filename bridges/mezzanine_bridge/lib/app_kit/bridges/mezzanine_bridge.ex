@@ -1027,6 +1027,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
         "run" => fetch_value(projection, :run),
         "lower_envelope" => fetch_value(projection, :lower_envelope),
         "governance" => fetch_value(projection, :governance),
+        "memory_context" => fetch_value(projection, :memory_context),
         "incident_bundles" => fetch_value(projection, :incident_bundles),
         "retry_receipts" => fetch_value(projection, :retry_receipts),
         "acceptance" => fetch_value(projection, :acceptance),

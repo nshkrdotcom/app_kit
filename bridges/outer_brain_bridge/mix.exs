@@ -9,6 +9,10 @@ defmodule AppKitOuterBrainBridge.MixProject do
                                 "../../../outer_brain/core/outer_brain_contracts",
                                 __DIR__
                               )
+  @outer_brain_prompting_path Path.expand(
+                                "../../../outer_brain/core/outer_brain_prompting",
+                                __DIR__
+                              )
 
   def project do
     [
@@ -34,9 +38,11 @@ defmodule AppKitOuterBrainBridge.MixProject do
   defp deps do
     [
       {:app_kit_core, path: "../../core/app_kit_core"},
+      {:app_kit_memory_surface, path: "../../core/memory_surface"},
       {:app_kit_scope_objects, path: "../../core/scope_objects"},
       {:outer_brain_contracts, path: @outer_brain_contracts_path},
       {:outer_brain_domain_bridge, path: @outer_brain_domain_bridge_path},
+      {:outer_brain_prompting, path: @outer_brain_prompting_path},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40.1", only: :dev, runtime: false}

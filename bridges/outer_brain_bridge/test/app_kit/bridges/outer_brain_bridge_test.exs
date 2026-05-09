@@ -41,6 +41,31 @@ defmodule AppKit.Bridges.OuterBrainBridgeTest do
     end
   end
 
+  defmodule MemoryContextAdapter do
+    @moduledoc false
+
+    @behaviour OuterBrain.Prompting.ContextAdapter
+
+    @impl true
+    def fetch_fragments(request, runtime_binding) do
+      send(runtime_binding["test_pid"], {:context_pack_request, request, runtime_binding})
+
+      {:ok,
+       [
+         %{
+           fragment_id: "fragment-memory-1",
+           content: %{"summary" => "prior bounded implementation note"},
+           provenance: %{"memory_ref" => "memory://workspace/main/1"},
+           staleness: %{"class" => "fresh"},
+           metadata: %{
+             "memory_evidence_ref" => "memory-evidence://workspace/main/1",
+             "rank" => 1
+           }
+         }
+       ]}
+    end
+  end
+
   test "submits a semantic turn through the outer_brain seam" do
     attach_telemetry(self(), [:trace_minted])
 
@@ -115,6 +140,86 @@ defmodule AppKit.Bridges.OuterBrainBridgeTest do
     assert carrier.operator_message == "Need the workspace target before dispatch."
   end
 
+  test "builds an OuterBrain context pack from memory DTO refs without raw memory bodies" do
+    assert {:ok, scope} =
+             ScopeObjects.host_scope(%{
+               scope_id: "workspace/main",
+               session_id: "sess-context-pack",
+               tenant_id: "tenant-1",
+               actor_id: "user-1",
+               environment: "dev",
+               metadata: %{workspace_root: "/workspace/main"}
+             })
+
+    assert {:ok, pack} =
+             OuterBrainBridge.build_context_pack(
+               scope,
+               %{
+                 objective: "repair the governed slice",
+                 refs: ["run://extravaganza/1"],
+                 memory_query: %{
+                   request_ref: "memory-query://extravaganza/run/1",
+                   intent: memory_query_intent()
+                 },
+                 context_sources: [
+                   %{
+                     source_ref: "workspace_memory",
+                     binding_key: "shared_memory",
+                     usage_phase: :retrieval,
+                     required?: false,
+                     schema_ref: "context/workspace_memory",
+                     max_fragments: 1
+                   }
+                 ],
+                 context_bindings: %{
+                   "shared_memory" => %{
+                     "adapter_key" => "memory_context",
+                     "test_pid" => self(),
+                     "config" => %{"workspace" => "main"}
+                   }
+                 }
+               },
+               trace_id: "0123456789abcdef0123456789abcdef",
+               trace_trust: true,
+               adapter_registry: %{"memory_context" => MemoryContextAdapter}
+             )
+
+    assert_received {:context_pack_request, request, binding}
+    assert request.trace_id == "0123456789abcdef0123456789abcdef"
+    assert binding["adapter_key"] == "memory_context"
+
+    assert pack.context_pack_ref =~ "context-pack://app-kit/"
+    assert pack.context_hash =~ "sha256:"
+    assert pack.memory_query_ref == "memory-query://extravaganza/run/1"
+    assert pack.memory_budget_ref == "budget://a"
+    assert pack.redaction_policy_ref == "policy://hash"
+    assert pack.fragment_refs == ["fragment-memory-1"]
+    assert pack.memory_evidence_refs == ["memory-evidence://workspace/main/1"]
+    refute String.contains?(inspect(pack), "raw memory body")
+  end
+
+  test "context pack bridge rejects raw memory bodies at the AppKit DTO boundary" do
+    assert {:ok, scope} =
+             ScopeObjects.host_scope(%{
+               scope_id: "workspace/main",
+               session_id: "sess-context-pack-raw",
+               tenant_id: "tenant-1",
+               actor_id: "user-1",
+               environment: "dev",
+               metadata: %{}
+             })
+
+    assert {:error, {:raw_memory_surface_payload_forbidden, :body}} =
+             OuterBrainBridge.build_context_pack(scope, %{
+               objective: "bad raw memory",
+               memory_query: %{
+                 request_ref: "memory-query://raw",
+                 intent: memory_query_intent(),
+                 body: "raw memory body"
+               }
+             })
+  end
+
   defp attach_telemetry(test_pid, event_keys) do
     handler_id = "outer-brain-bridge-test-#{System.unique_integer([:positive])}"
 
@@ -140,5 +245,33 @@ defmodule AppKit.Bridges.OuterBrainBridgeTest do
 
     assert Enum.sort(Map.keys(metadata)) ==
              event_key |> Telemetry.metadata_keys() |> Enum.sort()
+  end
+
+  defp memory_query_intent do
+    %{
+      tenant_ref: "tenant://a",
+      authority_ref: "authority://a",
+      installation_ref: "installation://a",
+      idempotency_key: "idem-query",
+      trace_ref: "trace://a",
+      scope_key: %{
+        tenant_ref: "tenant://a",
+        installation_ref: "installation://a",
+        subject_ref: "subject://a",
+        run_ref: "run://a"
+      },
+      query_class: "semantic",
+      query_text_hash: "sha256:query",
+      query_redacted_excerpt: "bounded query",
+      redaction_policy: %{level: :hash_only, redaction_policy_ref: "policy://hash"},
+      max_results: 3,
+      budget_ref: %{
+        budget_ref: "budget://a",
+        tenant_ref: "tenant://a",
+        authority_ref: "authority://a",
+        installation_ref: "installation://a",
+        trace_ref: "trace://a"
+      }
+    }
   end
 end

@@ -4,9 +4,12 @@ defmodule AppKit.Bridges.OuterBrainBridge do
   """
 
   alias AppKit.Core.{Telemetry, TraceIdentity}
+  alias AppKit.MemorySurface
   alias AppKit.ScopeObjects.HostScope
   alias OuterBrain.Bridges.DomainSubmission
   alias OuterBrain.Contracts.SemanticFailure
+  alias OuterBrain.Core.SemanticFrame
+  alias OuterBrain.Prompting.ContextPack
 
   @spec submit_turn(HostScope.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def submit_turn(%HostScope{} = scope, text, opts \\ []) when is_binary(text) do
@@ -61,8 +64,143 @@ defmodule AppKit.Bridges.OuterBrainBridge do
     end
   end
 
+  @spec build_context_pack(HostScope.t(), map(), keyword()) :: {:ok, map()} | {:error, term()}
+  def build_context_pack(%HostScope{} = scope, attrs, opts \\ [])
+      when is_map(attrs) and is_list(opts) do
+    with {:ok, memory_query} <- memory_query_request(attrs),
+         {:ok, resolution} <- resolve_trace(scope, opts) do
+      frame = semantic_frame(scope, attrs)
+
+      pack =
+        ContextPack.build(
+          frame,
+          list_value(attrs, :refs),
+          mode: map_value(attrs, :mode) || :run_context,
+          trace_id: resolution.trace_id,
+          context_sources: list_value(attrs, :context_sources),
+          context_bindings: map_value(attrs, :context_bindings) || %{},
+          context_budget: map_value(attrs, :context_budget),
+          adapter_registry: Keyword.get(opts, :adapter_registry, %{}),
+          persistence_posture: Keyword.get(opts, :persistence_posture, opts)
+        )
+
+      {:ok, context_pack_projection(scope, pack, memory_query, resolution.trace_id)}
+    end
+  end
+
   defp validate_turn(""), do: {:error, :blank_turn}
   defp validate_turn(_trimmed), do: :ok
+
+  defp memory_query_request(attrs) do
+    case map_value(attrs, :memory_query) do
+      nil -> {:ok, nil}
+      %MemorySurface.MemoryQueryRequest{} = request -> {:ok, request}
+      %{} = request -> MemorySurface.query_request(request)
+      other -> {:error, {:invalid_memory_query_request, other}}
+    end
+  end
+
+  defp semantic_frame(%HostScope{} = scope, attrs) do
+    scope.session_id
+    |> SemanticFrame.seed(map_value(attrs, :objective) || "build governed runtime context")
+    |> record_commitments(list_value(attrs, :commitments))
+    |> record_questions(list_value(attrs, :unresolved_questions))
+  end
+
+  defp record_commitments(%SemanticFrame{} = frame, commitments) do
+    Enum.reduce(commitments, frame, fn
+      commitment, acc when is_binary(commitment) ->
+        SemanticFrame.record_commitment(acc, commitment)
+
+      _other, acc ->
+        acc
+    end)
+  end
+
+  defp record_questions(%SemanticFrame{} = frame, questions) do
+    Enum.reduce(questions, frame, fn
+      question, acc when is_binary(question) ->
+        SemanticFrame.apply_turn(acc, %{question: question})
+
+      _other, acc ->
+        acc
+    end)
+  end
+
+  defp context_pack_projection(%HostScope{} = scope, pack, memory_query, trace_id) do
+    context_hash = stable_hash(pack)
+
+    %{
+      context_pack_ref:
+        "context-pack://app-kit/#{scope.session_id}/#{hash_segment(context_hash)}",
+      context_hash: context_hash,
+      trace_id: trace_id,
+      fragment_refs: fragment_refs(pack),
+      memory_evidence_refs: memory_evidence_refs(pack),
+      memory_query_ref: memory_query && memory_query.request_ref,
+      memory_budget_ref: memory_query && memory_query.intent.budget_ref.budget_ref,
+      redaction_policy_ref:
+        memory_query && memory_query.intent.redaction_policy.redaction_policy_ref,
+      context_sources: Map.get(pack, :context_sources, []),
+      context_pack: pack
+    }
+    |> compact()
+  end
+
+  defp fragment_refs(pack) do
+    pack
+    |> Map.get(:fragments, [])
+    |> Enum.flat_map(fn fragment ->
+      fragment |> map_value(:fragment_id) |> List.wrap()
+    end)
+  end
+
+  defp memory_evidence_refs(pack) do
+    pack
+    |> Map.get(:fragments, [])
+    |> Enum.flat_map(fn fragment ->
+      fragment
+      |> map_value(:metadata)
+      |> case do
+        %{} = metadata -> metadata |> map_value(:memory_evidence_ref) |> List.wrap()
+        _other -> []
+      end
+    end)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp stable_hash(value) do
+    "sha256:" <>
+      (:crypto.hash(:sha256, :erlang.term_to_binary(value)) |> Base.encode16(case: :lower))
+  end
+
+  defp hash_segment("sha256:" <> hash), do: binary_part(hash, 0, min(byte_size(hash), 16))
+  defp hash_segment(hash), do: binary_part(hash, 0, min(byte_size(hash), 16))
+
+  defp compact(map) do
+    map
+    |> Enum.reject(fn {_key, value} -> value in [nil, [], %{}] end)
+    |> Map.new()
+  end
+
+  defp list_value(attrs, key) do
+    case map_value(attrs, key) do
+      value when is_list(value) -> value
+      nil -> []
+      value -> [value]
+    end
+  end
+
+  defp map_value(nil, _key), do: nil
+
+  defp map_value(%{} = attrs, key) do
+    case Map.fetch(attrs, key) do
+      {:ok, value} -> value
+      :error -> Map.get(attrs, Atom.to_string(key))
+    end
+  end
+
+  defp map_value(_attrs, _key), do: nil
 
   defp required_string(opts, key) do
     case Keyword.get(opts, key) do
