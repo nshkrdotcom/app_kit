@@ -1,5 +1,11 @@
+unless Code.ensure_loaded?(DependencySources) do
+  Code.require_file("../../build_support/dependency_sources.exs", __DIR__)
+end
+
 defmodule AppKitReplayViewer.MixProject do
   use Mix.Project
+
+  @repo_root Path.expand("../..", __DIR__)
 
   def project do
     [
@@ -27,7 +33,7 @@ defmodule AppKitReplayViewer.MixProject do
     [
       {:app_kit_web_components, path: "../components"},
       {:app_kit_replay_surface, path: "../../core/replay_surface"},
-      {:ai_trace_replay_contracts, path: "../../../AITrace/core/replay_contracts"},
+      DependencySources.dep(:ai_trace_replay_contracts, @repo_root),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40.1", only: :dev, runtime: false}

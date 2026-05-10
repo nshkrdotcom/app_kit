@@ -1,5 +1,11 @@
+unless Code.ensure_loaded?(DependencySources) do
+  Code.require_file("../../build_support/dependency_sources.exs", __DIR__)
+end
+
 defmodule AppKitMezzanineBridge.MixProject do
   use Mix.Project
+
+  @repo_root Path.expand("../..", __DIR__)
 
   def project do
     [
@@ -49,23 +55,24 @@ defmodule AppKitMezzanineBridge.MixProject do
     [
       {:app_kit_core, path: "../../core/app_kit_core"},
       {:app_kit_run_governance, path: "../../core/run_governance"},
-      {:jido_integration_contracts,
-       path: "../../../jido_integration/core/contracts", override: true},
-      {:mezzanine_audit_engine, path: "../../../mezzanine/core/audit_engine"},
-      {:mezzanine_execution_engine, path: "../../../mezzanine/core/execution_engine"},
-      {:mezzanine_leasing, path: "../../../mezzanine/core/leasing"},
-      {:mezzanine_m1_m2_runtime, path: "../../../mezzanine/core/m1_m2_runtime"},
-      {:mezzanine_operator_engine, path: "../../../mezzanine/core/operator_engine"},
-      {:mezzanine_projection_engine, path: "../../../mezzanine/core/projection_engine"},
-      {:mezzanine_source_engine, path: "../../../mezzanine/core/source_engine"},
-      {:mezzanine_decision_engine, path: "../../../mezzanine/core/decision_engine"},
-      {:mezzanine_evidence_engine, path: "../../../mezzanine/core/evidence_engine"},
-      {:mezzanine_archival_engine, path: "../../../mezzanine/core/archival_engine"},
-      {:mezzanine_config_registry, path: "../../../mezzanine/core/config_registry"},
-      {:mezzanine_pack_model, path: "../../../mezzanine/core/pack_model"},
-      {:mezzanine_pack_compiler, path: "../../../mezzanine/core/pack_compiler"},
-      {:mezzanine_core, path: "../../../mezzanine/core/mezzanine_core"},
-      {:mezzanine_integration_bridge, path: "../../../mezzanine/bridges/integration_bridge"},
+      DependencySources.dep(:execution_plane, @repo_root, override: true),
+      DependencySources.dep(:ground_plane_persistence_policy, @repo_root, override: true),
+      DependencySources.dep(:jido_integration_contracts, @repo_root, override: true),
+      DependencySources.dep(:mezzanine_audit_engine, @repo_root),
+      DependencySources.dep(:mezzanine_execution_engine, @repo_root),
+      DependencySources.dep(:mezzanine_leasing, @repo_root),
+      DependencySources.dep(:mezzanine_m1_m2_runtime, @repo_root),
+      DependencySources.dep(:mezzanine_operator_engine, @repo_root),
+      DependencySources.dep(:mezzanine_projection_engine, @repo_root),
+      DependencySources.dep(:mezzanine_source_engine, @repo_root),
+      DependencySources.dep(:mezzanine_decision_engine, @repo_root),
+      DependencySources.dep(:mezzanine_evidence_engine, @repo_root),
+      DependencySources.dep(:mezzanine_archival_engine, @repo_root),
+      DependencySources.dep(:mezzanine_config_registry, @repo_root),
+      DependencySources.dep(:mezzanine_pack_model, @repo_root),
+      DependencySources.dep(:mezzanine_pack_compiler, @repo_root),
+      DependencySources.dep(:mezzanine_core, @repo_root),
+      DependencySources.dep(:mezzanine_integration_bridge, @repo_root),
       {:ash, "~> 3.24"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

@@ -5,6 +5,7 @@
 /_build/
 /deps/
 /doc/
+/.dependency_sources.local.exs
 **/_build/
 **/deps/
 **/doc/

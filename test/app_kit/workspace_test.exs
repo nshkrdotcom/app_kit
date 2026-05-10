@@ -36,6 +36,13 @@ defmodule AppKit.WorkspaceTest do
     assert {:weld, "~> 0.8.1", only: [:dev, :test], runtime: false} in MixProject.project()[:deps]
   end
 
+  test "does not select workspace concurrency from environment variables" do
+    parallelism = MixProject.project()[:blitz_workspace][:parallelism]
+
+    refute Keyword.has_key?(parallelism, :env)
+    assert Keyword.has_key?(parallelism, :max_concurrency)
+  end
+
   test "uses Weld task autodiscovery instead of local release aliases" do
     aliases = MixProject.project()[:aliases]
 

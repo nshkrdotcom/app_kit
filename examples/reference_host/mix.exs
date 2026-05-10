@@ -1,10 +1,11 @@
+unless Code.ensure_loaded?(DependencySources) do
+  Code.require_file("../../build_support/dependency_sources.exs", __DIR__)
+end
+
 defmodule AppKitReferenceHost.MixProject do
   use Mix.Project
 
-  @citadel_domain_surface_path Path.expand(
-                                 "../../../citadel/surfaces/citadel_domain_surface",
-                                 __DIR__
-                               )
+  @repo_root Path.expand("../..", __DIR__)
 
   def project do
     [
@@ -35,7 +36,7 @@ defmodule AppKitReferenceHost.MixProject do
       {:app_kit_runtime_gateway, path: "../../core/runtime_gateway"},
       {:app_kit_scope_objects, path: "../../core/scope_objects"},
       {:app_kit_core, path: "../../core/app_kit_core"},
-      {:citadel_domain_surface, path: @citadel_domain_surface_path},
+      DependencySources.dep(:citadel_domain_surface, @repo_root),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40.1", only: :dev, runtime: false}

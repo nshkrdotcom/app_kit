@@ -49,7 +49,7 @@ Configuration is explicit caller data first, package option second, release prof
 ## Test Commands
 
 ```bash
-APP_KIT_MONOREPO_MAX_CONCURRENCY=1 mix ci
+mix ci
 ```
 
 ## Lost-On-Restart Claims

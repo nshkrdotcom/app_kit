@@ -1,5 +1,11 @@
+unless Code.ensure_loaded?(DependencySources) do
+  Code.require_file("../../build_support/dependency_sources.exs", __DIR__)
+end
+
 defmodule AppKitHeadlessSurface.MixProject do
   use Mix.Project
+
+  @repo_root Path.expand("../..", __DIR__)
 
   def project do
     [
@@ -30,10 +36,11 @@ defmodule AppKitHeadlessSurface.MixProject do
       {:app_kit_run_governance, path: "../run_governance", runtime: false},
       {:app_kit_runtime_gateway, path: "../runtime_gateway", runtime: false},
       {:app_kit_authority_projections, path: "../authority_projections", runtime: false},
-      {:mezzanine_headless_coding_ops,
-       path: "../../../mezzanine/core/headless_coding_ops", runtime: false},
-      {:jido_integration_contracts,
-       path: "../../../jido_integration/core/contracts", override: true, runtime: false},
+      DependencySources.dep(:mezzanine_headless_coding_ops, @repo_root, runtime: false),
+      DependencySources.dep(:jido_integration_contracts, @repo_root,
+        override: true,
+        runtime: false
+      ),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40.1", only: :dev, runtime: false}

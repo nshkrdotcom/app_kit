@@ -1,3 +1,7 @@
+unless Code.ensure_loaded?(DependencySources) do
+  Code.require_file("build_support/dependency_sources.exs", __DIR__)
+end
+
 Code.require_file("build_support/workspace_contract.exs", __DIR__)
 
 defmodule AppKit.Workspace.MixProject do
@@ -103,7 +107,7 @@ defmodule AppKit.Workspace.MixProject do
         hex_home: "_build/hex"
       ],
       parallelism: [
-        env: "APP_KIT_MONOREPO_MAX_CONCURRENCY",
+        max_concurrency: nil,
         multiplier: :auto,
         base: [
           deps_get: 4,
