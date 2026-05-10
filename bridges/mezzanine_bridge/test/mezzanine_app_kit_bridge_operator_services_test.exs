@@ -557,7 +557,15 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     assert lower_step.staleness_class == :lower_fresh
     refute lower_step.operator_actionable?
 
-    [read_lease] = ExecutionRepo.all(ReadLease)
+    read_leases =
+      ReadLease
+      |> ExecutionRepo.all()
+      |> Enum.filter(
+        &(&1.tenant_id == tenant_id and &1.execution_id == execution.id and
+            &1.trace_id == trace_id)
+      )
+
+    assert [read_lease] = read_leases
     assert read_lease.execution_id == execution.id
     assert read_lease.allowed_family == "unified_trace"
     assert read_lease.installation_revision == 42

@@ -7,6 +7,7 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
   alias Mezzanine.AppKitBridge.AdapterSupport
   alias Mezzanine.M1M2Runtime.WorkflowStartHandoff
   alias Mezzanine.WorkControl
+  alias Mezzanine.WorkExecutionHandoff
 
   @typep request_context_input :: %{
            required(:__struct__) => RequestContext,
@@ -69,27 +70,17 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
              workflow_handoff_started_run(started),
              start_attrs
            ),
-         {:ok, run_ref} <-
-           build_typed_run_ref(
-             context,
-             run_request,
-             started.work_object,
-             started.plan,
-             started.run,
-             started.review_unit,
+         {:ok, execution_handoff} <-
+           WorkExecutionHandoff.ensure_current_execution(
+             tenant_id,
+             workflow_handoff_started_run(started),
              workflow_handoff,
-             opts
+             start_attrs
            ),
-         {:ok, result} <-
-           build_typed_result(
-             context,
-             run_request,
-             started.work_object,
-             started.plan,
-             run_ref,
-             started.review_unit,
-             workflow_handoff
-           ) do
+         typed_context =
+           typed_start_context(context, run_request, started, workflow_handoff, execution_handoff),
+         {:ok, run_ref} <- build_typed_run_ref(typed_context, opts),
+         {:ok, result} <- build_typed_result(typed_context, run_ref) do
       {:ok, result}
     else
       {:error, reason} -> {:error, reason}
@@ -132,13 +123,16 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
   end
 
   defp build_typed_run_ref(
-         %RequestContext{} = context,
-         %RunRequest{} = run_request,
-         work_object,
-         plan,
-         run,
-         review_unit,
-         workflow_handoff,
+         %{
+           request_context: %RequestContext{} = context,
+           run_request: %RunRequest{} = run_request,
+           work_object: work_object,
+           plan: plan,
+           run: run,
+           review_unit: review_unit,
+           workflow_handoff: workflow_handoff,
+           execution_handoff: execution_handoff
+         },
          opts
        ) do
     RunRef.new(%{
@@ -157,18 +151,22 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
         }
         |> Map.merge(run_ref_phase2_metadata(context, run_request, run))
         |> Map.merge(workflow_handoff_metadata(workflow_handoff))
+        |> Map.merge(execution_handoff_metadata(execution_handoff))
     })
     |> normalize_result(:invalid_run_ref)
   end
 
   defp build_typed_result(
-         %RequestContext{} = context,
-         %RunRequest{} = run_request,
-         work_object,
-         plan,
-         %RunRef{} = run_ref,
-         review_unit,
-         workflow_handoff
+         %{
+           request_context: %RequestContext{} = context,
+           run_request: %RunRequest{} = run_request,
+           work_object: work_object,
+           plan: plan,
+           review_unit: review_unit,
+           workflow_handoff: workflow_handoff,
+           execution_handoff: execution_handoff
+         },
+         %RunRef{} = run_ref
        ) do
     state = if review_required?(plan), do: :waiting_review, else: :scheduled
 
@@ -190,6 +188,7 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
           review_unit_id: review_unit_id(review_unit)
         }
         |> Map.merge(workflow_handoff_metadata(workflow_handoff))
+        |> Map.merge(execution_handoff_metadata(execution_handoff))
     })
     |> normalize_result(:invalid_result)
   end
@@ -246,6 +245,25 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
     }
   end
 
+  defp typed_start_context(
+         %RequestContext{} = context,
+         %RunRequest{} = run_request,
+         started,
+         workflow_handoff,
+         execution_handoff
+       ) do
+    %{
+      request_context: context,
+      run_request: run_request,
+      work_object: started.work_object,
+      plan: started.plan,
+      run: started.run,
+      review_unit: started.review_unit,
+      workflow_handoff: workflow_handoff,
+      execution_handoff: execution_handoff
+    }
+  end
+
   defp run_ref_phase2_metadata(
          %RequestContext{} = context,
          %RunRequest{} = run_request,
@@ -275,6 +293,15 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
       workflow_id: outbox_row.workflow_id,
       workflow_dispatch_state: outbox_row.dispatch_state,
       workflow_start_evidence_ref: evidence_ref
+    }
+  end
+
+  defp execution_handoff_metadata(%{status: status, execution: execution}) do
+    %{
+      execution_id: execution.id,
+      execution_ref: "execution://#{execution.id}",
+      execution_dispatch_state: Atom.to_string(execution.dispatch_state),
+      execution_handoff_status: Atom.to_string(status)
     }
   end
 

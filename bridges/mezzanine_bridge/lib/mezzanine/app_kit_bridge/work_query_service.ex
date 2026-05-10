@@ -67,9 +67,17 @@ defmodule Mezzanine.AppKitBridge.WorkQueryService do
 
   defp runtime_projection_not_found_or_fallback(installation_id, subject_id, opts) do
     if Keyword.get(opts, :runtime_projection?) do
-      {:error, :runtime_projection_not_found}
+      runtime_projection_from_work_queries(installation_id, subject_id, opts)
     else
       WorkQueries.get_subject_projection(installation_id, subject_id)
+    end
+  end
+
+  defp runtime_projection_from_work_queries(installation_id, subject_id, opts) do
+    case WorkQueries.get_subject_runtime_projection(installation_id, subject_id, opts) do
+      {:ok, projection} -> {:ok, projection}
+      {:error, :runtime_projection_not_found} -> {:error, :runtime_projection_not_found}
+      {:error, reason} -> {:error, reason}
     end
   end
 

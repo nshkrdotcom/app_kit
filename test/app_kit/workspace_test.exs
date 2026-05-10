@@ -36,10 +36,10 @@ defmodule AppKit.WorkspaceTest do
     assert {:weld, "~> 0.8.2", only: [:dev, :test], runtime: false} in MixProject.project()[:deps]
   end
 
-  test "does not select workspace concurrency from environment variables" do
+  test "supports an explicit workspace concurrency environment override" do
     parallelism = MixProject.project()[:blitz_workspace][:parallelism]
 
-    refute Keyword.has_key?(parallelism, :env)
+    assert Keyword.fetch!(parallelism, :env) == "APP_KIT_MONOREPO_MAX_CONCURRENCY"
     assert Keyword.has_key?(parallelism, :max_concurrency)
   end
 

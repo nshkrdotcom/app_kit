@@ -314,6 +314,9 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert String.starts_with?(result.payload.workflow_start_outbox_id, "workflow-start:")
     assert result.payload.workflow_dispatch_state == "queued"
     assert result.payload.run_ref.metadata.workflow_start_ref == result.payload.workflow_start_ref
+    assert is_binary(result.payload.execution_id)
+    assert result.payload.execution_dispatch_state == "queued"
+    assert result.payload.run_ref.metadata.execution_id == result.payload.execution_id
 
     assert %{
              rows: [[outbox_id, workflow_id, idempotency_key, dispatch_state]]
@@ -332,14 +335,51 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert is_binary(idempotency_key)
     assert dispatch_state == "queued"
 
+    assert %{
+             rows: [
+               [execution_id, execution_dispatch_state, submission_dedupe_key, workflow_start_ref]
+             ]
+           } =
+             ExecutionRepo.query!(
+               """
+               SELECT id::text, dispatch_state::text, submission_dedupe_key,
+                      dispatch_envelope->>'workflow_start_ref'
+               FROM execution_records
+               WHERE subject_id::text = $1
+               """,
+               [subject.subject_id]
+             )
+
+    assert execution_id == result.payload.execution_id
+    assert execution_dispatch_state == "queued"
+    assert submission_dedupe_key == idempotency_key
+    assert workflow_start_ref == result.payload.workflow_start_ref
+
     assert {:ok, detail} = WorkQueryService.get_subject_detail(tenant_id, subject.subject_id)
     assert detail.active_run_id == result.payload.run_ref.run_id
     assert detail.active_run_status == :scheduled
+    assert detail.active_execution_id == result.payload.execution_id
+    assert detail.active_execution_dispatch_state == :queued
     assert result.payload.review_unit_id in detail.pending_review_ids
     assert hd(detail.pending_obligations).decision_ref_id == result.payload.review_unit_id
     assert hd(detail.blocking_conditions).blocker_kind == "review_pending"
     assert detail.next_step_preview.step_kind == "record_review_decision"
     assert detail.next_step_preview.status == "blocked"
+
+    assert {:ok, runtime_projection} =
+             WorkQueryService.get_subject_projection(tenant_id, subject.subject_id,
+               projection_row_fetcher: fn _installation_id, _subject_id, _opts -> :not_found end,
+               runtime_projection?: true
+             )
+
+    assert runtime_projection.projection_name == "operator_subject_runtime"
+    assert runtime_projection.execution["execution_id"] == result.payload.execution_id
+    assert runtime_projection.execution["dispatch_state"] == "queued"
+
+    assert runtime_projection.lower_receipt["lower_receipt_ref"] ==
+             "lower-receipt://pending/#{result.payload.execution_id}"
+
+    assert [%{"binding_ref" => "linear_primary"}] = runtime_projection.source_bindings
 
     assert {:ok, pending_reviews} = ReviewQueryService.list_pending_reviews(tenant_id, program.id)
     assert Enum.any?(pending_reviews, &(&1.decision_ref.id == result.payload.review_unit_id))
@@ -411,6 +451,9 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
              result.payload.run_ref.metadata.workflow_start_outbox_id
 
     assert result.payload.workflow_dispatch_state == "queued"
+    assert is_binary(result.payload.execution_id)
+    assert result.payload.execution_dispatch_state == "queued"
+    assert result.payload.run_ref.metadata.execution_id == result.payload.execution_id
     assert is_binary(result.payload.workflow_start_evidence_ref)
   end
 
