@@ -375,11 +375,100 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert runtime_projection.projection_name == "operator_subject_runtime"
     assert runtime_projection.execution["execution_id"] == result.payload.execution_id
     assert runtime_projection.execution["dispatch_state"] == "queued"
+    assert runtime_projection.execution["metadata"]["scheduler_state"] == "claim_queued"
+    assert runtime_projection.execution["metadata"]["claim_state"] == "claimed"
+    assert runtime_projection.execution["metadata"]["running_state"] == "not_running"
+    assert runtime_projection.execution["metadata"]["retry_state"] == "none"
+    assert runtime_projection.runtime["event_counts"]["scheduler_claim_queued"] == 1
+    assert runtime_projection.runtime["retry_queue"] == []
 
     assert runtime_projection.lower_receipt["lower_receipt_ref"] ==
              "lower-receipt://pending/#{result.payload.execution_id}"
 
     assert [%{"binding_ref" => "linear_primary"}] = runtime_projection.source_bindings
+
+    assert {:ok, appkit_projection} =
+             AppKit.Bridges.MezzanineBridge.get_runtime_projection(
+               context,
+               run_request.subject_ref,
+               projection_row_fetcher: fn _installation_id, _subject_id, _opts -> :not_found end
+             )
+
+    assert appkit_projection.execution_state.metadata["scheduler_state"] == "claim_queued"
+    assert appkit_projection.execution_state.metadata["claim_state"] == "claimed"
+    assert appkit_projection.execution_state.metadata["running_state"] == "not_running"
+    assert appkit_projection.execution_state.metadata["retry_state"] == "none"
+    assert appkit_projection.runtime.retry_queue == []
+
+    retry_at = ~U[2026-05-10 22:30:00Z]
+
+    ExecutionRepo.query!(
+      """
+      UPDATE execution_records
+      SET dispatch_state = 'in_flight',
+          next_dispatch_at = $2,
+          last_dispatch_error_kind = 'restart_recovery',
+          last_dispatch_error_payload = jsonb_build_object('reason', 'dispatch_worker_restarted'),
+          updated_at = $3
+      WHERE id::text = $1
+      """,
+      [result.payload.execution_id, retry_at, retry_at]
+    )
+
+    assert {:ok, retry_projection} =
+             AppKit.Bridges.MezzanineBridge.get_runtime_projection(
+               context,
+               run_request.subject_ref,
+               projection_row_fetcher: fn _installation_id, _subject_id, _opts -> :not_found end
+             )
+
+    assert retry_projection.execution_state.dispatch_state == "in_flight"
+    assert retry_projection.execution_state.metadata["scheduler_state"] == "retry_scheduled"
+    assert retry_projection.execution_state.metadata["claim_state"] == "released"
+    assert retry_projection.execution_state.metadata["running_state"] == "not_running"
+    assert retry_projection.execution_state.metadata["retry_state"] == "scheduled"
+
+    assert [
+             %{
+               "attempt_ref" => retry_attempt_ref,
+               "status" => "scheduled",
+               "reason" => "restart_recovery",
+               "scheduled_at" => scheduled_at
+             }
+           ] = retry_projection.runtime.retry_queue
+
+    assert retry_attempt_ref == "attempt://#{result.payload.execution_id}/1"
+    assert DateTime.compare(scheduled_at, retry_at) == :eq
+
+    completed_at = ~U[2026-05-10 22:40:00Z]
+
+    ExecutionRepo.query!(
+      """
+      UPDATE execution_records
+      SET dispatch_state = 'completed',
+          next_dispatch_at = NULL,
+          last_dispatch_error_kind = NULL,
+          last_dispatch_error_payload = '{}'::jsonb,
+          updated_at = $2
+      WHERE id::text = $1
+      """,
+      [result.payload.execution_id, completed_at]
+    )
+
+    assert {:ok, completed_projection} =
+             AppKit.Bridges.MezzanineBridge.get_runtime_projection(
+               context,
+               run_request.subject_ref,
+               projection_row_fetcher: fn _installation_id, _subject_id, _opts -> :not_found end
+             )
+
+    assert completed_projection.lifecycle_state == "completed"
+    assert completed_projection.execution_state.dispatch_state == "completed"
+    assert completed_projection.execution_state.metadata["scheduler_state"] == "completed"
+    assert completed_projection.execution_state.metadata["claim_state"] == "completed"
+    assert completed_projection.execution_state.metadata["running_state"] == "not_running"
+    assert completed_projection.execution_state.metadata["retry_state"] == "none"
+    assert completed_projection.execution_state.metadata["completion_state"] == "completed"
 
     assert {:ok, pending_reviews} = ReviewQueryService.list_pending_reviews(tenant_id, program.id)
     assert Enum.any?(pending_reviews, &(&1.decision_ref.id == result.payload.review_unit_id))
