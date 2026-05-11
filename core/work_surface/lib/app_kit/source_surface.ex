@@ -1,0 +1,36 @@
+defmodule AppKit.SourceSurface do
+  @moduledoc """
+  Typed app-facing source intake and source current-state surface.
+  """
+
+  alias AppKit.BackendConfig
+  alias AppKit.Core.{RequestContext, SurfaceError}
+
+  @spec sync_linear_issues(RequestContext.t(), map(), keyword()) ::
+          {:ok, map()} | {:error, SurfaceError.t()}
+  def sync_linear_issues(%RequestContext{} = context, source_page, opts \\ [])
+      when is_map(source_page) and is_list(opts) do
+    backend(opts).sync_linear_issues(context, source_page, opts)
+  end
+
+  @spec current_linear_issue_states(RequestContext.t(), [String.t()], map(), keyword()) ::
+          {:ok, map()} | {:error, SurfaceError.t()}
+  def current_linear_issue_states(
+        %RequestContext{} = context,
+        issue_ids,
+        source_binding,
+        opts \\ []
+      )
+      when is_list(issue_ids) and is_map(source_binding) and is_list(opts) do
+    backend(opts).current_linear_issue_states(context, issue_ids, source_binding, opts)
+  end
+
+  defp backend(opts) do
+    BackendConfig.resolve(
+      opts,
+      :source_backend,
+      :source_backend,
+      AppKit.Bridges.MezzanineBridge
+    )
+  end
+end

@@ -12,6 +12,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @behaviour AppKit.Core.Backends.InstallationBackend
   @behaviour AppKit.Core.Backends.OperatorBackend
   @behaviour AppKit.Core.Backends.ReviewBackend
+  @behaviour AppKit.Core.Backends.SourceBackend
   @behaviour AppKit.Core.Backends.WorkBackend
   @behaviour AppKit.Core.Backends.WorkQueryBackend
   @behaviour AppKit.Core.Backends.HeadlessBackend
@@ -93,6 +94,30 @@ defmodule AppKit.Bridges.MezzanineBridge do
   }
 
   alias Mezzanine.Archival.Query, as: ArchivalQuery
+
+  @impl true
+  def sync_linear_issues(%RequestContext{} = context, source_page, opts)
+      when is_map(source_page) and is_list(opts) do
+    case source_service(opts).sync_linear_issues(context, source_page, opts) do
+      {:ok, result} -> {:ok, result}
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def current_linear_issue_states(%RequestContext{} = context, issue_ids, source_binding, opts)
+      when is_list(issue_ids) and is_map(source_binding) and is_list(opts) do
+    service = source_service(opts)
+
+    if service_exports?(service, :current_linear_issue_states, 4) do
+      case service.current_linear_issue_states(context, issue_ids, source_binding, opts) do
+        {:ok, result} -> {:ok, result}
+        {:error, reason} -> normalize_surface_error(reason)
+      end
+    else
+      normalize_surface_error(:source_current_state_not_configured)
+    end
+  end
 
   @impl true
   def ingest_subject(%RequestContext{} = context, attrs, opts)
@@ -1732,6 +1757,9 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   defp memory_control_service(opts),
     do: Keyword.get(opts, :memory_control_service, Mezzanine.AppKitBridge.MemoryControlService)
+
+  defp source_service(opts),
+    do: Keyword.get(opts, :source_service, Mezzanine.AppKitBridge.SourceService)
 
   defp service_exports?(service, function_name, arity)
        when is_atom(service) and is_atom(function_name) and is_integer(arity) do

@@ -7,10 +7,12 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
   alias Mezzanine.Archival.ArchivalManifest
   alias Mezzanine.Archival.Repo, as: ArchivalRepo
   alias Mezzanine.Execution.Repo, as: ExecutionRepo
+  alias Mezzanine.IntegrationBridge.AuthorizedInvocation
 
   alias Mezzanine.AppKitBridge.{
     ProgramContextService,
     ReviewQueryService,
+    SourceService,
     WorkControlService,
     WorkQueryService
   }
@@ -18,6 +20,21 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
   alias Mezzanine.OpsDomain.Repo, as: OpsRepo
   alias Mezzanine.Programs.{PolicyBundle, Program}
   alias Mezzanine.Work.{WorkClass, WorkObject}
+
+  defmodule CurrentStateBridge do
+    def fetch_linear_current_issue_states(invocation, issue_ids, source_binding, opts) do
+      send(self(), {:current_state_requested, invocation, issue_ids, source_binding, opts})
+
+      {:ok,
+       %{
+         source_current_state: %{
+           operation: "linear.issues.list",
+           subject_attrs: [%{provider_external_ref: "lin-issue-321"}],
+           missing_issue_ids: ["lin-missing"]
+         }
+       }}
+    end
+  end
 
   setup do
     ops_owner = Sandbox.start_owner!(OpsRepo, shared: false)
@@ -94,6 +111,69 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert {:ok, stats} = WorkQueryService.queue_stats(tenant_id, program.id)
     assert stats.program_id == program.id
     assert stats.active_count >= 1
+  end
+
+  test "source service syncs Linear issue pages through SourceEngine and durable work intake" do
+    %{tenant_id: tenant_id, program: program, work_class: work_class} =
+      fixture_stack("tenant-bridge-source-sync")
+
+    context = request_context_by_slug(tenant_id, program.slug, work_class.name)
+
+    assert {:ok, result} =
+             SourceService.sync_linear_issues(
+               context,
+               %{
+                 issues: [linear_issue()],
+                 page_info: %{has_next_page: false},
+                 source_binding: source_binding(),
+                 viewer: %{id: "usr-linear-viewer"}
+               }
+             )
+
+    assert result.source_intake.operation == "linear.issues.list"
+
+    assert [
+             %{
+               subject_ref: subject_ref,
+               payload: %{
+                 external_ref: "linear://tenant-bridge-source-sync/issue/ENG-321",
+                 provider_external_ref: "lin-issue-321",
+                 source_state: "Todo"
+               }
+             }
+           ] = result.subjects
+
+    assert subject_ref.subject_kind == "work_object"
+
+    assert {:ok, detail} =
+             WorkQueryService.get_subject_detail(tenant_id, subject_ref.id)
+
+    assert detail.title == "Investigate deployment rollback"
+    assert detail.external_ref == "linear://tenant-bridge-source-sync/issue/ENG-321"
+    assert [%{blocker_kind: "source_blocked"}] = detail.blocking_conditions
+    assert detail.next_step_preview.status == "blocked"
+  end
+
+  test "source service delegates Linear current-state lookups through an authorized invocation" do
+    context = request_context_by_slug("tenant-current-state", "coding-ops", "coding_task")
+    invocation = authorized_invocation_allowing(["linear.issues.list"])
+
+    assert {:ok, result} =
+             SourceService.current_linear_issue_states(
+               context,
+               ["lin-issue-321", "lin-missing"],
+               source_binding(),
+               authorized_invocation: invocation,
+               integration_bridge_service: CurrentStateBridge
+             )
+
+    assert result.source_current_state.operation == "linear.issues.list"
+    assert result.source_current_state.missing_issue_ids == ["lin-missing"]
+
+    assert_received {:current_state_requested, ^invocation, ["lin-issue-321", "lin-missing"],
+                     requested_binding, _opts}
+
+    assert requested_binding.source_binding_id == "linear-primary"
   end
 
   test "work query service returns explicit archived errors once a subject manifest is archived" do
@@ -707,6 +787,137 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
       })
 
     context
+  end
+
+  defp request_context_by_slug(tenant_id, program_slug, work_class_name) do
+    {:ok, context} =
+      RequestContext.new(%{
+        trace_id: TraceIdentity.mint(),
+        actor_ref: %{id: "ops_lead", kind: :human},
+        tenant_ref: %{id: tenant_id},
+        metadata: %{program_slug: program_slug, work_class_name: work_class_name}
+      })
+
+    context
+  end
+
+  defp source_binding do
+    %{
+      source_binding_id: "linear-primary",
+      installation_id: "tenant-bridge-source-sync",
+      provider: "linear",
+      connection_ref: "linear-primary",
+      candidate_filters: %{assignee: "me"},
+      state_mapping: %{
+        "submitted" => ["Todo"],
+        "completed" => ["Done"],
+        "rejected" => ["Canceled", "Duplicate"]
+      }
+    }
+  end
+
+  defp authorized_invocation_allowing(allowed_operations) do
+    attrs =
+      authorized_invocation_attrs()
+      |> put_in([:invocation_request, :allowed_operations], allowed_operations)
+      |> put_in([:invocation_request, :execution_governance, :operations], %{
+        "allowed_operations" => allowed_operations
+      })
+
+    AuthorizedInvocation.new!(attrs)
+  end
+
+  defp authorized_invocation_attrs do
+    %{
+      tenant_id: "tenant-current-state",
+      installation_id: "inst-current-state",
+      subject_id: "subject-current-state",
+      execution_id: "exec-current-state",
+      trace_id: "trace-current-state",
+      idempotency_key: "idem-current-state",
+      submission_dedupe_key: "dedupe-current-state",
+      invocation_request: %{
+        schema_version: 2,
+        invocation_request_id: "invoke-current-state",
+        request_id: "request-current-state",
+        session_id: "session-current-state",
+        tenant_id: "tenant-current-state",
+        trace_id: "trace-current-state",
+        actor_id: "actor-current-state",
+        target_id: "target-current-state",
+        target_kind: "runtime_target",
+        selected_step_id: "step-current-state",
+        allowed_operations: ["linear.issues.list"],
+        authority_packet: %{
+          contract_version: "v1",
+          decision_id: "decision-current-state",
+          tenant_id: "tenant-current-state",
+          request_id: "request-current-state",
+          policy_version: "mock-v1",
+          boundary_class: "workspace_session",
+          trust_profile: "baseline",
+          approval_profile: "standard",
+          egress_profile: "restricted",
+          workspace_profile: "workspace",
+          resource_profile: "standard",
+          decision_hash: String.duplicate("a", 64),
+          extensions: %{"citadel" => %{}}
+        },
+        boundary_intent: %{},
+        topology_intent: %{},
+        execution_governance: %{
+          "contract_version" => "v1",
+          "execution_governance_id" => "governance-current-state",
+          "authority_ref" => %{"decision_id" => "decision-current-state"},
+          "operations" => %{"allowed_operations" => ["linear.issues.list"]},
+          "sandbox" => %{},
+          "credentials" => %{},
+          "resources" => %{}
+        },
+        extensions: %{
+          "citadel" => %{
+            "execution_envelope" => %{
+              "installation_id" => "inst-current-state",
+              "installation_revision" => 1,
+              "subject_id" => "subject-current-state",
+              "execution_id" => "exec-current-state",
+              "submission_dedupe_key" => "dedupe-current-state"
+            }
+          }
+        }
+      }
+    }
+  end
+
+  defp linear_issue do
+    %{
+      id: "lin-issue-321",
+      identifier: "ENG-321",
+      title: "Investigate deployment rollback",
+      description: "Trace queue latency",
+      priority: 2,
+      branch_name: "eng-321-investigate-deployment-rollback",
+      labels: ["Ops"],
+      url: "https://linear.app/example/issue/ENG-321",
+      created_at: "2026-03-12T09:15:00Z",
+      updated_at: "2026-03-12T10:00:00Z",
+      state: %{id: "state-todo", name: "Todo", type: "unstarted"},
+      assignee: %{id: "usr-linear-viewer", name: "Taylor Automation"},
+      blockers: [
+        %{
+          id: "rel-blocks-001",
+          type: "blocks",
+          direction: "inbound",
+          issue: %{
+            id: "lin-issue-009",
+            identifier: "SEC-9",
+            title: "Restore deployment credentials",
+            url: "https://linear.app/example/issue/SEC-9",
+            state: %{id: "state-started", name: "In Progress", type: "started"}
+          }
+        }
+      ]
+    }
   end
 
   defp workflow_body do

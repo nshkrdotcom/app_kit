@@ -1,0 +1,269 @@
+defmodule Mezzanine.AppKitBridge.SourceService do
+  @moduledoc false
+
+  alias AppKit.Core.{RequestContext, SubjectRef}
+  alias Mezzanine.AppKitBridge.{ProgramContextService, WorkQueryService}
+  alias Mezzanine.IntegrationBridge
+  alias Mezzanine.IntegrationBridge.AuthorizedInvocation
+  alias Mezzanine.SourceEngine.LinearSourceFlow
+
+  @default_source_binding_id "linear-primary"
+
+  @spec sync_linear_issues(RequestContext.t(), map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def sync_linear_issues(%RequestContext{} = context, source_page, opts \\ [])
+      when is_map(source_page) and is_list(opts) do
+    with {:ok, route} <- route_context(context, opts),
+         binding <- source_binding(context, source_page, opts),
+         envelope <- source_envelope(context, source_page, binding),
+         {:ok, source_intake} <-
+           LinearSourceFlow.normalize_candidate_page(page_output(source_page), envelope, binding),
+         {:ok, subjects, skipped} <-
+           ingest_subject_attrs(source_intake.subject_attrs, route, opts) do
+      {:ok,
+       %{
+         operation: source_intake.operation,
+         source_binding_id: source_intake.source_binding_id,
+         source_intake: source_intake,
+         subjects: subjects,
+         skipped_subject_attrs: skipped,
+         page_info: source_intake.page_info
+       }}
+    end
+  end
+
+  @spec current_linear_issue_states(RequestContext.t(), [String.t()], map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def current_linear_issue_states(
+        %RequestContext{} = context,
+        issue_ids,
+        source_binding,
+        opts \\ []
+      )
+      when is_list(issue_ids) and is_map(source_binding) and is_list(opts) do
+    with {:ok, _tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
+         {:ok, invocation} <- authorized_invocation(opts) do
+      integration_bridge_service(opts).fetch_linear_current_issue_states(
+        invocation,
+        issue_ids,
+        source_binding,
+        opts
+      )
+    end
+  end
+
+  defp route_context(%RequestContext{} = context, opts) do
+    with {:ok, tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
+         {:ok, route} <- resolve_route_context(tenant_id, context, opts) do
+      {:ok, Map.put(route, :tenant_id, tenant_id)}
+    end
+  end
+
+  defp required_context_id(%{id: id}, _key) when is_binary(id) and id != "", do: {:ok, id}
+  defp required_context_id(_ref, key), do: {:error, {:missing_context_ref, key}}
+
+  defp resolve_route_context(tenant_id, context, opts) do
+    case {route_id(context, opts, :program_id), route_id(context, opts, :work_class_id)} do
+      {{:ok, program_id}, {:ok, work_class_id}} ->
+        {:ok, %{program_id: program_id, work_class_id: work_class_id}}
+
+      _missing ->
+        resolve_route_by_slug(tenant_id, context, opts)
+    end
+  end
+
+  defp resolve_route_by_slug(tenant_id, context, opts) do
+    with {:ok, program_slug} <- route_metadata(context, opts, :program_slug),
+         {:ok, work_class_name} <- route_metadata(context, opts, :work_class_name),
+         {:ok, resolution} <-
+           program_context_service(opts).resolve(
+             tenant_id,
+             %{program_slug: program_slug, work_class_name: work_class_name},
+             opts
+           ),
+         {:ok, program_id} <- resolved_route_id(resolution, :program_id),
+         {:ok, work_class_id} <- resolved_route_id(resolution, :work_class_id) do
+      {:ok, %{program_id: program_id, work_class_id: work_class_id}}
+    end
+  end
+
+  defp route_id(%RequestContext{} = context, opts, key) do
+    value = Keyword.get(opts, key) || value(context.metadata, key)
+
+    if is_binary(value) and value != "" do
+      {:ok, value}
+    else
+      :missing
+    end
+  end
+
+  defp route_metadata(%RequestContext{} = context, opts, key) do
+    case Keyword.get(opts, key) || value(context.metadata, key) do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _missing -> {:error, {:missing_source_route, key}}
+    end
+  end
+
+  defp resolved_route_id(resolution, key) do
+    case value(resolution, key) do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _missing -> {:error, {:missing_source_route, key}}
+    end
+  end
+
+  defp source_binding(context, source_page, opts) do
+    binding =
+      Keyword.get(opts, :source_binding) ||
+        value(source_page, :source_binding) ||
+        %{}
+
+    binding
+    |> Map.new()
+    |> Map.put_new(:source_binding_id, @default_source_binding_id)
+    |> Map.put_new(:installation_id, installation_id(context, binding))
+    |> Map.put_new(:provider, "linear")
+    |> Map.put_new(:connection_ref, @default_source_binding_id)
+    |> Map.put_new(:state_mapping, %{
+      "submitted" => ["Todo", "Backlog"],
+      "retry_submission" => ["Todo"],
+      "completed" => ["Done", "Completed"],
+      "rejected" => ["Canceled", "Duplicate"]
+    })
+  end
+
+  defp source_envelope(%RequestContext{} = context, source_page, binding) do
+    tenant_id = context.tenant_ref.id
+    installation_id = value(binding, :installation_id) || installation_id(context, binding)
+
+    %{
+      tenant_id: tenant_id,
+      installation_id: installation_id,
+      source_binding_id: value(binding, :source_binding_id) || @default_source_binding_id,
+      authorization_scope: %{"tenant_id" => tenant_id},
+      trace_id: context.trace_id,
+      causation_id: context.causation_id || context.idempotency_key || context.trace_id,
+      actor_ref: actor_ref(context),
+      viewer: value(source_page, :viewer)
+    }
+    |> compact_map()
+  end
+
+  defp page_output(source_page) do
+    %{
+      issues: source_page |> value(:issues) |> List.wrap(),
+      page_info: value(source_page, :page_info) || %{},
+      auth_binding: value(source_page, :auth_binding) || %{}
+    }
+  end
+
+  defp ingest_subject_attrs(subject_attrs, route, opts) do
+    Enum.reduce_while(subject_attrs, {:ok, [], []}, fn attrs, {:ok, ingested, skipped} ->
+      case ingest_subject_attr(attrs, route, opts) do
+        :skip -> {:cont, {:ok, ingested, [attrs | skipped]}}
+        {:ok, subject} -> {:cont, {:ok, [subject | ingested], skipped}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:ok, ingested, skipped} -> {:ok, Enum.reverse(ingested), Enum.reverse(skipped)}
+      error -> error
+    end
+  end
+
+  defp ingest_subject_attr(%{lifecycle_state: "ignored"}, _route, _opts), do: :skip
+
+  defp ingest_subject_attr(attrs, route, opts) do
+    with {:ok, subject} <- WorkQueryService.ingest_subject(work_attrs(attrs, route), opts),
+         {:ok, subject_ref} <-
+           SubjectRef.new(%{id: subject.subject_id, subject_kind: "work_object"}) do
+      {:ok,
+       %{
+         subject_ref: subject_ref,
+         subject_id: subject.subject_id,
+         title: subject.title,
+         payload: source_payload(attrs)
+       }}
+    end
+  end
+
+  defp work_attrs(attrs, route) do
+    %{
+      tenant_id: route.tenant_id,
+      program_id: route.program_id,
+      work_class_id: route.work_class_id,
+      external_ref: attrs.source_ref,
+      title: attrs.title || attrs.source_ref,
+      description: attrs.description,
+      priority: attrs.priority || 50,
+      source_kind: attrs.provider || "linear",
+      payload: source_payload(attrs),
+      normalized_payload: normalized_source_payload(attrs)
+    }
+  end
+
+  defp source_payload(attrs) do
+    %{
+      external_ref: attrs.source_ref,
+      source_ref: attrs.source_ref,
+      source_binding_id: attrs.source_binding_id,
+      provider: attrs.provider,
+      provider_external_ref: attrs.provider_external_ref,
+      provider_revision: attrs.provider_revision,
+      source_state: attrs.source_state,
+      state_mapping: attrs.state_mapping || %{},
+      blocker_refs: attrs.blocker_refs || [],
+      labels: attrs.labels || [],
+      branch_ref: attrs.branch_ref,
+      source_url: attrs.source_url,
+      source_routing: attrs.source_routing || %{},
+      issue: attrs.payload || %{}
+    }
+    |> compact_map()
+  end
+
+  defp normalized_source_payload(attrs) do
+    attrs
+    |> Map.new()
+    |> Map.put(:payload, source_payload(attrs))
+  end
+
+  defp installation_id(%RequestContext{installation_ref: %{id: id}}, _binding)
+       when is_binary(id) and id != "",
+       do: id
+
+  defp installation_id(%RequestContext{tenant_ref: %{id: tenant_id}}, binding) do
+    value(binding, :installation_id) || tenant_id
+  end
+
+  defp actor_ref(%RequestContext{} = context) do
+    %{
+      "kind" => context.actor_ref.kind |> to_string(),
+      "id" => context.actor_ref.id,
+      "tenant_id" => context.tenant_ref.id
+    }
+  end
+
+  defp value(%_{} = struct, key), do: struct |> Map.from_struct() |> value(key)
+  defp value(%{} = map, key), do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
+  defp value(_map, _key), do: nil
+
+  defp compact_map(map) do
+    map
+    |> Enum.reject(fn {_key, value} -> value in [nil, "", [], %{}] end)
+    |> Map.new()
+  end
+
+  defp program_context_service(opts),
+    do: Keyword.get(opts, :program_context_service, ProgramContextService)
+
+  defp integration_bridge_service(opts),
+    do: Keyword.get(opts, :integration_bridge_service, IntegrationBridge)
+
+  defp authorized_invocation(opts) do
+    case Keyword.get(opts, :authorized_invocation) || Keyword.get(opts, :invocation) do
+      %AuthorizedInvocation{} = invocation -> {:ok, invocation}
+      nil -> {:error, :missing_authorized_source_invocation}
+      _other -> {:error, :invalid_authorized_source_invocation}
+    end
+  end
+end
