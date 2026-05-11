@@ -59,10 +59,27 @@ defmodule AppKit.Core.PersistencePosture do
 
   @profile_lookup %{
     "mickey_mouse" => :mickey_mouse,
+    "memory-default" => :mickey_mouse,
+    "persistence://memory/default" => :mickey_mouse,
+    "persistence-profile://mickey-mouse" => :mickey_mouse,
     "memory_debug" => :memory_debug,
+    "persistence-profile://memory-debug" => :memory_debug,
     "off" => :off,
-    "durable_projection" => :durable_projection
+    "persistence-profile://projection-off" => :off,
+    "durable_projection" => :durable_projection,
+    "persistence-profile://durable-projection" => :durable_projection
   }
+
+  @unsupported_profile_strings [
+    "local_restart_safe",
+    "local-restart-safe",
+    "integration_postgres",
+    "integration-postgres",
+    "ops_durable",
+    "ops-durable",
+    "full_debug_tracked",
+    "full-debug-tracked"
+  ]
 
   @type component ::
           :authority_projection
@@ -156,17 +173,36 @@ defmodule AppKit.Core.PersistencePosture do
   defp normalize_profile(profile) when is_atom(profile) and is_map_key(@profiles, profile),
     do: profile
 
+  defp normalize_profile(nil), do: :mickey_mouse
+
+  defp normalize_profile(profile) when is_atom(profile) do
+    unsupported_profile!(profile)
+  end
+
   defp normalize_profile(profile) when is_binary(profile) do
+    profile = String.trim(profile)
+
     cond do
       Map.has_key?(@profile_lookup, profile) -> Map.fetch!(@profile_lookup, profile)
       String.contains?(profile, "projection-off") -> :off
       String.contains?(profile, "memory-debug") -> :memory_debug
+      unsupported_profile?(profile) -> unsupported_profile!(profile)
       String.contains?(profile, "durable") -> :durable_projection
-      true -> :mickey_mouse
+      profile == "" -> :mickey_mouse
+      true -> unsupported_profile!(profile)
     end
   end
 
-  defp normalize_profile(_profile), do: :mickey_mouse
+  defp normalize_profile(profile), do: unsupported_profile!(profile)
+
+  defp unsupported_profile?(profile) when is_binary(profile) do
+    Enum.any?(@unsupported_profile_strings, &String.contains?(profile, &1))
+  end
+
+  defp unsupported_profile!(profile) do
+    raise ArgumentError,
+          "unsupported persistence profile #{inspect(profile)}; durable adapters require explicit supported AppKit preflight"
+  end
 
   defp normalize_attrs(nil), do: %{}
   defp normalize_attrs(attrs) when is_list(attrs), do: attrs |> Map.new() |> normalize_attrs()

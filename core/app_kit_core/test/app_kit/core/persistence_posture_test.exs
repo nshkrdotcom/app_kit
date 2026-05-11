@@ -31,4 +31,16 @@ defmodule AppKit.Core.PersistencePostureTest do
     assert posture.debug_sidecar_mutated_state? == false
     assert posture.persistence_profile_ref == "persistence-profile://mickey-mouse"
   end
+
+  test "unsupported durable adapter selections fail instead of falling back to memory" do
+    assert_raise ArgumentError, ~r/unsupported persistence profile/, fn ->
+      PersistencePosture.resolve(:runtime_projection, persistence_profile: :integration_postgres)
+    end
+
+    assert_raise ArgumentError, ~r/unsupported persistence profile/, fn ->
+      PersistencePosture.resolve(:runtime_projection,
+        persistence_profile_ref: "persistence-profile://local-restart-safe"
+      )
+    end
+  end
 end
