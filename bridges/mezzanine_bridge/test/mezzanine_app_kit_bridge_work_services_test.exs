@@ -474,6 +474,71 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert Enum.any?(pending_reviews, &(&1.decision_ref.id == result.payload.review_unit_id))
   end
 
+  test "typed work-control start_run can complete deterministic lower lane and project receipt facts" do
+    %{tenant_id: tenant_id, program: program, work_class: work_class} =
+      fixture_stack("tenant-bridge-deterministic-lower")
+
+    assert {:ok, subject} =
+             WorkQueryService.ingest_subject(%{
+               tenant_id: tenant_id,
+               program_id: program.id,
+               work_class_id: work_class.id,
+               external_ref: "linear:ENG-603",
+               title: "Deterministic lower subject",
+               payload: %{"issue_id" => "ENG-603"},
+               source_kind: "linear"
+             })
+
+    context = request_context(tenant_id, program.id, work_class.id)
+
+    assert {:ok, run_request} =
+             RunRequest.new(%{
+               subject_ref: %{id: subject.subject_id, subject_kind: "work_object"},
+               recipe_ref: "coding_operations",
+               params: %{"priority" => "high"}
+             })
+
+    assert {:ok, result} =
+             WorkControlService.start_run(context, run_request, deterministic_lower_lane?: true)
+
+    assert result.payload.execution_dispatch_state == "completed"
+
+    assert {:ok, runtime_projection} =
+             WorkQueryService.get_subject_projection(tenant_id, subject.subject_id,
+               projection_row_fetcher: fn _installation_id, _subject_id, _opts -> :not_found end,
+               runtime_projection?: true
+             )
+
+    lower_receipt_ref = runtime_projection.lower_receipt["lower_receipt_ref"]
+    assert String.starts_with?(lower_receipt_ref, "lower-receipt://")
+    refute String.contains?(lower_receipt_ref, "/pending/")
+    assert runtime_projection.execution["dispatch_state"] == "completed"
+    assert runtime_projection.runtime["event_counts"]["codex.session.completed"] == 1
+    assert runtime_projection.runtime["token_totals"]["total"] == 192
+    assert runtime_projection.source_publication["capability_id"] == "linear.comments.update"
+    assert runtime_projection.github_pr["provider"] == "github"
+
+    assert {:ok, typed_runtime_projection} =
+             AppKit.Bridges.MezzanineBridge.get_runtime_projection(
+               context,
+               run_request.subject_ref,
+               projection_row_fetcher: fn _installation_id, _subject_id, _opts -> :not_found end
+             )
+
+    assert typed_runtime_projection.execution_state.dispatch_state == "completed"
+    assert hd(typed_runtime_projection.lower_receipts).lower_receipt_ref == lower_receipt_ref
+    assert typed_runtime_projection.runtime.token_totals["total"] == 192
+
+    assert typed_runtime_projection.runtime.metadata["source_publication"]["capability_id"] ==
+             "linear.comments.update"
+
+    assert Enum.any?(
+             typed_runtime_projection.evidence,
+             &(&1.evidence_kind == "github_pr" and
+                 String.starts_with?(&1.content_ref, "github-pr://"))
+           )
+  end
+
   test "typed work-control start_run preserves phase 2 run metadata for workflow handoff" do
     %{tenant_id: tenant_id, program: program, work_class: work_class} =
       fixture_stack("tenant-bridge-phase2-start-run")

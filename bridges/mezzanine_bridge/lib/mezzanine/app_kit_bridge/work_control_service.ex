@@ -5,6 +5,7 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
 
   alias AppKit.Core.{RequestContext, Result, RunRef, RunRequest}
   alias Mezzanine.AppKitBridge.AdapterSupport
+  alias Mezzanine.M1M2Runtime.DeterministicLowerCompletion
   alias Mezzanine.M1M2Runtime.WorkflowStartHandoff
   alias Mezzanine.WorkControl
   alias Mezzanine.WorkExecutionHandoff
@@ -76,6 +77,15 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
              workflow_handoff_started_run(started),
              workflow_handoff,
              start_attrs
+           ),
+         {:ok, execution_handoff} <-
+           maybe_complete_deterministic_lower(
+             tenant_id,
+             workflow_handoff_started_run(started),
+             workflow_handoff,
+             execution_handoff,
+             start_attrs,
+             opts
            ),
          typed_context =
            typed_start_context(context, run_request, started, workflow_handoff, execution_handoff),
@@ -243,6 +253,34 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
       run: started.run,
       review_unit: started.review_unit
     }
+  end
+
+  defp maybe_complete_deterministic_lower(
+         tenant_id,
+         started_run,
+         workflow_handoff,
+         execution_handoff,
+         start_attrs,
+         opts
+       ) do
+    if Keyword.get(opts, :deterministic_lower_lane?) do
+      DeterministicLowerCompletion.complete(
+        tenant_id,
+        started_run,
+        workflow_handoff,
+        execution_handoff,
+        start_attrs,
+        deterministic_lower_opts(opts)
+      )
+    else
+      {:ok, execution_handoff}
+    end
+  end
+
+  defp deterministic_lower_opts(opts) do
+    opts
+    |> Keyword.take([:integration_bridge, :invoke_fun])
+    |> Keyword.merge(Keyword.get(opts, :deterministic_lower_opts, []))
   end
 
   defp typed_start_context(
