@@ -24,6 +24,8 @@ defmodule AppKit.Bridges.MezzanineBridge do
     :operator_actor_tenant_mismatch,
     :unauthorized_lower_read
   ]
+  @agent_projection_table __MODULE__.AgentProjectionStore
+
   alias AppKit.Core.AgentIntake.RunOutcomeFuture
 
   alias AppKit.Core.{
@@ -2665,7 +2667,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
     now = DateTime.utc_now()
     run_id = readback_ref_id(run_ref)
 
-    case agent_loop_projection(request, opts) do
+    case agent_loop_projection(run_id, request, opts) do
       nil ->
         default_runtime_run_detail(run_id, request, now)
 
@@ -2731,13 +2733,15 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   @impl AppKit.Core.Backends.AgentIntakeBackend
   def start_agent_run(%RequestContext{} = context, request, opts) do
-    runtime = agent_runtime(opts)
+    runtime = agent_runtime(request, opts)
 
     with {:ok, spec_attrs} <- agent_run_spec_attrs(context, request),
          true <- runtime_available?(runtime),
-         {:ok, projection} <- runtime.run(spec_attrs) do
+         {:ok, projection} <- runtime.run(spec_attrs),
+         run_ref <- fetch_value(projection, :run_ref),
+         :ok <- store_agent_loop_projection(run_ref, projection) do
       RunOutcomeFuture.new(%{
-        run_ref: fetch_value(projection, :run_ref),
+        run_ref: run_ref,
         workflow_ref: fetch_value(projection, :workflow_ref),
         accepted?: true,
         command_ref: "command://#{request.idempotency_key}",
@@ -2857,10 +2861,11 @@ defmodule AppKit.Bridges.MezzanineBridge do
      }}
   end
 
-  defp agent_loop_projection(request, opts),
+  defp agent_loop_projection(run_ref, request, opts),
     do:
       Keyword.get(opts, :agent_loop_projection) ||
-        fetch_value(request || %{}, :agent_loop_projection)
+        fetch_value(request || %{}, :agent_loop_projection) ||
+        fetch_agent_loop_projection(run_ref)
 
   defp default_runtime_run_detail(run_id, request, now) do
     request = request || %{}
@@ -2945,8 +2950,71 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   defp runtime_available?(_runtime), do: false
 
+  defp agent_runtime(request, opts) do
+    BackendConfig.resolve_optional(opts, :agent_loop_runtime, :agent_runtime) ||
+      codex_agent_runtime(request, opts)
+  end
+
   defp agent_runtime(opts),
     do: BackendConfig.resolve_optional(opts, :agent_loop_runtime, :agent_runtime)
+
+  defp codex_agent_runtime(request, opts) do
+    if codex_agent_request?(request) do
+      BackendConfig.resolve_optional(opts, :codex_agent_runtime, :codex_runtime) ||
+        default_codex_agent_runtime()
+    end
+  end
+
+  defp default_codex_agent_runtime do
+    runtime = Mezzanine.IntegrationBridge.CodexAgentRuntime
+
+    if runtime_available?(runtime), do: runtime
+  end
+
+  defp codex_agent_request?(request) do
+    params = fetch_value(request || %{}, :params) || %{}
+
+    fetch_value(params, :provider_family) in ["codex", :codex] or
+      fetch_value(params, :capability_id) == "codex.session.turn"
+  end
+
+  defp store_agent_loop_projection(run_ref, projection) when is_binary(run_ref) do
+    table = ensure_agent_projection_table()
+    true = :ets.insert(table, {run_ref, projection})
+    :ok
+  end
+
+  defp store_agent_loop_projection(_run_ref, _projection), do: :ok
+
+  defp fetch_agent_loop_projection(run_ref) when is_binary(run_ref) do
+    table = ensure_agent_projection_table()
+
+    case :ets.lookup(table, run_ref) do
+      [{^run_ref, projection}] -> projection
+      [] -> nil
+    end
+  end
+
+  defp fetch_agent_loop_projection(_run_ref), do: nil
+
+  defp ensure_agent_projection_table do
+    case :ets.whereis(@agent_projection_table) do
+      :undefined ->
+        try do
+          :ets.new(@agent_projection_table, [
+            :named_table,
+            :public,
+            {:read_concurrency, true},
+            {:write_concurrency, true}
+          ])
+        rescue
+          ArgumentError -> @agent_projection_table
+        end
+
+      _table ->
+        @agent_projection_table
+    end
+  end
 
   defp public_readback_map(%DateTime{} = value), do: value
 

@@ -1394,6 +1394,51 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     assert await_future.workflow_ref == future.workflow_ref
   end
 
+  test "stores AppKit agent intake projection for later headless run-detail readback" do
+    context = request_context()
+
+    request =
+      AgentIntakeBackendConformance.fixture_agent_run_request(%{
+        params: %{max_turns: 3, fixture_script: "success_first_try"}
+      })
+
+    assert {:ok, future} =
+             MezzanineBridge.start_agent_run(context, request,
+               agent_loop_runtime: FakeAgentRuntime
+             )
+
+    assert {:ok, detail} =
+             MezzanineBridge.runtime_run_detail(context, future.run_ref, %{}, [])
+
+    assert detail.run_ref == future.run_ref
+    assert detail.runtime_row.workflow_ref == future.workflow_ref
+    assert detail.runtime_row.state == "completed"
+    assert Enum.any?(detail.events, &(&1.event_kind == "run.terminal"))
+    assert [%{state: "completed"}] = detail.turns
+    assert detail.budget_state["turns_remaining"] == 2
+  end
+
+  test "routes Codex AgentIntake requests to the codex agent runtime" do
+    context = request_context()
+
+    request =
+      AgentIntakeBackendConformance.fixture_agent_run_request(%{
+        params: %{
+          capability_id: "codex.session.turn",
+          provider_family: "codex",
+          max_turns: 1
+        }
+      })
+
+    assert {:ok, future} =
+             MezzanineBridge.start_agent_run(context, request,
+               codex_agent_runtime: FakeAgentRuntime
+             )
+
+    assert future.accepted?
+    assert future.run_ref == "run://agent-loop/dedupe-agent-run"
+  end
+
   test "maps widened work-control and operator surface contracts into app-kit DTOs" do
     attach_telemetry(self(), [:unified_trace_assembled])
     context = request_context()
