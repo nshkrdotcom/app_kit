@@ -4,6 +4,7 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
   alias AppKit.Bridges.MezzanineBridge
 
   alias AppKit.Core.RuntimeSurface.{
+    GitHubPrEvidenceReceipt,
     LiveEffectReceipt,
     RuntimeLogPage,
     RuntimeProfileApplyResult,
@@ -73,6 +74,38 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
            lower_runtime_kind: "direct_connector",
            authority_ref: "authority-decision://linear/test",
            workpad_refs: ["linear-comment://comment-1"]
+         }
+       }}
+    end
+  end
+
+  defmodule GitHubPrEvidenceService do
+    def fetch(attrs, opts) do
+      send(self(), {:fetch_github_pr_evidence, attrs, opts})
+
+      {:ok,
+       %{
+         effect_ref: "live-effect://github/pr-evidence/17",
+         provider: "github",
+         effect: "github_pr_evidence",
+         status: :receipt_recorded,
+         capability_ids: ["github.pr.fetch", "github.pr.reviews.list"],
+         repo: attrs.repo,
+         pull_number: attrs.pull_number,
+         head_sha: attrs.ref,
+         evidence_ref: "evidence://github-pr/nshkrdotcom/extravaganza/17/test",
+         credential_present?: true,
+         credential_redeemed?: true,
+         provider_request_sent?: true,
+         provider_response_received?: true,
+         receipt_recorded?: true,
+         product_readback_confirmed?: true,
+         provider_ids: %{pull_request: "17"},
+         provider_refs: %{pull_request: "https://github.com/nshkrdotcom/extravaganza/pull/17"},
+         write_operations: [],
+         receipt_refs: %{
+           lower_request_refs: ["lower-request://github/pr-fetch"],
+           lower_receipt_refs: ["lower-receipt://github/pr-fetch/succeeded"]
          }
        }}
     end
@@ -163,6 +196,27 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
     assert_received {:publish_linear_source, "tenant-1", ^attrs}
     assert result.source_publication_receipt.status == "published"
     assert result.source_publication_receipt.authority_ref == "authority-decision://linear/test"
+  end
+
+  test "fetches GitHub PR evidence through the Mezzanine evidence service" do
+    context = request_context()
+    request = %{repo: "nshkrdotcom/extravaganza", pull_number: 17, ref: "head-sha"}
+
+    assert {:ok, %GitHubPrEvidenceReceipt{} = receipt} =
+             MezzanineBridge.fetch_github_pr_evidence(context, request,
+               github_pr_evidence_service: GitHubPrEvidenceService
+             )
+
+    assert_received {:fetch_github_pr_evidence, attrs, opts}
+    assert attrs.tenant_id == "tenant-1"
+    assert attrs.actor_id == "operator"
+    assert attrs.repo == "nshkrdotcom/extravaganza"
+    assert attrs.pull_number == 17
+    assert attrs.ref == "head-sha"
+    assert Keyword.fetch!(opts, :github_pr_evidence_service) == GitHubPrEvidenceService
+    assert receipt.provider == "github"
+    assert receipt.provider_ids["pull_request"] == "17"
+    assert receipt.write_operations == []
   end
 
   defp request_context(metadata \\ %{}) do

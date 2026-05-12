@@ -97,6 +97,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   }
 
   alias AppKit.Core.RuntimeSurface.{
+    GitHubPrEvidenceReceipt,
     LiveEffectReceipt,
     RuntimeLogPage,
     RuntimeProfileApplyResult,
@@ -230,6 +231,23 @@ defmodule AppKit.Bridges.MezzanineBridge do
     with {:ok, tenant_id} <- tenant_id(context),
          attrs <- attrs |> Map.new() |> Map.put_new(:tenant_ref, tenant_id),
          {:ok, receipt} <- LiveEffectReceipt.new(attrs) do
+      {:ok, receipt}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def fetch_github_pr_evidence(%RequestContext{} = context, request, opts \\ [])
+      when is_map(request) and is_list(opts) do
+    with {:ok, tenant_id} <- tenant_id(context),
+         attrs <- github_pr_evidence_attrs(context, tenant_id, request),
+         {:ok, result} <- github_pr_evidence_service(opts).fetch(attrs, opts),
+         {:ok, receipt} <-
+           result
+           |> normalize_result_attrs()
+           |> Map.put_new(:tenant_ref, tenant_id)
+           |> GitHubPrEvidenceReceipt.new() do
       {:ok, receipt}
     else
       {:error, reason} -> normalize_surface_error(reason)
@@ -1880,6 +1898,25 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   defp source_service(opts),
     do: Keyword.get(opts, :source_service, Mezzanine.AppKitBridge.SourceService)
+
+  defp github_pr_evidence_service(opts),
+    do:
+      Keyword.get(
+        opts,
+        :github_pr_evidence_service,
+        Mezzanine.IntegrationBridge.GitHubPrEvidenceRuntime
+      )
+
+  defp github_pr_evidence_attrs(%RequestContext{} = context, tenant_id, request) do
+    request
+    |> Map.new()
+    |> Map.put_new(:tenant_id, tenant_id)
+    |> Map.put_new(:actor_id, context.actor_ref.id)
+    |> Map.put_new(:trace_id, context.trace_id)
+  end
+
+  defp normalize_result_attrs(%_{} = result), do: Map.from_struct(result)
+  defp normalize_result_attrs(%{} = result), do: Map.new(result)
 
   defp service_exports?(service, function_name, arity)
        when is_atom(service) and is_atom(function_name) and is_integer(arity) do

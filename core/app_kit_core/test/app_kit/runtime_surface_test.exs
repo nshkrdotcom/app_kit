@@ -2,6 +2,7 @@ defmodule AppKit.RuntimeSurfaceTest do
   use ExUnit.Case, async: true
 
   alias AppKit.Core.RuntimeSurface.{
+    GitHubPrEvidenceReceipt,
     LiveEffectReceipt,
     RuntimeLogPage,
     RuntimeProfileApplyResult,
@@ -58,9 +59,34 @@ defmodule AppKit.RuntimeSurfaceTest do
     def record_live_effect(context, attrs, _opts) do
       LiveEffectReceipt.new(Map.put(attrs, :tenant_ref, context.tenant_ref.id))
     end
+
+    @impl true
+    def fetch_github_pr_evidence(context, request, _opts) do
+      GitHubPrEvidenceReceipt.new(%{
+        effect_ref: "live-effect://github/pr-evidence/17",
+        tenant_ref: context.tenant_ref.id,
+        provider: "github",
+        effect: "github_pr_evidence",
+        status: :receipt_recorded,
+        capability_ids: ["github.pr.fetch"],
+        repo: request.repo,
+        pull_number: request.pull_number,
+        head_sha: request.ref,
+        evidence_ref: "evidence://github-pr/nshkrdotcom/extravaganza/17/test",
+        credential_present?: true,
+        credential_redeemed?: true,
+        provider_request_sent?: true,
+        provider_response_received?: true,
+        receipt_recorded?: true,
+        product_readback_confirmed?: true,
+        provider_ids: %{pull_request: "17"},
+        provider_refs: %{pull_request: "https://github.com/nshkrdotcom/extravaganza/pull/17"},
+        write_operations: []
+      })
+    end
   end
 
-  test "delegates runtime profile, status, logs, and live-effect DTOs through backend" do
+  test "delegates runtime profile, status, logs, live-effect, and GitHub evidence DTOs through backend" do
     context = request_context()
     runtime_profile = runtime_profile()
 
@@ -104,6 +130,19 @@ defmodule AppKit.RuntimeSurfaceTest do
 
     assert receipt.provider == "linear"
     assert receipt.product_readback_confirmed? == true
+
+    assert {:ok, %GitHubPrEvidenceReceipt{} = evidence} =
+             RuntimeSurface.fetch_github_pr_evidence(
+               context,
+               %{repo: "nshkrdotcom/extravaganza", pull_number: 17, ref: "head-sha"},
+               backend: Backend
+             )
+
+    assert evidence.provider == "github"
+    assert evidence.repo == "nshkrdotcom/extravaganza"
+    assert evidence.pull_number == 17
+    assert evidence.provider_ids["pull_request"] == "17"
+    assert evidence.write_operations == []
   end
 
   test "live-effect DTO rejects raw secret-bearing fields" do
@@ -114,6 +153,19 @@ defmodule AppKit.RuntimeSurfaceTest do
                effect: "source_intake",
                status: :provider_response_received,
                api_key: "secret"
+             })
+  end
+
+  test "github evidence DTO rejects raw secret-bearing fields" do
+    assert {:error, :invalid_github_pr_evidence_receipt} =
+             GitHubPrEvidenceReceipt.new(%{
+               effect_ref: "live-effect://github/pr-evidence/17",
+               provider: "github",
+               effect: "github_pr_evidence",
+               status: :receipt_recorded,
+               repo: "nshkrdotcom/extravaganza",
+               pull_number: 17,
+               token: "secret"
              })
   end
 
