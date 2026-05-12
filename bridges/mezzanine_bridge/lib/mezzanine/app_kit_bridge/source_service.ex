@@ -76,7 +76,12 @@ defmodule Mezzanine.AppKitBridge.SourceService do
          {:ok, invocation, opts} <-
            authorized_invocation(
              context,
-             ["linear.comments.create", "linear.comments.update", "linear.issues.update"],
+             [
+               "linear.comments.create",
+               "linear.comments.update",
+               "linear.issues.update",
+               "linear.workflow_states.list"
+             ],
              value(attrs, :source_ref) || value(attrs, :source_publish_ref) ||
                "linear-publication",
              opts
@@ -86,7 +91,11 @@ defmodule Mezzanine.AppKitBridge.SourceService do
         |> Map.new()
         |> Map.put_new(:trace_id, context.trace_id)
 
-      integration_bridge_service(opts).publish_linear_source(invocation, attrs, opts)
+      if issue_state_publication?(attrs) do
+        integration_bridge_service(opts).update_linear_issue_state(invocation, attrs, opts)
+      else
+        integration_bridge_service(opts).publish_linear_source(invocation, attrs, opts)
+      end
     end
   end
 
@@ -290,6 +299,15 @@ defmodule Mezzanine.AppKitBridge.SourceService do
     |> Enum.reject(fn {_key, value} -> value in [nil, "", [], %{}] end)
     |> Map.new()
   end
+
+  defp issue_state_publication?(attrs) do
+    present?(value(attrs, :state_id)) or present?(value(attrs, :state_name)) or
+      value(attrs, :capability_id) == "linear.issues.update" or
+      value(attrs, :publication_kind) in [:issue_state_update, "issue_state_update"]
+  end
+
+  defp present?(value) when is_binary(value), do: String.trim(value) != ""
+  defp present?(value), do: not is_nil(value)
 
   defp program_context_service(opts),
     do: Keyword.get(opts, :program_context_service, ProgramContextService)

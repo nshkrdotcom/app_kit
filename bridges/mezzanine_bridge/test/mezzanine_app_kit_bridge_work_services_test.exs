@@ -72,6 +72,35 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     end
   end
 
+  defmodule StateUpdateBridge do
+    def update_linear_issue_state(invocation, attrs, opts) do
+      send(self(), {:update_linear_issue_state, invocation, attrs, opts})
+
+      {:ok,
+       %{
+         source_publication_receipt: %{
+           source_publication_receipt_ref: "source-publication://linear-primary/state-update",
+           source_publish_ref: attrs.source_publish_ref,
+           source_binding_id: attrs.source_binding_id,
+           source_ref: attrs.source_ref,
+           status: "published",
+           capability_id: "linear.issues.update",
+           issue_id: attrs.issue_id,
+           state_name: attrs.state_name,
+           state_id: "state-done",
+           lower_request_ref: "lower-request://linear/state-update",
+           lower_receipt_ref: "lower-receipt://linear/state-update"
+         },
+         provider_request_sent?: true,
+         provider_response_received?: true
+       }}
+    end
+
+    def publish_linear_source(_invocation, _attrs, _opts) do
+      raise "state-update publication must use update_linear_issue_state"
+    end
+  end
+
   setup do
     ops_owner = Sandbox.start_owner!(OpsRepo, shared: false)
     archival_owner = Sandbox.start_owner!(ArchivalRepo, shared: false)
@@ -238,6 +267,34 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     refute inspect(result) =~ api_key
   after
     Process.delete(:credential_ingress_invocation)
+  end
+
+  test "source service routes issue-state publication through the state update bridge" do
+    context = request_context_by_slug("tenant-linear-state", "coding-ops", "coding_task")
+
+    invocation =
+      authorized_invocation_allowing(["linear.workflow_states.list", "linear.issues.update"])
+
+    attrs = %{
+      source_publish_ref: "linear_state_update",
+      source_binding_id: "linear-primary",
+      source_ref: "linear://inst-1/issue/ENG-321",
+      issue_id: "lin-issue-321",
+      state_name: "Done",
+      team_id: "team-linear"
+    }
+
+    assert {:ok, result} =
+             SourceService.publish_linear_source(context, attrs,
+               authorized_invocation: invocation,
+               integration_bridge_service: StateUpdateBridge
+             )
+
+    assert_received {:update_linear_issue_state, ^invocation, requested_attrs, _opts}
+    assert requested_attrs.state_name == "Done"
+    assert requested_attrs.team_id == "team-linear"
+    assert result.source_publication_receipt.capability_id == "linear.issues.update"
+    assert result.source_publication_receipt.state_id == "state-done"
   end
 
   test "work query service returns explicit archived errors once a subject manifest is archived" do
