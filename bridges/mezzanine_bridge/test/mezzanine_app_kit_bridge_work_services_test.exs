@@ -101,6 +101,39 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     end
   end
 
+  defmodule DryRunPublicationBridge do
+    def publish_linear_source(invocation, attrs, opts) do
+      send(self(), {:dry_run_publish_linear_source, invocation, attrs, opts})
+
+      {:ok,
+       %{
+         source_publication_receipt: %{
+           source_publication_receipt_ref: "source-publication://linear-primary/dry-run-denial",
+           source_publish_ref: attrs.source_publish_ref,
+           source_binding_id: attrs.source_binding_id,
+           source_ref: attrs.source_ref,
+           status: "dry_run_denied",
+           capability_id: "linear.comments.create",
+           issue_id: attrs.issue_id,
+           lower_request_ref: "lower-request://linear/publication-dry-run",
+           lower_denial_ref: "lower-denial://linear/publication-dry-run/policy_denied",
+           denial_class: "policy_denied",
+           provider_request_sent?: false,
+           provider_response_received?: false,
+           workpad_refs: []
+         },
+         lower_denial_ref: "lower-denial://linear/publication-dry-run/policy_denied",
+         provider_request_sent?: false,
+         provider_response_received?: false,
+         credential_redeemed?: Keyword.get(opts, :credential_redeemed?)
+       }}
+    end
+
+    def update_linear_issue_state(_invocation, _attrs, _opts) do
+      raise "comment dry-run publication must use publish_linear_source"
+    end
+  end
+
   setup do
     ops_owner = Sandbox.start_owner!(OpsRepo, shared: false)
     archival_owner = Sandbox.start_owner!(ArchivalRepo, shared: false)
@@ -295,6 +328,37 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert requested_attrs.team_id == "team-linear"
     assert result.source_publication_receipt.capability_id == "linear.issues.update"
     assert result.source_publication_receipt.state_id == "state-done"
+  end
+
+  test "source service forwards Linear publication dry-run to the lower bridge" do
+    context = request_context_by_slug("tenant-linear-dry-run", "coding-ops", "coding_task")
+    invocation = authorized_invocation_allowing(["linear.comments.create"])
+
+    attrs = %{
+      source_publish_ref: "linear_workpad_review",
+      source_binding_id: "linear-primary",
+      source_ref: "linear://inst-1/issue/ENG-321",
+      issue_id: "lin-issue-321",
+      body: "Ready for review",
+      allow_create_fallback?: true
+    }
+
+    assert {:ok, result} =
+             SourceService.publish_linear_source(context, attrs,
+               authorized_invocation: invocation,
+               integration_bridge_service: DryRunPublicationBridge,
+               dry_run?: true,
+               credential_redeemed?: true
+             )
+
+    assert_received {:dry_run_publish_linear_source, ^invocation, requested_attrs, opts}
+    assert requested_attrs.issue_id == "lin-issue-321"
+    assert Keyword.fetch!(opts, :dry_run?) == true
+    assert Keyword.fetch!(opts, :credential_redeemed?) == true
+    assert result.provider_request_sent? == false
+    assert result.credential_redeemed? == true
+    assert result.source_publication_receipt.status == "dry_run_denied"
+    assert result.source_publication_receipt.lower_denial_ref =~ "policy_denied"
   end
 
   test "work query service returns explicit archived errors once a subject manifest is archived" do
