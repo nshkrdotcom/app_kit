@@ -27,6 +27,22 @@ defmodule AppKit.SourceSurfaceTest do
     end
 
     @impl true
+    def fetch_linear_candidates(_context, source_binding, _opts) do
+      {:ok,
+       %{
+         source_binding_id: source_binding.source_binding_id,
+         source_intake: %{
+           operation: "linear.issues.list",
+           subject_attrs: [
+             %{source_ref: "linear://inst-1/issue/ENG-321", title: "Investigate rollback"}
+           ]
+         },
+         provider_request_sent?: true,
+         provider_response_received?: true
+       }}
+    end
+
+    @impl true
     def publish_linear_source(_context, attrs, _opts) do
       {:ok,
        %{
@@ -68,6 +84,22 @@ defmodule AppKit.SourceSurfaceTest do
              )
 
     assert states.requested_issue_ids == ["lin-issue-321"]
+  end
+
+  test "delegates Linear candidate fetch through the configured backend" do
+    context = request_context()
+
+    assert {:ok, candidates} =
+             SourceSurface.fetch_linear_candidates(
+               context,
+               %{source_binding_id: "linear-primary"},
+               source_backend: FakeSourceBackend
+             )
+
+    assert candidates.source_binding_id == "linear-primary"
+    assert candidates.source_intake.operation == "linear.issues.list"
+    assert candidates.provider_request_sent? == true
+    assert candidates.provider_response_received? == true
   end
 
   test "delegates source publication through the configured backend" do

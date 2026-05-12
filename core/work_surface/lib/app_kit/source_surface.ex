@@ -25,6 +25,13 @@ defmodule AppKit.SourceSurface do
     backend(opts).current_linear_issue_states(context, issue_ids, source_binding, opts)
   end
 
+  @spec fetch_linear_candidates(RequestContext.t(), map(), keyword()) ::
+          {:ok, map()} | {:error, SurfaceError.t()}
+  def fetch_linear_candidates(%RequestContext{} = context, source_binding, opts \\ [])
+      when is_map(source_binding) and is_list(opts) do
+    backend(opts).fetch_linear_candidates(context, source_binding, opts)
+  end
+
   @spec publish_linear_source(RequestContext.t(), map(), keyword()) ::
           {:ok, map()} | {:error, SurfaceError.t()}
   def publish_linear_source(%RequestContext{} = context, attrs, opts \\ [])

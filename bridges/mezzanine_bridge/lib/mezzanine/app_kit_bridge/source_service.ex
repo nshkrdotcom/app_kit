@@ -52,12 +52,35 @@ defmodule Mezzanine.AppKitBridge.SourceService do
     end
   end
 
+  @spec fetch_linear_candidates(RequestContext.t(), map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def fetch_linear_candidates(%RequestContext{} = context, source_binding, opts \\ [])
+      when is_map(source_binding) and is_list(opts) do
+    with {:ok, _tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
+         {:ok, invocation, opts} <-
+           authorized_invocation(
+             context,
+             ["linear.users.get_self", "linear.issues.list"],
+             value(source_binding, :source_binding_id) || @default_source_binding_id,
+             opts
+           ) do
+      integration_bridge_service(opts).fetch_linear_candidates(invocation, source_binding, opts)
+    end
+  end
+
   @spec publish_linear_source(RequestContext.t(), map(), keyword()) ::
           {:ok, map()} | {:error, term()}
   def publish_linear_source(%RequestContext{} = context, attrs, opts \\ [])
       when is_map(attrs) and is_list(opts) do
     with {:ok, _tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
-         {:ok, invocation} <- authorized_invocation(opts) do
+         {:ok, invocation, opts} <-
+           authorized_invocation(
+             context,
+             ["linear.comments.create", "linear.comments.update", "linear.issues.update"],
+             value(attrs, :source_ref) || value(attrs, :source_publish_ref) ||
+               "linear-publication",
+             opts
+           ) do
       attrs =
         attrs
         |> Map.new()
@@ -281,4 +304,101 @@ defmodule Mezzanine.AppKitBridge.SourceService do
       _other -> {:error, :invalid_authorized_source_invocation}
     end
   end
+
+  defp authorized_invocation(%RequestContext{} = context, allowed_operations, subject_hint, opts) do
+    case authorized_invocation(opts) do
+      {:ok, %AuthorizedInvocation{} = invocation} ->
+        {:ok, invocation, opts}
+
+      {:error, :missing_authorized_source_invocation} ->
+        prepare_linear_api_key_invocation(context, allowed_operations, subject_hint, opts)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp prepare_linear_api_key_invocation(context, allowed_operations, subject_hint, opts) do
+    with {:ok, api_key} <- linear_api_key(opts),
+         {:ok, service} <- linear_credential_ingress_service(opts),
+         {:ok, prepared} <-
+           service.prepare_linear_api_key_invocation(
+             api_key,
+             invocation_ingress_attrs(context, allowed_operations, subject_hint, opts),
+             opts
+           ),
+         {:ok, %AuthorizedInvocation{} = invocation} <- prepared_authorized_invocation(prepared) do
+      {:ok, invocation, merge_prepared_source_opts(opts, prepared)}
+    else
+      {:error, reason} -> {:error, reason}
+      _other -> {:error, :invalid_prepared_linear_invocation}
+    end
+  end
+
+  defp linear_api_key(opts) do
+    case Keyword.get(opts, :linear_api_key) || Keyword.get(opts, :api_key) do
+      api_key when is_binary(api_key) and api_key != "" ->
+        {:ok, api_key}
+
+      _missing ->
+        {:error, :missing_authorized_source_invocation}
+    end
+  end
+
+  defp linear_credential_ingress_service(opts) do
+    service = integration_bridge_service(opts)
+
+    if service_exports?(service, :prepare_linear_api_key_invocation, 3) do
+      {:ok, service}
+    else
+      {:error, :linear_credential_ingress_not_configured}
+    end
+  end
+
+  defp prepared_authorized_invocation(prepared) do
+    case value(prepared, :authorized_invocation) do
+      %AuthorizedInvocation{} = invocation -> {:ok, invocation}
+      _other -> {:error, :invalid_prepared_linear_invocation}
+    end
+  end
+
+  defp invocation_ingress_attrs(context, allowed_operations, subject_hint, opts) do
+    trace_id = context.trace_id || "trace-app-kit-source"
+
+    execution_id =
+      Keyword.get(opts, :execution_id) || "exec-app-kit-source-#{stable_hash(trace_id)}"
+
+    idempotency_key =
+      context.idempotency_key || Keyword.get(opts, :idempotency_key) || execution_id
+
+    %{
+      tenant_id: context.tenant_ref.id,
+      installation_id: installation_id(context, %{}),
+      subject_id: Keyword.get(opts, :subject_id) || to_string(subject_hint),
+      execution_id: execution_id,
+      trace_id: trace_id,
+      idempotency_key: idempotency_key,
+      submission_dedupe_key: context.causation_id || idempotency_key,
+      actor_id: context.actor_ref.id,
+      allowed_operations: allowed_operations,
+      subject: Keyword.get(opts, :credential_subject) || context.actor_ref.id
+    }
+  end
+
+  defp merge_prepared_source_opts(opts, prepared) do
+    prepared_opts = List.wrap(value(prepared, :source_opts))
+
+    opts
+    |> Keyword.drop([:linear_api_key, :api_key])
+    |> Keyword.merge(prepared_opts, fn
+      :invoke_opts, left, right -> Keyword.merge(List.wrap(left), List.wrap(right))
+      _key, _left, right -> right
+    end)
+  end
+
+  defp service_exports?(service, function, arity) when is_atom(service) do
+    Code.ensure_loaded?(service) and function_exported?(service, function, arity)
+  end
+
+  defp stable_hash(value), do: value |> :erlang.phash2() |> Integer.to_string(36)
 end

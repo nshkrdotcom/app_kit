@@ -128,6 +128,21 @@ defmodule AppKit.Bridges.MezzanineBridge do
   end
 
   @impl true
+  def fetch_linear_candidates(%RequestContext{} = context, source_binding, opts)
+      when is_map(source_binding) and is_list(opts) do
+    service = source_service(opts)
+
+    if service_exports?(service, :fetch_linear_candidates, 3) do
+      case service.fetch_linear_candidates(context, source_binding, opts) do
+        {:ok, result} -> {:ok, result}
+        {:error, reason} -> normalize_surface_error(reason)
+      end
+    else
+      normalize_surface_error(:source_candidate_fetch_not_configured)
+    end
+  end
+
+  @impl true
   def publish_linear_source(%RequestContext{} = context, attrs, opts)
       when is_map(attrs) and is_list(opts) do
     service = source_service(opts)

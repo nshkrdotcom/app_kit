@@ -36,6 +36,42 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     end
   end
 
+  defmodule CredentialIngressBridge do
+    def prepare_linear_api_key_invocation(api_key, attrs, opts \\ []) do
+      send(self(), {:prepare_linear_api_key_invocation, api_key, attrs, opts})
+
+      {:ok,
+       %{
+         authorized_invocation:
+           Process.get(:credential_ingress_invocation) ||
+             raise("credential ingress invocation missing"),
+         connection_id: "connection-linear-live",
+         credential_ref_id: "cred:connection-linear-live",
+         source_opts: [
+           invoke_opts: [connection_id: "connection-linear-live"],
+           credential_ref_id: "cred:connection-linear-live",
+           credential_redeemed?: true
+         ]
+       }}
+    end
+
+    def fetch_linear_candidates(invocation, source_binding, opts) do
+      send(self(), {:fetch_linear_candidates, invocation, source_binding, opts})
+
+      {:ok,
+       %{
+         source_binding_id: source_binding.source_binding_id,
+         credential_redeemed?: Keyword.get(opts, :credential_redeemed?),
+         provider_request_sent?: true,
+         provider_response_received?: true,
+         source_intake: %{
+           operation: "linear.issues.list",
+           subject_attrs: [%{source_ref: "linear://inst/issue/ENG-321"}]
+         }
+       }}
+    end
+  end
+
   setup do
     ops_owner = Sandbox.start_owner!(OpsRepo, shared: false)
     archival_owner = Sandbox.start_owner!(ArchivalRepo, shared: false)
@@ -174,6 +210,34 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
                      requested_binding, _opts}
 
     assert requested_binding.source_binding_id == "linear-primary"
+  end
+
+  test "source service prepares Linear API key credentials before candidate fetch" do
+    context = request_context_by_slug("tenant-linear-live", "coding-ops", "coding_task")
+    invocation = authorized_invocation_allowing(["linear.users.get_self", "linear.issues.list"])
+    api_key = "lin_api_live_secret"
+
+    Process.put(:credential_ingress_invocation, invocation)
+
+    assert {:ok, result} =
+             SourceService.fetch_linear_candidates(context, source_binding(),
+               linear_api_key: api_key,
+               integration_bridge_service: CredentialIngressBridge
+             )
+
+    assert_received {:prepare_linear_api_key_invocation, ^api_key, attrs, _opts}
+    assert attrs.tenant_id == "tenant-linear-live"
+    assert attrs.installation_id == "tenant-linear-live"
+    assert attrs.allowed_operations == ["linear.users.get_self", "linear.issues.list"]
+
+    assert_received {:fetch_linear_candidates, ^invocation, requested_binding, opts}
+    assert requested_binding.source_binding_id == "linear-primary"
+    assert Keyword.fetch!(opts, :invoke_opts)[:connection_id] == "connection-linear-live"
+    refute Keyword.has_key?(opts, :linear_api_key)
+    assert result.credential_redeemed? == true
+    refute inspect(result) =~ api_key
+  after
+    Process.delete(:credential_ingress_invocation)
   end
 
   test "work query service returns explicit archived errors once a subject manifest is archived" do
