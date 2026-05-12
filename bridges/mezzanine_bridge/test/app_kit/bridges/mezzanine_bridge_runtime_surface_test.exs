@@ -1,0 +1,189 @@
+defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
+  use ExUnit.Case, async: true
+
+  alias AppKit.Bridges.MezzanineBridge
+
+  alias AppKit.Core.RuntimeSurface.{
+    LiveEffectReceipt,
+    RuntimeLogPage,
+    RuntimeProfileApplyResult,
+    RuntimeStatusSnapshot
+  }
+
+  defmodule RuntimeProfileService do
+    def apply(tenant_id, runtime_profile) do
+      send(self(), {:runtime_profile_apply, tenant_id, runtime_profile})
+
+      {:ok,
+       %{
+         status: :updated,
+         profile_ref: "runtime-profile://#{tenant_id}/symphony",
+         program_ref: "program://symphony-workflow",
+         policy_bundle_ref: "policy-bundle://symphony",
+         work_class_ref: "work-class://symphony",
+         placement_profile_ref: "placement-profile://local",
+         metadata: %{"source" => "runtime-profile-service"}
+       }}
+    end
+  end
+
+  defmodule OperatorQueryService do
+    def system_health(tenant_id, program_id) do
+      send(self(), {:system_health, tenant_id, program_id})
+
+      {:ok,
+       %{
+         program_id: program_id,
+         active_run_count: 2,
+         pending_review_count: 1,
+         queue_stats: %{ready_count: 3}
+       }}
+    end
+
+    def timeline(tenant_id, subject_id) do
+      send(self(), {:timeline, tenant_id, subject_id})
+
+      {:ok,
+       %{
+         entries: [
+           %{
+             ref: "event://runtime/log/1",
+             event_kind: "run_scheduled",
+             summary: "Run scheduled",
+             payload: %{subject_id: subject_id}
+           }
+         ]
+       }}
+    end
+  end
+
+  defmodule SourceService do
+    def publish_linear_source(context, attrs, _opts) do
+      send(self(), {:publish_linear_source, context.tenant_ref.id, attrs})
+
+      {:ok,
+       %{
+         source_publication_receipt: %{
+           source_publication_receipt_ref: "source-publication://linear-primary/test",
+           source_publish_ref: attrs.source_publish_ref,
+           source_binding_id: attrs.source_binding_id,
+           source_ref: attrs.source_ref,
+           status: "published",
+           capability_id: "linear.comments.update",
+           lower_runtime_kind: "direct_connector",
+           authority_ref: "authority-decision://linear/test",
+           workpad_refs: ["linear-comment://comment-1"]
+         }
+       }}
+    end
+  end
+
+  test "applies runtime profiles through the Mezzanine runtime profile service" do
+    context = request_context()
+    runtime_profile = runtime_profile()
+
+    assert {:ok, %RuntimeProfileApplyResult{} = result} =
+             MezzanineBridge.apply_runtime_profile(context, runtime_profile,
+               runtime_profile_service: RuntimeProfileService
+             )
+
+    assert_received {:runtime_profile_apply, "tenant-1", ^runtime_profile}
+    assert result.status == :updated
+    assert result.profile_ref == "runtime-profile://tenant-1/symphony"
+    assert result.program_ref == "program://symphony-workflow"
+  end
+
+  test "exposes status and logs as operator-safe runtime DTOs" do
+    context = request_context(%{program_id: "program-1"})
+
+    assert {:ok, %RuntimeStatusSnapshot{} = status} =
+             MezzanineBridge.runtime_status(context, %{},
+               operator_query_service: OperatorQueryService
+             )
+
+    assert_received {:system_health, "tenant-1", "program-1"}
+    assert status.program_ref == "program-1"
+    assert status.health["active_run_count"] == 2
+    assert status.health["queue_stats"]["ready_count"] == 3
+
+    assert {:ok, %RuntimeLogPage{} = logs} =
+             MezzanineBridge.runtime_logs(context, %{subject_id: "subject-1"},
+               operator_query_service: OperatorQueryService
+             )
+
+    assert_received {:timeline, "tenant-1", "subject-1"}
+    assert [%{event_kind: "run_scheduled"}] = logs.entries
+  end
+
+  test "wraps live effect proof state without accepting raw provider secrets" do
+    context = request_context()
+
+    assert {:ok, %LiveEffectReceipt{} = receipt} =
+             MezzanineBridge.record_live_effect(context, %{
+               effect_ref: "live-effect://linear/source/1",
+               provider: "linear",
+               effect: "source_intake",
+               capability_ids: ["linear.issues.list"],
+               status: :receipt_recorded,
+               credential_present?: true,
+               credential_redeemed?: true,
+               provider_request_sent?: true,
+               provider_response_received?: true,
+               receipt_recorded?: true,
+               product_readback_confirmed?: false
+             })
+
+    assert receipt.tenant_ref == "tenant-1"
+    assert receipt.receipt_recorded? == true
+
+    assert {:error, _surface_error} =
+             MezzanineBridge.record_live_effect(context, %{
+               effect_ref: "live-effect://linear/source/1",
+               provider: "linear",
+               effect: "source_intake",
+               status: :receipt_recorded,
+               token: "secret"
+             })
+  end
+
+  test "publishes Linear source receipts through the AppKit source bridge" do
+    context = request_context()
+
+    attrs = %{
+      source_publish_ref: "linear_workpad_review",
+      source_binding_id: "linear-primary",
+      source_ref: "linear://inst-1/issue/ENG-321",
+      comment_id: "comment-1",
+      body: "Ready for review"
+    }
+
+    assert {:ok, result} =
+             MezzanineBridge.publish_linear_source(context, attrs, source_service: SourceService)
+
+    assert_received {:publish_linear_source, "tenant-1", ^attrs}
+    assert result.source_publication_receipt.status == "published"
+    assert result.source_publication_receipt.authority_ref == "authority-decision://linear/test"
+  end
+
+  defp request_context(metadata \\ %{}) do
+    {:ok, context} =
+      AppKit.Core.RequestContext.new(%{
+        trace_id: "11111111111111111111111111111111",
+        actor_ref: %{id: "operator", kind: :human},
+        tenant_ref: %{id: "tenant-1"},
+        installation_ref: %{id: "installation-1", pack_slug: "extravaganza"},
+        metadata: metadata
+      })
+
+    context
+  end
+
+  defp runtime_profile do
+    %{
+      "program" => %{"slug" => "symphony-workflow"},
+      "policy_bundle" => %{"name" => "symphony_policy"},
+      "work_class" => %{"name" => "symphony_work"},
+      "placement_profile" => %{"profile_id" => "local"}
+    }
+  end
+end

@@ -10,4 +10,7 @@ defmodule AppKit.Core.Backends.SourceBackend do
 
   @callback current_linear_issue_states(RequestContext.t(), [String.t()], map(), keyword()) ::
               {:ok, map()} | {:error, SurfaceError.t()}
+
+  @callback publish_linear_source(RequestContext.t(), map(), keyword()) ::
+              {:ok, map()} | {:error, SurfaceError.t()}
 end

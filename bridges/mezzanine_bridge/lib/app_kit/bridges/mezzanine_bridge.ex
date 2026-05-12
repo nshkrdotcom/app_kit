@@ -17,6 +17,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @behaviour AppKit.Core.Backends.WorkQueryBackend
   @behaviour AppKit.Core.Backends.HeadlessBackend
   @behaviour AppKit.Core.Backends.AgentIntakeBackend
+  @behaviour AppKit.Core.Backends.RuntimeBackend
 
   @authorization_reasons [
     :cross_tenant_operator_command_denied,
@@ -93,6 +94,13 @@ defmodule AppKit.Bridges.MezzanineBridge do
     RuntimeSubjectDetail
   }
 
+  alias AppKit.Core.RuntimeSurface.{
+    LiveEffectReceipt,
+    RuntimeLogPage,
+    RuntimeProfileApplyResult,
+    RuntimeStatusSnapshot
+  }
+
   alias Mezzanine.Archival.Query, as: ArchivalQuery
 
   @impl true
@@ -116,6 +124,98 @@ defmodule AppKit.Bridges.MezzanineBridge do
       end
     else
       normalize_surface_error(:source_current_state_not_configured)
+    end
+  end
+
+  @impl true
+  def publish_linear_source(%RequestContext{} = context, attrs, opts)
+      when is_map(attrs) and is_list(opts) do
+    service = source_service(opts)
+
+    if service_exports?(service, :publish_linear_source, 3) do
+      case service.publish_linear_source(context, attrs, opts) do
+        {:ok, result} -> {:ok, result}
+        {:error, reason} -> normalize_surface_error(reason)
+      end
+    else
+      normalize_surface_error(:source_publication_not_configured)
+    end
+  end
+
+  @impl true
+  def apply_runtime_profile(%RequestContext{} = context, runtime_profile, opts)
+      when is_map(runtime_profile) and is_list(opts) do
+    with {:ok, tenant_id} <- tenant_id(context),
+         {:ok, bridge_result} <-
+           apply_runtime_profile_via_service(
+             runtime_profile_service(opts),
+             tenant_id,
+             runtime_profile
+           ),
+         {:ok, result} <- runtime_profile_apply_result_from_bridge(bridge_result, tenant_id) do
+      {:ok, result}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def runtime_status(%RequestContext{} = context, request, opts)
+      when is_map(request) and is_list(opts) do
+    service = operator_query_service(opts)
+
+    with {:ok, tenant_id} <- tenant_id(context),
+         {:ok, program_id} <- runtime_program_id(context, request, opts),
+         {:ok, bridge_result} <- system_health_via_service(service, tenant_id, program_id),
+         {:ok, snapshot} <-
+           RuntimeStatusSnapshot.new(%{
+             tenant_ref: tenant_id,
+             program_ref: program_id,
+             health: bridge_result,
+             preflight:
+               fetch_value(request, :preflight) || fetch_value(bridge_result, :preflight) || %{},
+             metadata: fetch_value(bridge_result, :metadata) || %{}
+           }) do
+      {:ok, snapshot}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def runtime_logs(%RequestContext{} = context, request, opts)
+      when is_map(request) and is_list(opts) do
+    service = operator_query_service(opts)
+
+    with {:ok, tenant_id} <- tenant_id(context),
+         {:ok, subject_id} <- runtime_subject_id(request),
+         {:ok, bridge_result} <- timeline_via_service(service, tenant_id, subject_id),
+         entries <- fetch_value(bridge_result, :entries) || [],
+         {:ok, page} <-
+           RuntimeLogPage.new(%{
+             entries: entries,
+             total_count: fetch_value(bridge_result, :total_count) || length(entries),
+             next_cursor: fetch_value(bridge_result, :next_cursor),
+             has_more?: fetch_value(bridge_result, :has_more?) || false,
+             metadata:
+               (fetch_value(bridge_result, :metadata) || %{})
+               |> Map.put_new("subject_id", subject_id)
+           }) do
+      {:ok, page}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def record_live_effect(%RequestContext{} = context, attrs, opts \\ [])
+      when is_map(attrs) and is_list(opts) do
+    with {:ok, tenant_id} <- tenant_id(context),
+         attrs <- attrs |> Map.new() |> Map.put_new(:tenant_ref, tenant_id),
+         {:ok, receipt} <- LiveEffectReceipt.new(attrs) do
+      {:ok, receipt}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
     end
   end
 
@@ -1740,6 +1840,9 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp installation_service(opts),
     do: Keyword.get(opts, :installation_service, Mezzanine.AppKitBridge.InstallationService)
 
+  defp runtime_profile_service(opts),
+    do: Keyword.get(opts, :runtime_profile_service, Mezzanine.AppKitBridge.RuntimeProfileService)
+
   defp lease_service(opts),
     do: Keyword.get(opts, :lease_service, Mezzanine.AppKitBridge.LeaseService)
 
@@ -1771,6 +1874,48 @@ defmodule AppKit.Bridges.MezzanineBridge do
     do: {:ok, tenant_id}
 
   defp tenant_id(_context), do: {:error, :missing_tenant_id}
+
+  defp apply_runtime_profile_via_service(service, tenant_id, runtime_profile) do
+    cond do
+      service_exports?(service, :apply, 2) ->
+        service.apply(tenant_id, runtime_profile)
+
+      service_exports?(service, :ensure, 2) ->
+        with {:ok, status} <- service.ensure(tenant_id, runtime_profile) do
+          {:ok, %{status: status}}
+        end
+
+      true ->
+        {:error, :runtime_profile_service_not_configured}
+    end
+  end
+
+  defp runtime_profile_apply_result_from_bridge(bridge_result, tenant_id)
+       when is_map(bridge_result) do
+    bridge_result
+    |> Map.new()
+    |> Map.put_new(:tenant_ref, tenant_id)
+    |> RuntimeProfileApplyResult.new()
+  end
+
+  defp runtime_profile_apply_result_from_bridge(_bridge_result, _tenant_id),
+    do: {:error, :invalid_runtime_profile_apply_result}
+
+  defp system_health_via_service(service, tenant_id, program_id) do
+    if service_exports?(service, :system_health, 2) do
+      service.system_health(tenant_id, program_id)
+    else
+      {:error, :runtime_status_service_not_configured}
+    end
+  end
+
+  defp timeline_via_service(service, tenant_id, subject_id) do
+    if service_exports?(service, :timeline, 2) do
+      service.timeline(tenant_id, subject_id)
+    else
+      {:error, :runtime_logs_service_not_configured}
+    end
+  end
 
   defp ensure_subject_not_archived(%RequestContext{} = context, %SubjectRef{} = subject_ref) do
     case archival_installation_id(context, subject_ref) do
@@ -1895,6 +2040,33 @@ defmodule AppKit.Bridges.MezzanineBridge do
       _ -> :missing
     end
   end
+
+  defp runtime_program_id(%RequestContext{} = context, request, opts) do
+    case fetch_value(request, :program_id) || fetch_value(request, :program_ref) ||
+           Keyword.get(opts, :program_id) || Keyword.get(opts, :program_ref) ||
+           context_metadata(context, :program_id) || context_metadata(context, :program_ref) do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _ -> {:error, :missing_program_id}
+    end
+  end
+
+  defp runtime_subject_id(request) do
+    case fetch_value(request, :subject_id) ||
+           subject_id_from_runtime_ref(fetch_value(request, :subject_ref)) ||
+           fetch_value(request, :work_object_id) do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _ -> {:error, :missing_subject_id}
+    end
+  end
+
+  defp subject_id_from_runtime_ref(%SubjectRef{id: subject_id}), do: subject_id
+  defp subject_id_from_runtime_ref(%{id: subject_id}) when is_binary(subject_id), do: subject_id
+
+  defp subject_id_from_runtime_ref(%{"id" => subject_id}) when is_binary(subject_id),
+    do: subject_id
+
+  defp subject_id_from_runtime_ref(subject_id) when is_binary(subject_id), do: subject_id
+  defp subject_id_from_runtime_ref(_subject_ref), do: nil
 
   defp explicit_work_class_id(%RequestContext{} = context, attrs, opts) do
     case Keyword.get(opts, :work_class_id) || fetch_value(attrs, :work_class_id) ||

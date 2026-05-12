@@ -25,6 +25,13 @@ defmodule AppKit.SourceSurface do
     backend(opts).current_linear_issue_states(context, issue_ids, source_binding, opts)
   end
 
+  @spec publish_linear_source(RequestContext.t(), map(), keyword()) ::
+          {:ok, map()} | {:error, SurfaceError.t()}
+  def publish_linear_source(%RequestContext{} = context, attrs, opts \\ [])
+      when is_map(attrs) and is_list(opts) do
+    backend(opts).publish_linear_source(context, attrs, opts)
+  end
+
   defp backend(opts) do
     BackendConfig.resolve(
       opts,

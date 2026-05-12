@@ -52,6 +52,21 @@ defmodule Mezzanine.AppKitBridge.SourceService do
     end
   end
 
+  @spec publish_linear_source(RequestContext.t(), map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def publish_linear_source(%RequestContext{} = context, attrs, opts \\ [])
+      when is_map(attrs) and is_list(opts) do
+    with {:ok, _tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
+         {:ok, invocation} <- authorized_invocation(opts) do
+      attrs =
+        attrs
+        |> Map.new()
+        |> Map.put_new(:trace_id, context.trace_id)
+
+      integration_bridge_service(opts).publish_linear_source(invocation, attrs, opts)
+    end
+  end
+
   defp route_context(%RequestContext{} = context, opts) do
     with {:ok, tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
          {:ok, route} <- resolve_route_context(tenant_id, context, opts) do

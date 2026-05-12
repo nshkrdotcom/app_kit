@@ -3,7 +3,14 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Mezzanine.AppKitBridge
-  alias Mezzanine.AppKitBridge.{InstallationService, ReviewActionService, ReviewQueryService}
+
+  alias Mezzanine.AppKitBridge.{
+    InstallationService,
+    ReviewActionService,
+    ReviewQueryService,
+    RuntimeProfileService
+  }
+
   alias Mezzanine.Audit.WorkAudit
   alias Mezzanine.Authoring.Bundle
   alias Mezzanine.ConfigRegistry.{PackRegistration, Repo}
@@ -227,6 +234,34 @@ defmodule Mezzanine.AppKitBridge.ReviewInstallationServicesTest do
 
     assert program.name == "Expense Program Revised"
     assert placement_profile.runtime_preferences["topology"] == "dual_node"
+  end
+
+  test "runtime profile service applies durable runtime routing profile records" do
+    tenant_id = "tenant-runtime-profile-service"
+
+    assert {:ok, result} = RuntimeProfileService.apply(tenant_id, runtime_profile_fixture())
+    assert result.status == :updated
+    assert result.profile_ref == "runtime-profile://expense_program"
+    assert result.program_ref =~ "program://"
+    assert result.policy_bundle_ref =~ "policy-bundle://"
+    assert result.work_class_ref =~ "work-class://"
+    assert result.placement_profile_ref =~ "placement-profile://"
+    assert result.metadata["runtime_profile_applied?"] == true
+    assert result.metadata["program_slug"] == "expense_program"
+
+    assert {:ok, program, bundle, work_class, placement_profile} =
+             runtime_profile_records(tenant_id)
+
+    assert program.status == :active
+    assert bundle.name == "default_coding_ops"
+    assert work_class.policy_bundle_id == bundle.id
+    assert placement_profile.profile_id == "local_default"
+
+    assert {:ok, repeated_result} =
+             RuntimeProfileService.apply(tenant_id, runtime_profile_fixture())
+
+    assert repeated_result.status in [:unchanged, :updated]
+    assert repeated_result.profile_ref == result.profile_ref
   end
 
   test "installation detail aggregates external binding posture by external_system_ref" do

@@ -25,6 +25,22 @@ defmodule AppKit.SourceSurfaceTest do
     def current_linear_issue_states(_context, issue_ids, _source_binding, _opts) do
       {:ok, %{requested_issue_ids: issue_ids, missing_issue_ids: []}}
     end
+
+    @impl true
+    def publish_linear_source(_context, attrs, _opts) do
+      {:ok,
+       %{
+         source_publication_receipt: %{
+           source_publication_receipt_ref: "source-publication://linear-primary/test",
+           source_publish_ref: attrs.source_publish_ref,
+           source_binding_id: attrs.source_binding_id,
+           source_ref: attrs.source_ref,
+           status: "published",
+           capability_id: "linear.comments.update",
+           workpad_refs: ["linear-comment://comment-1"]
+         }
+       }}
+    end
   end
 
   alias AppKit.Core.RequestContext
@@ -52,6 +68,26 @@ defmodule AppKit.SourceSurfaceTest do
              )
 
     assert states.requested_issue_ids == ["lin-issue-321"]
+  end
+
+  test "delegates source publication through the configured backend" do
+    context = request_context()
+
+    assert {:ok, publication} =
+             SourceSurface.publish_linear_source(
+               context,
+               %{
+                 source_publish_ref: "linear_workpad_review",
+                 source_binding_id: "linear-primary",
+                 source_ref: "linear://inst-1/issue/ENG-321",
+                 comment_id: "comment-1",
+                 body: "Ready for review"
+               },
+               source_backend: FakeSourceBackend
+             )
+
+    assert publication.source_publication_receipt.status == "published"
+    assert publication.source_publication_receipt.capability_id == "linear.comments.update"
   end
 
   defp request_context do
