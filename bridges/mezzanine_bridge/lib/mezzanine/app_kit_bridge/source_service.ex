@@ -42,7 +42,13 @@ defmodule Mezzanine.AppKitBridge.SourceService do
       )
       when is_list(issue_ids) and is_map(source_binding) and is_list(opts) do
     with {:ok, _tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
-         {:ok, invocation} <- authorized_invocation(opts) do
+         {:ok, invocation, opts} <-
+           authorized_invocation(
+             context,
+             ["linear.users.get_self", "linear.issues.list"],
+             value(source_binding, :source_binding_id) || @default_source_binding_id,
+             opts
+           ) do
       integration_bridge_service(opts).fetch_linear_current_issue_states(
         invocation,
         issue_ids,

@@ -70,6 +70,25 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
          }
        }}
     end
+
+    def fetch_linear_current_issue_states(invocation, issue_ids, source_binding, opts) do
+      send(
+        self(),
+        {:fetch_linear_current_issue_states, invocation, issue_ids, source_binding, opts}
+      )
+
+      {:ok,
+       %{
+         credential_redeemed?: Keyword.get(opts, :credential_redeemed?),
+         provider_request_sent?: true,
+         provider_response_received?: true,
+         source_current_state: %{
+           operation: "linear.issues.list",
+           subject_attrs: [%{provider_external_ref: "lin-issue-321"}],
+           missing_issue_ids: []
+         }
+       }}
+    end
   end
 
   defmodule StateUpdateBridge do
@@ -321,6 +340,39 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert attrs.allowed_operations == ["linear.users.get_self", "linear.issues.list"]
 
     assert_received {:fetch_linear_candidates, ^invocation, requested_binding, opts}
+    assert requested_binding.source_binding_id == "linear-primary"
+    assert Keyword.fetch!(opts, :invoke_opts)[:connection_id] == "connection-linear-live"
+    refute Keyword.has_key?(opts, :linear_api_key)
+    assert result.credential_redeemed? == true
+    refute inspect(result) =~ api_key
+  after
+    Process.delete(:credential_ingress_invocation)
+  end
+
+  test "source service prepares Linear API key credentials before current-state lookup" do
+    context = request_context_by_slug("tenant-linear-current-live", "coding-ops", "coding_task")
+    invocation = authorized_invocation_allowing(["linear.users.get_self", "linear.issues.list"])
+    api_key = "lin_api_live_secret"
+
+    Process.put(:credential_ingress_invocation, invocation)
+
+    assert {:ok, result} =
+             SourceService.current_linear_issue_states(
+               context,
+               ["lin-issue-321"],
+               source_binding(),
+               linear_api_key: api_key,
+               integration_bridge_service: CredentialIngressBridge
+             )
+
+    assert_received {:prepare_linear_api_key_invocation, ^api_key, attrs, _opts}
+    assert attrs.tenant_id == "tenant-linear-current-live"
+    assert attrs.allowed_operations == ["linear.users.get_self", "linear.issues.list"]
+    assert attrs.subject_id == "linear-primary"
+
+    assert_received {:fetch_linear_current_issue_states, ^invocation, ["lin-issue-321"],
+                     requested_binding, opts}
+
     assert requested_binding.source_binding_id == "linear-primary"
     assert Keyword.fetch!(opts, :invoke_opts)[:connection_id] == "connection-linear-live"
     refute Keyword.has_key?(opts, :linear_api_key)
