@@ -323,6 +323,17 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert {:ok, appkit_detail} =
              AppKit.Bridges.MezzanineBridge.get_subject(context, subject_ref, [])
 
+    assert [%{blocker_kind: "source_blocked", metadata: blocker_metadata}] =
+             appkit_detail.blocking_conditions
+
+    assert blocker_metadata.dispatch_eligible == false
+    assert blocker_metadata.dispatch_preflight_reason == "non_terminal_dependency"
+    assert [%{"identifier" => "SEC-9"}] = blocker_metadata.blocker_refs
+    assert appkit_detail.next_step_preview.metadata.dispatch_eligible == false
+
+    assert appkit_detail.next_step_preview.metadata.dispatch_preflight_reason ==
+             "non_terminal_dependency"
+
     detail_payload = appkit_detail.payload
     assert detail_payload.identifier == "ENG-321"
     assert detail_payload.description == "Trace queue latency"
