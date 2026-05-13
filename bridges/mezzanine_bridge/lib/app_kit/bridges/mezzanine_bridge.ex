@@ -161,6 +161,21 @@ defmodule AppKit.Bridges.MezzanineBridge do
   end
 
   @impl true
+  def execute_linear_graphql_tool(%RequestContext{} = context, attrs, opts)
+      when is_map(attrs) and is_list(opts) do
+    service = source_service(opts)
+
+    if service_exports?(service, :execute_linear_graphql_tool, 3) do
+      case service.execute_linear_graphql_tool(context, attrs, opts) do
+        {:ok, result} -> {:ok, result}
+        {:error, reason} -> normalize_surface_error(reason)
+      end
+    else
+      normalize_surface_error(:linear_graphql_tool_not_configured)
+    end
+  end
+
+  @impl true
   def apply_runtime_profile(%RequestContext{} = context, runtime_profile, opts)
       when is_map(runtime_profile) and is_list(opts) do
     with {:ok, tenant_id} <- tenant_id(context),

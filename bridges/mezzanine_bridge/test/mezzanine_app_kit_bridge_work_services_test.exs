@@ -134,6 +134,34 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     end
   end
 
+  defmodule LinearGraphQLToolBridge do
+    def execute_linear_graphql_tool(invocation, attrs, opts) do
+      send(self(), {:linear_graphql_tool, invocation, attrs, opts})
+
+      {:ok,
+       %{
+         operation: "linear.graphql.execute",
+         tool_name: "linear_graphql",
+         success?: true,
+         dynamic_tool_response: %{
+           "success" => true,
+           "output" => ~s({"data":{"viewer":{"id":"usr-linear-viewer"}}}),
+           "contentItems" => [
+             %{
+               "type" => "inputText",
+               "text" => ~s({"data":{"viewer":{"id":"usr-linear-viewer"}}})
+             }
+           ]
+         },
+         lower_request_ref: "lower-request://linear/graphql",
+         lower_receipt_ref: "lower-receipt://linear/graphql/succeeded",
+         provider_request_sent?: true,
+         provider_response_received?: true,
+         credential_redeemed?: Keyword.get(opts, :credential_redeemed?)
+       }}
+    end
+  end
+
   setup do
     ops_owner = Sandbox.start_owner!(OpsRepo, shared: false)
     archival_owner = Sandbox.start_owner!(ArchivalRepo, shared: false)
@@ -359,6 +387,32 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert result.credential_redeemed? == true
     assert result.source_publication_receipt.status == "dry_run_denied"
     assert result.source_publication_receipt.lower_denial_ref =~ "policy_denied"
+  end
+
+  test "source service forwards Linear GraphQL dynamic tool execution to the lower bridge" do
+    context = request_context_by_slug("tenant-linear-graphql", "coding-ops", "coding_task")
+    invocation = authorized_invocation_allowing(["linear.graphql.execute"])
+
+    attrs = %{
+      query: "query Viewer { viewer { id } }",
+      variables: %{"includeTeams" => false}
+    }
+
+    assert {:ok, result} =
+             SourceService.execute_linear_graphql_tool(context, attrs,
+               authorized_invocation: invocation,
+               integration_bridge_service: LinearGraphQLToolBridge,
+               credential_redeemed?: true
+             )
+
+    assert_received {:linear_graphql_tool, ^invocation, requested_attrs, opts}
+    assert requested_attrs.query == "query Viewer { viewer { id } }"
+    assert requested_attrs.variables == %{"includeTeams" => false}
+    assert Keyword.fetch!(opts, :credential_redeemed?) == true
+    assert result.operation == "linear.graphql.execute"
+    assert result.tool_name == "linear_graphql"
+    assert result.success? == true
+    assert result.dynamic_tool_response["success"] == true
   end
 
   test "work query service returns explicit archived errors once a subject manifest is archived" do

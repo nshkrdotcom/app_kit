@@ -16,4 +16,7 @@ defmodule AppKit.Core.Backends.SourceBackend do
 
   @callback publish_linear_source(RequestContext.t(), map(), keyword()) ::
               {:ok, map()} | {:error, SurfaceError.t()}
+
+  @callback execute_linear_graphql_tool(RequestContext.t(), map(), keyword()) ::
+              {:ok, map()} | {:error, SurfaceError.t()}
 end
