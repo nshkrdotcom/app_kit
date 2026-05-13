@@ -2976,6 +2976,8 @@ defmodule AppKit.Bridges.MezzanineBridge do
     params = request.params || %{}
     profile_bundle = request.profile_bundle
     initial_input = initial_input_params(params)
+    continuation_policy = continuation_policy_params(params)
+    continuation_input = continuation_input_params(params)
 
     run_ref =
       param(params, :run_ref, "run://agent-loop/#{ref_suffix(request.submission_dedupe_key)}")
@@ -3001,6 +3003,13 @@ defmodule AppKit.Bridges.MezzanineBridge do
        initial_input_source_ref: fetch_value(initial_input, :source_ref),
        initial_input_rendered?: fetch_value(initial_input, :rendered?),
        initial_input_body_redacted?: fetch_value(initial_input, :body_redacted?),
+       continuation_policy: continuation_policy,
+       continuation_input_body: fetch_value(continuation_input, :body),
+       continuation_input_ref: fetch_value(continuation_input, :input_ref),
+       continuation_input_hash: fetch_value(continuation_input, :content_hash),
+       continuation_input_source_ref: fetch_value(continuation_input, :source_ref),
+       continuation_input_rendered?: fetch_value(continuation_input, :rendered?),
+       continuation_input_body_redacted?: fetch_value(continuation_input, :body_redacted?),
        runtime_profile_ref: profile_bundle.runtime_profile_ref,
        tool_catalog_ref: request.tool_catalog_ref,
        authority_context_ref:
@@ -3022,8 +3031,15 @@ defmodule AppKit.Bridges.MezzanineBridge do
   end
 
   defp initial_input_params(params) do
-    case fetch_value(params, :initial_input) do
-      %{} = initial_input -> initial_input
+    map_param(params, :initial_input)
+  end
+
+  defp continuation_policy_params(params), do: map_param(params, :continuation_policy)
+  defp continuation_input_params(params), do: map_param(params, :continuation_input)
+
+  defp map_param(params, key) do
+    case fetch_value(params, key) do
+      %{} = value -> value
       _missing -> %{}
     end
   end

@@ -1619,6 +1619,51 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     assert attrs.initial_input_body_redacted? == true
   end
 
+  test "maps continuation turn metadata into neutral Codex runtime attrs" do
+    context = request_context()
+    guidance = "Continuation guidance: resume from the existing workspace and stop at max turns."
+    guidance_hash = sha256(guidance)
+
+    request =
+      AgentIntakeBackendConformance.fixture_agent_run_request(%{
+        initial_input_ref: "prompt://product/task/first-turn",
+        params: %{
+          capability_id: "codex.session.turn",
+          provider_family: "codex",
+          max_turns: 2,
+          continuation_policy: %{
+            mode: "until_max_turns",
+            active_state?: true
+          },
+          continuation_input: %{
+            body: guidance,
+            input_ref: "continuation-guidance://product/task/2",
+            content_hash: guidance_hash,
+            source_ref: "workflow://product/profile/default",
+            rendered?: true,
+            body_redacted?: true
+          }
+        }
+      })
+
+    assert {:ok, future} =
+             MezzanineBridge.start_agent_run(context, request,
+               codex_agent_runtime: PromptCapturingAgentRuntime
+             )
+
+    assert future.accepted?
+    assert_received {:agent_runtime_attrs, attrs}
+    assert attrs.max_turns == 2
+    assert attrs.continuation_policy.mode == "until_max_turns"
+    assert attrs.continuation_policy.active_state? == true
+    assert attrs.continuation_input_body == guidance
+    assert attrs.continuation_input_ref == "continuation-guidance://product/task/2"
+    assert attrs.continuation_input_hash == guidance_hash
+    assert attrs.continuation_input_source_ref == "workflow://product/profile/default"
+    assert attrs.continuation_input_rendered? == true
+    assert attrs.continuation_input_body_redacted? == true
+  end
+
   test "maps widened work-control and operator surface contracts into app-kit DTOs" do
     attach_telemetry(self(), [:unified_trace_assembled])
     context = request_context()
