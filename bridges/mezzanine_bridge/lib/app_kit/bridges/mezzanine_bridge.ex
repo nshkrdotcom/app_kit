@@ -89,11 +89,15 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   alias AppKit.Core.RuntimeReadback.{
     CommandResult,
+    Diagnostic,
+    RateLimitSnapshot,
+    RetryRow,
     RuntimeEventRow,
     RuntimeRow,
     RuntimeRunDetail,
     RuntimeStateSnapshot,
-    RuntimeSubjectDetail
+    RuntimeSubjectDetail,
+    TokenTotals
   }
 
   alias AppKit.Core.RuntimeSurface.{
@@ -2736,17 +2740,27 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @impl AppKit.Core.Backends.HeadlessBackend
   def state_snapshot(%RequestContext{} = context, request, opts) when is_list(opts) do
     now = DateTime.utc_now()
+    query_service = work_query_service(opts)
 
     with {:ok, tenant_ref} <- tenant_id(context),
          {:ok, program_id} <- program_id(context, opts),
          installation_ref <- readback_installation_ref(context),
-         {:ok, rows} <- work_query_service(opts).list_subjects(tenant_ref, program_id, %{}),
-         {:ok, runtime_rows} <- map_each(rows, &runtime_row_from_map(&1, now)) do
+         {:ok, rows} <- query_service.list_subjects(tenant_ref, program_id, %{}),
+         runtime_sources <-
+           Enum.map(rows, &state_snapshot_source(query_service, tenant_ref, &1, opts)),
+         {:ok, runtime_rows} <- map_each(runtime_sources, &runtime_row_from_map(&1, now)),
+         {:ok, retry_rows} <- state_snapshot_retry_rows(runtime_sources),
+         {:ok, rate_limits} <- state_snapshot_rate_limits(runtime_sources),
+         {:ok, diagnostics} <- state_snapshot_diagnostics(runtime_sources) do
       RuntimeStateSnapshot.new(%{
         tenant_ref: tenant_ref,
         installation_ref: installation_ref,
         generated_at: now,
         rows: runtime_rows,
+        retry_rows: retry_rows,
+        token_totals: state_snapshot_token_totals(runtime_sources),
+        rate_limits: rate_limits,
+        diagnostics: diagnostics,
         polling_state: %{
           checking?: false,
           poll_interval_ms: fetch_readback_page_size(request, 5_000),
@@ -3313,6 +3327,37 @@ defmodule AppKit.Bridges.MezzanineBridge do
     RuntimeRow.new(readback_row_attrs(row, now))
   end
 
+  defp state_snapshot_source(query_service, tenant_ref, row, opts) do
+    subject_id = row |> first_value([:subject_id, :subject_ref, :id]) |> readback_ref_id()
+
+    with subject_id when is_binary(subject_id) <- subject_id,
+         {:ok, projection} <-
+           state_snapshot_runtime_projection(
+             query_service,
+             tenant_ref,
+             subject_id,
+             Keyword.put(opts, :runtime_projection?, true)
+           ),
+         true <- runtime_projection_row?(projection) do
+      Map.merge(row, projection)
+    else
+      _reason -> row
+    end
+  end
+
+  defp state_snapshot_runtime_projection(query_service, tenant_ref, subject_id, opts) do
+    cond do
+      service_exports?(query_service, :get_subject_projection, 3) ->
+        query_service.get_subject_projection(tenant_ref, subject_id, opts)
+
+      service_exports?(query_service, :get_subject_projection, 2) ->
+        query_service.get_subject_projection(tenant_ref, subject_id)
+
+      true ->
+        {:error, :runtime_projection_not_available}
+    end
+  end
+
   defp readback_row_attrs(row, now) do
     subject_ref = subject_ref_for_row(row)
 
@@ -3321,19 +3366,248 @@ defmodule AppKit.Bridges.MezzanineBridge do
       run_ref: run_ref_for_row(row, subject_ref),
       execution_ref:
         normalize_optional_readback_ref(
-          first_value(row, [:execution_ref, :execution_id]),
+          first_value(row, [:execution_ref, :execution_id]) ||
+            nested_value(row, [:execution, :execution_id]),
           "execution"
         ),
-      workflow_ref: normalize_optional_readback_ref(fetch_value(row, :workflow_ref), "workflow"),
-      state: first_value(row, [:state, :status]) || "unknown",
+      workflow_ref:
+        normalize_optional_readback_ref(
+          fetch_value(row, :workflow_ref) ||
+            nested_value(row, [:execution, :metadata, :workflow_ref]),
+          "workflow"
+        ),
+      state:
+        first_value(row, [:state, :lifecycle_state, :status, :work_status]) ||
+          nested_value(row, [:execution, :dispatch_state]) ||
+          "unknown",
       status_reason: fetch_value(row, :status_reason),
-      updated_at: fetch_value(row, :updated_at) || now,
+      updated_at:
+        first_value(row, [:updated_at, :computed_at]) ||
+          nested_value(row, [:execution, :updated_at]) ||
+          now,
       session_ref: readback_session_ref(row),
       workspace_ref: readback_workspace_ref(row),
       polling_state: %{checking?: false, poll_interval_ms: 5_000, staleness_ms: 0},
+      token_totals: readback_token_totals(row),
       provider_refs: fetch_value(row, :provider_refs) || %{},
-      extensions: fetch_value(row, :extensions) || %{}
+      extensions: readback_row_extensions(row)
     }
+  end
+
+  defp state_snapshot_token_totals(rows) do
+    rows
+    |> Enum.flat_map(fn row ->
+      case readback_token_totals(row) do
+        nil -> []
+        totals -> [totals]
+      end
+    end)
+    |> case do
+      [] ->
+        nil
+
+      totals ->
+        %{
+          total_input_tokens: Enum.sum(Enum.map(totals, & &1.total_input_tokens)),
+          total_output_tokens: Enum.sum(Enum.map(totals, & &1.total_output_tokens)),
+          total_tokens: Enum.sum(Enum.map(totals, & &1.total_tokens)),
+          cached_input_tokens: Enum.sum(Enum.map(totals, & &1.cached_input_tokens)),
+          source: "runtime:projection"
+        }
+    end
+  end
+
+  defp state_snapshot_retry_rows(rows) do
+    rows
+    |> Enum.flat_map(&readback_retry_rows/1)
+    |> map_each(&retry_row_from_map/1)
+  end
+
+  defp state_snapshot_rate_limits(rows) do
+    rows
+    |> Enum.flat_map(&readback_rate_limit_rows/1)
+    |> map_each(&RateLimitSnapshot.new/1)
+  end
+
+  defp state_snapshot_diagnostics(rows) do
+    rows
+    |> Enum.flat_map(&readback_diagnostic_rows/1)
+    |> map_each(&Diagnostic.new/1)
+  end
+
+  defp readback_token_totals(row) do
+    totals = fetch_value(row, :token_totals) || nested_value(row, [:runtime, :token_totals])
+
+    if is_map(totals) and map_size(totals) > 0 do
+      input = integer_first(totals, [:total_input_tokens, :input_tokens, :input])
+      output = integer_first(totals, [:total_output_tokens, :output_tokens, :output])
+
+      attrs = %{
+        total_input_tokens: input,
+        total_output_tokens: output,
+        total_tokens: integer_first(totals, [:total_tokens, :total], input + output),
+        cached_input_tokens: integer_first(totals, [:cached_input_tokens, :cached_input], 0),
+        source: fetch_value(totals, :source)
+      }
+
+      case TokenTotals.new(attrs) do
+        {:ok, token_totals} -> token_totals
+        {:error, _reason} -> nil
+      end
+    end
+  end
+
+  defp readback_retry_rows(row) do
+    row
+    |> nested_value([:runtime, :retry_queue])
+    |> List.wrap()
+    |> Enum.with_index()
+    |> Enum.flat_map(fn
+      {%{} = retry, index} -> [retry_row_attrs(row, retry, index)]
+      {_retry, _index} -> []
+    end)
+  end
+
+  defp retry_row_attrs(row, retry, index) do
+    subject_id = row |> first_value([:subject_id, :subject_ref, :id]) |> readback_ref_id()
+    retry_ref = fetch_value(retry, :retry_ref)
+
+    attempt_ref =
+      fetch_value(retry, :attempt_ref) || retry_ref || "attempt://#{subject_id}/#{index + 1}"
+
+    %{
+      retry_ref: retry_ref,
+      attempt_ref: attempt_ref,
+      status: fetch_value(retry, :status) || "scheduled",
+      reason: fetch_value(retry, :reason) || fetch_value(retry, :error),
+      scheduled_at: fetch_value(retry, :scheduled_at),
+      due_at: fetch_value(retry, :due_at),
+      delay_ms: fetch_value(retry, :delay_ms),
+      delay_type: fetch_value(retry, :delay_type),
+      continuation?: fetch_value(retry, :continuation?),
+      worker_ref: fetch_value(retry, :worker_ref),
+      workspace_ref: fetch_value(retry, :workspace_ref),
+      last_error_ref: fetch_value(retry, :last_error_ref),
+      metadata: fetch_value(retry, :metadata) || %{}
+    }
+    |> compact_map()
+  end
+
+  defp retry_row_from_map(attrs) do
+    RetryRow.new(attrs)
+  end
+
+  defp readback_rate_limit_rows(row) do
+    row
+    |> nested_value([:runtime, :rate_limit])
+    |> case do
+      values when is_list(values) -> values
+      %{} = value when map_size(value) > 0 -> [value]
+      _value -> []
+    end
+    |> Enum.flat_map(&rate_limit_row_attrs(row, &1))
+  end
+
+  defp rate_limit_row_attrs(row, rate_limit) when is_map(rate_limit) do
+    remaining = fetch_value(rate_limit, :remaining)
+
+    if is_integer(remaining) and remaining >= 0 do
+      subject_id = row |> first_value([:subject_id, :subject_ref, :id]) |> readback_ref_id()
+
+      [
+        %{
+          limit_id:
+            fetch_value(rate_limit, :limit_id) || "rate-limit://subject/#{subject_id}/runtime",
+          name: fetch_value(rate_limit, :name),
+          remaining: remaining,
+          reset_at: fetch_value(rate_limit, :reset_at),
+          window: fetch_value(rate_limit, :window),
+          source_event_ref: fetch_value(rate_limit, :source_event_ref) || subject_ref_for_row(row)
+        }
+        |> compact_map()
+      ]
+    else
+      []
+    end
+  end
+
+  defp rate_limit_row_attrs(_row, _rate_limit), do: []
+
+  defp readback_diagnostic_rows(row) do
+    row
+    |> first_value([:diagnostics])
+    |> List.wrap()
+    |> Enum.filter(&is_map/1)
+  end
+
+  defp readback_row_extensions(row) do
+    existing = fetch_value(row, :extensions) || %{}
+    runtime = fetch_value(row, :runtime) || %{}
+
+    runtime_extension =
+      %{
+        "event_counts" => readback_event_count_rows(fetch_value(runtime, :event_counts)),
+        "token_dedupe" => fetch_value(runtime, :token_dedupe),
+        "metadata" => runtime_readback_metadata(fetch_value(runtime, :metadata) || %{})
+      }
+      |> compact_map()
+
+    extension =
+      %{
+        "runtime" => runtime_extension,
+        "profile_refs" => runtime_profile_refs(row),
+        "source_sync" => fetch_value(row, :source_sync),
+        "reconciliation_warnings" => fetch_value(row, :reconciliation_warnings)
+      }
+      |> Enum.reject(fn {_key, value} -> value in [nil, %{}, []] end)
+      |> Map.new()
+
+    Map.merge(existing, extension)
+  end
+
+  defp runtime_readback_metadata(metadata) when is_map(metadata) do
+    metadata
+    |> Map.take([
+      "scheduler_state",
+      :scheduler_state,
+      "claim_state",
+      :claim_state,
+      "running_state",
+      :running_state,
+      "retry_state",
+      :retry_state,
+      "completion_state",
+      :completion_state,
+      "projection_source",
+      :projection_source,
+      "projection_mode",
+      :projection_mode
+    ])
+    |> Map.new(fn {key, value} -> {to_string(key), value} end)
+  end
+
+  defp runtime_readback_metadata(_metadata), do: %{}
+
+  defp readback_event_count_rows(event_counts) when is_map(event_counts) do
+    Enum.map(event_counts, fn {event_kind, count} ->
+      %{"event_kind" => to_string(event_kind), "count" => count}
+    end)
+  end
+
+  defp readback_event_count_rows(_event_counts), do: nil
+
+  defp runtime_profile_refs(row) do
+    run = fetch_value(row, :run) || %{}
+    governance = fetch_value(row, :governance) || %{}
+
+    %{
+      "runtime_profile_ref" =>
+        fetch_value(run, :runtime_profile_ref) || fetch_value(governance, :runtime_profile_ref),
+      "runtime_profile_kind" =>
+        fetch_value(run, :runtime_profile_kind) || fetch_value(governance, :runtime_profile_kind)
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
   end
 
   defp readback_events(source, now) do
@@ -3377,21 +3651,31 @@ defmodule AppKit.Bridges.MezzanineBridge do
     do: row |> first_value([:subject_ref, :subject_id, :id]) |> normalize_readback_ref("subject")
 
   defp run_ref_for_row(row, subject_ref) do
-    row
-    |> first_value([:run_ref, :run_id])
-    |> case do
-      nil -> subject_ref
-      value -> value
+    cond do
+      value = first_value(row, [:run_ref, :run_id]) ->
+        normalize_readback_ref(value, "run")
+
+      value = nested_value(row, [:run, :run_ref]) ->
+        normalize_readback_ref(value, "lower-run")
+
+      value = nested_value(row, [:lower_receipt, :run_id]) ->
+        normalize_readback_ref(value, "lower-run")
+
+      true ->
+        subject_ref
     end
-    |> normalize_readback_ref("run")
   end
 
   defp first_value(source, keys), do: Enum.find_value(keys, &fetch_value(source, &1))
 
   defp readback_session_ref(row) do
-    case fetch_value(row, :session_ref) || fetch_value(row, :session_id) do
+    direct = fetch_value(row, :session_ref) || fetch_value(row, :session_id)
+
+    case direct || nested_value(row, [:run, :attempt_ref]) ||
+           nested_value(row, [:lower_receipt, :attempt_id]) do
       nil -> nil
-      value -> %{id: normalize_readback_ref(value, "session")}
+      ^direct when not is_nil(direct) -> %{id: normalize_readback_ref(direct, "session")}
+      value -> %{id: normalize_readback_ref(value, "lower-attempt")}
     end
   end
 
@@ -3439,6 +3723,22 @@ defmodule AppKit.Bridges.MezzanineBridge do
       value when is_integer(value) and value > 0 -> value
       _other -> default
     end
+  end
+
+  defp nested_value(source, keys) do
+    Enum.reduce_while(keys, source, fn key, acc ->
+      case fetch_value(acc, key) do
+        nil -> {:halt, nil}
+        value -> {:cont, value}
+      end
+    end)
+  end
+
+  defp integer_first(map, keys, default \\ 0) do
+    Enum.find_value(keys, fn key ->
+      value = fetch_value(map, key)
+      if is_integer(value), do: value
+    end) || default
   end
 
   defp fetch_value(map_or_struct, key) when is_map(map_or_struct) do

@@ -249,6 +249,12 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
       end
     end
 
+    def get_subject_projection(_tenant_id, _subject_id, opts) do
+      if Keyword.get(opts, :runtime_projection?),
+        do: {:error, :runtime_projection_not_found},
+        else: {:error, :bridge_not_found}
+    end
+
     def queue_stats(_tenant_id, _program_id) do
       {:ok, %{active_count: 2, running_count: 1}}
     end
@@ -981,6 +987,51 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
              )
 
     assert queue_stats.active_count == 2
+  end
+
+  test "state snapshot carries neutral runtime projection facts for snapshot readback" do
+    context = request_context()
+
+    assert {:ok, snapshot} =
+             MezzanineBridge.state_snapshot(
+               context,
+               %{"page_size" => 10},
+               work_query_service: FakeWorkQueryService
+             )
+
+    running_row = Enum.find(snapshot.rows, &(&1.subject_ref == "subject://subj-1"))
+
+    assert running_row.state == "awaiting_review"
+    assert running_row.run_ref == "lower-run://lower-run-1"
+    assert running_row.execution_ref == "execution://exec-1"
+    assert running_row.session_ref.id == "lower-attempt://lower-attempt-1"
+    assert running_row.token_totals.total_input_tokens == 120
+    assert running_row.token_totals.total_output_tokens == 45
+    assert running_row.token_totals.total_tokens == 165
+
+    assert running_row.extensions["profile_refs"] == %{
+             "runtime_profile_ref" => "runtime-profile://codex/default",
+             "runtime_profile_kind" => "codex_session"
+           }
+
+    assert get_in(running_row.extensions, ["runtime", "event_counts"]) == [
+             %{"count" => 2, "event_kind" => "tool_call"}
+           ]
+
+    assert snapshot.token_totals.total_input_tokens == 120
+    assert snapshot.token_totals.total_output_tokens == 45
+    assert snapshot.token_totals.total_tokens == 165
+
+    assert [%RetryRow{} = retry_row] = snapshot.retry_rows
+    assert retry_row.retry_ref == "retry://receipt/1"
+    assert retry_row.attempt_ref == "retry://receipt/1"
+    assert retry_row.status == "scheduled"
+    assert retry_row.reason == "rate_limited"
+
+    assert [rate_limit] = snapshot.rate_limits
+    assert rate_limit.limit_id == "rate-limit://subject/subj-1/runtime"
+    assert rate_limit.remaining == 80
+    assert rate_limit.source_event_ref == "subject://subj-1"
   end
 
   test "maps archived hot-subject reads into a terminal surface error carrying manifest_ref" do
