@@ -312,6 +312,13 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert queue_payload.labels == ["ops"]
     assert [%{"identifier" => "SEC-9"}] = queue_payload.blocker_refs
 
+    assert queue_payload.pre_dispatch_revalidation == %{
+             "status" => "released",
+             "reason" => "non_terminal_dependency",
+             "safe_action" => "release_claim",
+             "source_ref" => "linear://tenant-bridge-source-sync/issue/ENG-321"
+           }
+
     assert {:ok, detail} =
              WorkQueryService.get_subject_detail(tenant_id, subject_ref.id)
 
@@ -339,6 +346,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert detail_payload.description == "Trace queue latency"
     assert detail_payload.priority == 2
     assert detail_payload.provider_revision == "2026-03-12T10:00:00Z"
+    assert detail_payload.pre_dispatch_revalidation["reason"] == "non_terminal_dependency"
     assert detail_payload.source_routing["assignee"]["id"] == "usr-linear-viewer"
 
     assert detail_payload.source_routing["provenance"]["source_ref"] ==
@@ -990,10 +998,10 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
       "requested_action_ids" => ["codex.session.turn"],
       "source_binding_refs" => ["linear_primary"],
       "resource_scope_refs" => ["source_binding://linear_primary"],
-      "workspace_policy_ref" => "workspace-policy://extravaganza/coding",
+      "workspace_policy_ref" => "workspace-policy://coding/default",
       "live_provider_allowed" => false,
       "evidence_profile_ref" => "github_pr_plus_workpad",
-      "redaction_profile_ref" => "redaction://extravaganza/default",
+      "redaction_profile_ref" => "redaction://default",
       "prompt_context_recipe_refs" => ["coding_agent_system"]
     }
 
@@ -1238,6 +1246,12 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
       url: "https://linear.app/example/issue/ENG-321",
       created_at: "2026-03-12T09:15:00Z",
       updated_at: "2026-03-12T10:00:00Z",
+      pre_dispatch_revalidation: %{
+        "status" => "released",
+        "reason" => "non_terminal_dependency",
+        "safe_action" => "release_claim",
+        "source_ref" => "linear://tenant-bridge-source-sync/issue/ENG-321"
+      },
       state: %{id: "state-todo", name: "Todo", type: "unstarted"},
       assignee: %{id: "usr-linear-viewer", name: "Taylor Automation"},
       blockers: [

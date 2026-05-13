@@ -2454,6 +2454,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
         source_url: fetch_value(source_payload, :source_url),
         labels: fetch_value(source_payload, :labels),
         blocker_refs: fetch_value(source_payload, :blocker_refs),
+        pre_dispatch_revalidation: fetch_value(source_payload, :pre_dispatch_revalidation),
         source_routing: fetch_value(source_payload, :source_routing),
         opened_at: fetch_value(source_payload, :opened_at),
         updated_at: source_updated_at(source_payload)
@@ -2473,6 +2474,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
         :source_binding_id,
         :source_ref,
         :source_state,
+        :pre_dispatch_revalidation,
         :branch_ref,
         :source_url,
         :source_routing

@@ -286,6 +286,7 @@ defmodule Mezzanine.AppKitBridge.SourceService do
       source_state: attrs.source_state,
       state_mapping: attrs.state_mapping || %{},
       blocker_refs: attrs.blocker_refs || [],
+      pre_dispatch_revalidation: value(attrs, :pre_dispatch_revalidation),
       labels: attrs.labels || [],
       branch_ref: attrs.branch_ref,
       source_url: attrs.source_url,
