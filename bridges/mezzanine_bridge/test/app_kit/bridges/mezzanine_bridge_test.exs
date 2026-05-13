@@ -222,12 +222,12 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
            ],
            acceptance: %{
              "scenario_refs" => ["stacklab://scenario/local-single-node"],
-             "claim_refs" => ["claim://extravaganza/local-run"]
+             "claim_refs" => ["claim://sample-app/local-run"]
            },
            github_pr: %{
              "provider" => "github",
              "evidence_ref" => "evidence://github-pr/pr-dynamic",
-             "content_ref" => "github-pr://nshkrdotcom/extravaganza/17"
+             "content_ref" => "github-pr://example/sample-app/17"
            },
            source_publication: %{
              "source_publication_receipt_ref" => "source-publication://linear_primary/receipt-1",
@@ -806,6 +806,13 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     defp ascii_alnum_dash_byte(_byte, {chars, true}), do: {chars, true}
     defp ascii_alnum_dash_byte(_byte, {chars, false}), do: {[?- | chars], true}
+  end
+
+  defmodule PromptCapturingAgentRuntime do
+    def run(attrs) do
+      send(self(), {:agent_runtime_attrs, attrs})
+      FakeAgentRuntime.run(attrs)
+    end
   end
 
   alias AppKit.Bridges.MezzanineBridge
@@ -1574,6 +1581,44 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     assert future.run_ref == "run://agent-loop/dedupe-agent-run"
   end
 
+  test "maps rendered first prompt metadata into neutral Codex runtime attrs" do
+    context = request_context()
+    prompt = "Implement the governed first prompt path. SECRET_PROMPT_BODY_DO_NOT_EXPOSE"
+    prompt_hash = sha256(prompt)
+
+    request =
+      AgentIntakeBackendConformance.fixture_agent_run_request(%{
+        initial_input_ref: "prompt://product/task/first-turn",
+        params: %{
+          capability_id: "codex.session.turn",
+          provider_family: "codex",
+          max_turns: 1,
+          initial_input: %{
+            body: prompt,
+            input_ref: "prompt://product/task/first-turn",
+            content_hash: prompt_hash,
+            source_ref: "workflow://product/profile/default",
+            rendered?: true,
+            body_redacted?: true
+          }
+        }
+      })
+
+    assert {:ok, future} =
+             MezzanineBridge.start_agent_run(context, request,
+               codex_agent_runtime: PromptCapturingAgentRuntime
+             )
+
+    assert future.accepted?
+    assert_received {:agent_runtime_attrs, attrs}
+    assert attrs.initial_input_body == prompt
+    assert attrs.initial_input_ref == "prompt://product/task/first-turn"
+    assert attrs.initial_input_hash == prompt_hash
+    assert attrs.initial_input_source_ref == "workflow://product/profile/default"
+    assert attrs.initial_input_rendered? == true
+    assert attrs.initial_input_body_redacted? == true
+  end
+
   test "maps widened work-control and operator surface contracts into app-kit DTOs" do
     attach_telemetry(self(), [:unified_trace_assembled])
     context = request_context()
@@ -2066,6 +2111,11 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
   defp namespace_boundary?(byte),
     do: not (byte in ?a..?z or byte in ?A..?Z or byte in ?0..?9 or byte == ?_)
+
+  defp sha256(value) when is_binary(value) do
+    digest = :crypto.hash(:sha256, value)
+    "sha256:" <> Base.encode16(digest, case: :lower)
+  end
 
   defp request_context(metadata \\ %{}) do
     metadata =

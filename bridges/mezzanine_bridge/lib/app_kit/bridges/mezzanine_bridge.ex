@@ -2975,6 +2975,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp agent_run_spec_attrs(%RequestContext{} = context, request) do
     params = request.params || %{}
     profile_bundle = request.profile_bundle
+    initial_input = initial_input_params(params)
 
     run_ref =
       param(params, :run_ref, "run://agent-loop/#{ref_suffix(request.submission_dedupe_key)}")
@@ -2994,6 +2995,12 @@ defmodule AppKit.Bridges.MezzanineBridge do
        trace_id: request.trace_id,
        idempotency_key: request.idempotency_key,
        objective: request.initial_input_ref,
+       initial_input_body: fetch_value(initial_input, :body),
+       initial_input_ref: fetch_value(initial_input, :input_ref) || request.initial_input_ref,
+       initial_input_hash: fetch_value(initial_input, :content_hash),
+       initial_input_source_ref: fetch_value(initial_input, :source_ref),
+       initial_input_rendered?: fetch_value(initial_input, :rendered?),
+       initial_input_body_redacted?: fetch_value(initial_input, :body_redacted?),
        runtime_profile_ref: profile_bundle.runtime_profile_ref,
        tool_catalog_ref: request.tool_catalog_ref,
        authority_context_ref:
@@ -3012,6 +3019,13 @@ defmodule AppKit.Bridges.MezzanineBridge do
        continue_as_new_turn_threshold: param(params, :continue_as_new_turn_threshold, 50),
        source_ref: "actor://#{context.actor_ref.id}"
      }}
+  end
+
+  defp initial_input_params(params) do
+    case fetch_value(params, :initial_input) do
+      %{} = initial_input -> initial_input
+      _missing -> %{}
+    end
   end
 
   defp agent_loop_projection(run_ref, request, opts),
