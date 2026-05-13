@@ -5,6 +5,7 @@ defmodule AppKit.Core.RuntimeReadback.DtosTest do
     CommandReconciliation,
     CommandResult,
     Diagnostic,
+    RetryRow,
     RuntimeRow,
     RuntimeRunDetail,
     RuntimeStateSnapshot,
@@ -80,6 +81,32 @@ defmodule AppKit.Core.RuntimeReadback.DtosTest do
     assert Enum.map(detail.events, & &1.event_ref) == ["event://a", "event://b"]
     assert Enum.at(detail.events, 1).event_kind == "future_async_wait"
     assert detail.persistence_posture.raw_payload_persistence? == false
+  end
+
+  test "retry rows carry continuation due-time readback without product fields" do
+    assert {:ok, retry} =
+             RetryRow.new(%{
+               retry_ref: "retry://work/1",
+               attempt_ref: "attempt://work/1",
+               status: "scheduled",
+               reason: "source_still_active",
+               scheduled_at: "2026-05-10T21:45:01Z",
+               due_at: "2026-05-10T21:45:01Z",
+               delay_ms: 1_000,
+               delay_type: "continuation",
+               continuation?: true,
+               worker_ref: "worker://worker-a",
+               workspace_ref: "workspace://work-1",
+               metadata: %{"safe_action" => "schedule_continuation_retry"}
+             })
+
+    assert retry.delay_ms == 1_000
+    assert retry.delay_type == "continuation"
+    assert retry.continuation?
+    assert retry.due_at == "2026-05-10T21:45:01Z"
+
+    assert %{"due_at" => "2026-05-10T21:45:01Z", "metadata" => %{"safe_action" => _}} =
+             RetryRow.dump(retry)
   end
 
   test "command result supports inspect_memory_proof without fabricating proof refs" do
