@@ -2355,7 +2355,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
         schema_ref: "mezzanine/work_object",
         schema_version: 1,
         payload:
-          compact_map(%{
+          subject_payload(row, %{
             program_id: fetch_value(row, :program_id),
             work_class_id: fetch_value(row, :work_class_id),
             external_ref: fetch_value(row, :external_ref),
@@ -2391,7 +2391,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
         schema_ref: "mezzanine/work_object",
         schema_version: 1,
         payload:
-          compact_map(%{
+          subject_payload(row, %{
             program_id: fetch_value(row, :program_id),
             work_class_id: fetch_value(row, :work_class_id),
             external_ref: fetch_value(row, :external_ref),
@@ -2424,6 +2424,91 @@ defmodule AppKit.Bridges.MezzanineBridge do
       })
     end
   end
+
+  defp subject_payload(row, base_payload) do
+    source_payload = fetch_value(row, :source_payload) || %{}
+
+    issue_payload =
+      fetch_value(source_payload, :issue) || fetch_value(source_payload, :payload) || %{}
+
+    base_payload
+    |> Map.merge(source_payload_projection(source_payload, row, issue_payload))
+    |> compact_map()
+  end
+
+  defp source_payload_projection(source_payload, row, issue_payload) do
+    if source_payload_projection?(source_payload, issue_payload) do
+      %{
+        identifier: source_identifier(source_payload, issue_payload),
+        source_id: source_id(source_payload, issue_payload),
+        description: source_description(row, source_payload, issue_payload),
+        provider: fetch_value(source_payload, :provider),
+        provider_external_ref: fetch_value(source_payload, :provider_external_ref),
+        provider_revision: fetch_value(source_payload, :provider_revision),
+        source_binding_id: fetch_value(source_payload, :source_binding_id),
+        source_ref: fetch_value(source_payload, :source_ref),
+        source_state: fetch_value(source_payload, :source_state),
+        state_mapping: fetch_value(source_payload, :state_mapping),
+        priority: source_priority(row, source_payload),
+        branch_ref: fetch_value(source_payload, :branch_ref),
+        source_url: fetch_value(source_payload, :source_url),
+        labels: fetch_value(source_payload, :labels),
+        blocker_refs: fetch_value(source_payload, :blocker_refs),
+        source_routing: fetch_value(source_payload, :source_routing),
+        opened_at: fetch_value(source_payload, :opened_at),
+        updated_at: source_updated_at(source_payload)
+      }
+      |> compact_map()
+      |> maybe_put(:issue, non_empty_map(issue_payload))
+    else
+      %{}
+    end
+  end
+
+  defp source_payload_projection?(source_payload, issue_payload) do
+    Enum.any?(
+      [
+        :provider,
+        :provider_external_ref,
+        :source_binding_id,
+        :source_ref,
+        :source_state,
+        :branch_ref,
+        :source_url,
+        :source_routing
+      ],
+      &(not is_nil(fetch_value(source_payload, &1)))
+    ) || not is_nil(fetch_value(issue_payload, :identifier))
+  end
+
+  defp source_identifier(source_payload, issue_payload) do
+    fetch_value(source_payload, :identifier) ||
+      fetch_value(issue_payload, :identifier) ||
+      fetch_value(issue_payload, :source_id)
+  end
+
+  defp source_id(source_payload, issue_payload) do
+    fetch_value(source_payload, :source_id) ||
+      fetch_value(issue_payload, :identifier) ||
+      fetch_value(issue_payload, :source_id)
+  end
+
+  defp source_description(row, source_payload, issue_payload) do
+    fetch_value(row, :description) ||
+      fetch_value(source_payload, :description) ||
+      fetch_value(issue_payload, :description)
+  end
+
+  defp source_priority(row, source_payload) do
+    fetch_value(row, :priority) || fetch_value(source_payload, :priority)
+  end
+
+  defp source_updated_at(source_payload) do
+    fetch_value(source_payload, :updated_at) || fetch_value(source_payload, :provider_revision)
+  end
+
+  defp non_empty_map(value) when is_map(value) and map_size(value) > 0, do: value
+  defp non_empty_map(_value), do: nil
 
   defp execution_ref_from_row(row, %SubjectRef{} = subject_ref) do
     case fetch_value(row, :active_execution_id) do

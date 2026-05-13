@@ -1,7 +1,7 @@
 defmodule Mezzanine.AppKitBridge.WorkServicesTest do
   use ExUnit.Case, async: false
 
-  alias AppKit.Core.{RequestContext, RunRef, RunRequest, TraceIdentity}
+  alias AppKit.Core.{PageRequest, RequestContext, RunRef, RunRequest, TraceIdentity}
   alias Ecto.Adapters.SQL.Sandbox
 
   alias Mezzanine.Archival.ArchivalManifest
@@ -290,6 +290,28 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
 
     assert subject_ref.subject_kind == "work_object"
 
+    assert {:ok, page_request} = PageRequest.new(%{limit: 10})
+
+    assert {:ok, queue_page} =
+             AppKit.Bridges.MezzanineBridge.list_subjects(context, nil, page_request, [])
+
+    queue_entry =
+      Enum.find(
+        queue_page.entries,
+        &(Map.get(&1.payload, :provider_external_ref) == "lin-issue-321")
+      )
+
+    assert queue_entry
+    queue_payload = queue_entry.payload
+    assert queue_payload.identifier == "ENG-321"
+    assert queue_payload.provider_external_ref == "lin-issue-321"
+    assert queue_payload.source_binding_id == "linear-primary"
+    assert queue_payload.source_state == "Todo"
+    assert queue_payload.branch_ref == "eng-321-investigate-deployment-rollback"
+    assert queue_payload.source_url == "https://linear.app/example/issue/ENG-321"
+    assert queue_payload.labels == ["ops"]
+    assert [%{"identifier" => "SEC-9"}] = queue_payload.blocker_refs
+
     assert {:ok, detail} =
              WorkQueryService.get_subject_detail(tenant_id, subject_ref.id)
 
@@ -297,6 +319,19 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert detail.external_ref == "linear://tenant-bridge-source-sync/issue/ENG-321"
     assert [%{blocker_kind: "source_blocked"}] = detail.blocking_conditions
     assert detail.next_step_preview.status == "blocked"
+
+    assert {:ok, appkit_detail} =
+             AppKit.Bridges.MezzanineBridge.get_subject(context, subject_ref, [])
+
+    detail_payload = appkit_detail.payload
+    assert detail_payload.identifier == "ENG-321"
+    assert detail_payload.description == "Trace queue latency"
+    assert detail_payload.priority == 2
+    assert detail_payload.provider_revision == "2026-03-12T10:00:00Z"
+    assert detail_payload.source_routing["assignee"]["id"] == "usr-linear-viewer"
+
+    assert detail_payload.source_routing["provenance"]["source_ref"] ==
+             "linear://tenant-bridge-source-sync/issue/ENG-321"
   end
 
   test "source service delegates Linear current-state lookups through an authorized invocation" do
