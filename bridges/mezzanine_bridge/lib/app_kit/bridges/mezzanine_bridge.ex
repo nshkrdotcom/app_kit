@@ -3043,30 +3043,138 @@ defmodule AppKit.Bridges.MezzanineBridge do
   end
 
   defp runtime_run_detail_from_agent_loop_projection(projection, now) do
+    stall_decision = runtime_stall_decision_from_projection(projection)
+    runtime_events = fetch_value(projection, :runtime_events) || []
+
     with {:ok, runtime_row} <-
            RuntimeRow.new(%{
              subject_ref: fetch_value(projection, :subject_ref),
              run_ref: fetch_value(projection, :run_ref),
              workflow_ref: fetch_value(projection, :workflow_ref),
-             state: fetch_value(projection, :status),
+             state: stalled_runtime_state(stall_decision) || fetch_value(projection, :status),
+             status_reason: stalled_runtime_status_reason(stall_decision),
              updated_at: now,
-             polling_state: %{checking?: false, poll_interval_ms: 1_000, staleness_ms: 0}
+             polling_state: %{checking?: false, poll_interval_ms: 1_000, staleness_ms: 0},
+             extensions:
+               runtime_stall_extensions(fetch_value(projection, :extensions), stall_decision)
            }),
          {:ok, events} <-
-           map_each(fetch_value(projection, :runtime_events) || [], fn event ->
-             event |> public_readback_map() |> RuntimeEventRow.new()
-           end) do
+           map_each(
+             runtime_events ++
+               stalled_runtime_events(projection, runtime_events, stall_decision, now),
+             fn event ->
+               event |> public_readback_map() |> RuntimeEventRow.new()
+             end
+           ) do
       RuntimeRunDetail.new(%{
         run_ref: fetch_value(projection, :run_ref),
         runtime_row: runtime_row,
         events: events,
+        retries: stalled_runtime_retries(stall_decision),
         turns: Enum.map(fetch_value(projection, :turn_states) || [], &public_readback_map/1),
         budget_state: fetch_value(projection, :budget_state),
         candidate_fact_refs: fetch_value(projection, :candidate_fact_refs) || [],
         memory_proof_refs: fetch_value(projection, :memory_proof_refs) || [],
         agent_loop_diagnostics: [],
-        diagnostics: action_receipt_diagnostics(projection)
+        diagnostics:
+          action_receipt_diagnostics(projection) ++ stalled_runtime_diagnostics(stall_decision)
       })
+    end
+  end
+
+  defp runtime_stall_decision_from_projection(projection) do
+    case fetch_value(projection, :stall_decision) ||
+           fetch_value(projection, :runtime_stall_decision) do
+      %{} = decision -> decision
+      _other -> nil
+    end
+  end
+
+  defp stalled_runtime_state(nil), do: nil
+
+  defp stalled_runtime_state(stall_decision),
+    do: fetch_value(stall_decision, :runtime_state) || fetch_value(stall_decision, :state)
+
+  defp stalled_runtime_status_reason(nil), do: nil
+
+  defp stalled_runtime_status_reason(stall_decision) do
+    fetch_value(stall_decision, :status_reason) ||
+      normalize_string(fetch_value(stall_decision, :reason))
+  end
+
+  defp runtime_stall_extensions(existing_extensions, nil),
+    do: public_readback_map(existing_extensions || %{})
+
+  defp runtime_stall_extensions(existing_extensions, stall_decision) do
+    existing_extensions
+    |> public_readback_map()
+    |> case do
+      %{} = extensions -> extensions
+      _other -> %{}
+    end
+    |> Map.put("stall", stalled_runtime_extension(stall_decision))
+  end
+
+  defp stalled_runtime_extension(stall_decision) do
+    %{
+      "elapsed_ms" => fetch_value(stall_decision, :elapsed_ms),
+      "stall_timeout_ms" => fetch_value(stall_decision, :stall_timeout_ms),
+      "last_activity_at" => fetch_value(stall_decision, :last_activity_at),
+      "activity_source" => fetch_value(stall_decision, :activity_source),
+      "safe_action" => normalize_string(fetch_value(stall_decision, :safe_action)),
+      "workflow_signal" => fetch_value(stall_decision, :workflow_signal),
+      "cancel_lower_run?" => fetch_value(stall_decision, :cancel_lower_run?),
+      "cleanup_workspace?" => fetch_value(stall_decision, :cleanup_workspace?)
+    }
+    |> compact_map()
+  end
+
+  defp stalled_runtime_events(_projection, _events, nil, _now), do: []
+
+  defp stalled_runtime_events(projection, events, stall_decision, now) do
+    [
+      %{
+        event_ref:
+          fetch_value(stall_decision, :event_ref) ||
+            "event://#{ref_suffix(fetch_value(projection, :run_ref) || "runtime")}/runtime-stalled",
+        event_seq: stalled_runtime_event_seq(events),
+        event_kind: "runtime.stalled",
+        observed_at: fetch_value(stall_decision, :observed_at) || now,
+        subject_ref: fetch_value(projection, :subject_ref),
+        run_ref: fetch_value(projection, :run_ref),
+        workflow_ref: fetch_value(projection, :workflow_ref),
+        attempt_ref: fetch_value(stall_decision, :attempt_ref),
+        session_ref: fetch_value(stall_decision, :session_ref),
+        level: :warning,
+        message_summary: "Runtime activity exceeded stall timeout",
+        extensions: stalled_runtime_extension(stall_decision)
+      }
+    ]
+  end
+
+  defp stalled_runtime_event_seq(events) do
+    events
+    |> Enum.map(&fetch_value(&1, :event_seq))
+    |> Enum.filter(&is_integer/1)
+    |> Enum.max(fn -> 0 end)
+    |> Kernel.+(1)
+  end
+
+  defp stalled_runtime_retries(nil), do: []
+
+  defp stalled_runtime_retries(stall_decision) do
+    case fetch_value(stall_decision, :retry) do
+      %{} = retry -> [public_readback_map(retry)]
+      _other -> []
+    end
+  end
+
+  defp stalled_runtime_diagnostics(nil), do: []
+
+  defp stalled_runtime_diagnostics(stall_decision) do
+    case fetch_value(stall_decision, :diagnostic) do
+      %{} = diagnostic -> [diagnostic]
+      _other -> []
     end
   end
 

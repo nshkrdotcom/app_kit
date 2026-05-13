@@ -2,6 +2,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
   use ExUnit.Case, async: true
 
   alias AppKit.Core.{BindingDescriptor, Telemetry}
+  alias AppKit.Core.RuntimeReadback.RetryRow
 
   defmodule TelemetryForwarder do
     def handle_event(event, measurements, metadata, test_pid) do
@@ -1416,6 +1417,89 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     assert Enum.any?(detail.events, &(&1.event_kind == "run.terminal"))
     assert [%{state: "completed"}] = detail.turns
     assert detail.budget_state["turns_remaining"] == 2
+  end
+
+  test "headless run detail projects neutral stalled runtime decision and retry readback" do
+    context = request_context()
+
+    request =
+      AgentIntakeBackendConformance.fixture_agent_run_request(%{
+        params: %{max_turns: 3, fixture_script: "success_first_try"}
+      })
+
+    assert {:ok, future} =
+             MezzanineBridge.start_agent_run(context, request,
+               agent_loop_runtime: FakeAgentRuntime
+             )
+
+    assert {:ok, projection} =
+             FakeAgentRuntime.run(%{
+               tenant_ref: request.tenant_ref,
+               installation_ref: request.installation_ref,
+               profile_ref: "profile://app-kit/agent-loop",
+               subject_ref: request.subject_ref,
+               run_ref: future.run_ref,
+               trace_id: request.trace_id,
+               idempotency_key: request.idempotency_key,
+               objective: request.initial_input_ref,
+               runtime_profile_ref: request.profile_bundle.runtime_profile_ref,
+               tool_catalog_ref: request.tool_catalog_ref,
+               authority_context_ref:
+                 "authority-context://agent-loop/run-agent-loop-dedupe-agent-run",
+               memory_profile_ref: request.profile_bundle.memory_profile_ref,
+               artifact_policy_ref: "artifact-policy://app-kit/agent-loop",
+               max_turns: 3,
+               timeout_policy: %{turn_timeout_ms: 30_000},
+               profile_bundle: Map.from_struct(request.profile_bundle)
+             })
+
+    stall_decision = %{
+      runtime_state: "stalled",
+      status_reason: "stall_timeout",
+      elapsed_ms: 330_000,
+      stall_timeout_ms: 300_000,
+      last_activity_at: "2026-05-13T00:04:30Z",
+      activity_source: "last_runtime_event_at",
+      safe_action: :terminate_lower_and_schedule_retry,
+      workflow_signal: "operator.cancel",
+      session_ref: "session://neutral/stalled",
+      attempt_ref: "attempt://neutral/stalled/1",
+      retry: %{
+        retry_ref: "retry://neutral/stalled/2",
+        attempt_ref: "attempt://neutral/stalled/2",
+        status: "scheduled",
+        reason: "stall_timeout",
+        due_at: "2026-05-13T00:10:10Z",
+        delay_ms: 10_000,
+        delay_type: "failure_backoff"
+      },
+      diagnostic: %{
+        severity: :warning,
+        code: "runtime_stall_timeout",
+        message: "runtime activity exceeded stall timeout"
+      }
+    }
+
+    assert {:ok, detail} =
+             MezzanineBridge.runtime_run_detail(
+               context,
+               future.run_ref,
+               %{
+                 agent_loop_projection:
+                   Map.merge(projection, %{status: "running", stall_decision: stall_decision})
+               },
+               []
+             )
+
+    assert detail.runtime_row.state == "stalled"
+    assert detail.runtime_row.status_reason == "stall_timeout"
+    assert detail.runtime_row.extensions["stall"]["elapsed_ms"] == 330_000
+    assert Enum.any?(detail.events, &(&1.event_kind == "runtime.stalled"))
+
+    assert [%{"status" => "scheduled", "reason" => "stall_timeout"}] =
+             Enum.map(detail.retries, &RetryRow.dump/1)
+
+    assert [%{code: "runtime_stall_timeout"}] = Enum.map(detail.diagnostics, &Map.from_struct/1)
   end
 
   test "routes Codex AgentIntake requests to the codex agent runtime" do
