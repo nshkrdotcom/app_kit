@@ -59,6 +59,74 @@ for the canonical `sha256:` checksum used by that v1 posture.
 Active workspace buildout. The repo uses a non-umbrella workspace layout with
 core surface packages, bridge packages, and a proving example host.
 
+## Current Stack Role
+
+AppKit is the northbound contract layer for the active `gn-ten` stack. Product
+code should see AppKit as the platform API, not as a convenience wrapper over
+lower repos. A product can start work, read operator state, apply review
+decisions, publish source updates, request leases, inspect runtime readback, or
+render an operator console without knowing whether the backing implementation is
+Mezzanine, Citadel, Jido Integration, OuterBrain, Execution Plane, or a
+fixture-backed proof host.
+
+The most important boundary is behavioral, not just dependency direction:
+
+- product code expresses product intent and receives product-safe DTOs
+- AppKit normalizes that intent into public surface contracts
+- bridge packages translate AppKit DTOs into lower owner packages
+- lower packages remain free to change internals as long as AppKit contracts
+  stay stable
+
+This is why AppKit owns the product no-bypass scanner. The scanner protects the
+architecture from accidental direct imports of lower modules that would make a
+product depend on implementation details or bypass governance, leases,
+redaction, and tenant-scoped checks.
+
+## Current Delivered Surfaces
+
+The workspace currently exposes these product-facing families:
+
+- **Work and runtime:** `AppKit.WorkControl`, `AppKit.WorkSurface`,
+  `AppKit.HeadlessSurface`, `AppKit.RuntimeSurface`, and
+  `AppKit.RunGovernance` provide governed run start/control, runtime
+  projections, headless state/readback, live-effect receipts, and product-safe
+  runtime profile application.
+- **Operator and review:** `AppKit.OperatorSurface` and
+  `AppKit.ReviewSurface` provide queue/detail/review readbacks, review
+  decisions, lower-read leases, stream-attach leases, and operator-visible
+  projection state.
+- **Source and installation:** `AppKit.SourceSurface` and
+  `AppKit.InstallationSurface` provide Linear-style source intake,
+  current-state lookup, source publication, dynamic tool execution, installation
+  bootstrap, and authoring-bundle import.
+- **Semantic and app surfaces:** chat, conversation, domain, model, prompt,
+  guardrail, memory, budget, cost, eval, replay, coordination, optimization,
+  adaptive control, skill, hive, and scope/target helpers provide stable DTO
+  seams for richer product experiences.
+- **Web surfaces:** shared components, operator console, replay viewer, cost
+  dashboard, eval studio, and policy authoring packages give product shells a
+  reusable UI vocabulary without making AppKit a product.
+
+Recent Extravaganza-driven work added concrete runtime readback through AppKit:
+Codex initial input, first prompt, continuation metadata, app-server protocol,
+session start/stop, event stream, token totals, stalled runtime state, Linear
+candidate/current-state/publication/GraphQL DTOs, source blocker denial, dry-run
+publication forwarding, GitHub PR evidence receipts, and runtime status/logs.
+
+## How To Use AppKit Correctly
+
+Product code should depend on AppKit surface modules and DTOs. It should not
+instantiate lower Mezzanine resources, call Citadel policy internals, invoke
+Jido connectors directly, inspect Execution Plane lane packages, or read lower
+stores. When a product needs a capability that AppKit does not expose yet, add
+the lower contract in the owning repo, then expose the smallest product-safe
+AppKit surface needed by the product.
+
+Tests and fixture hosts may pass explicit backends through AppKit backend
+options. Governed runtime code must not use ambient app env as authority for
+backend selection, provider identity, tenant identity, source binding, or
+runtime target choice.
+
 ## Development
 
 The project targets Elixir `~> 1.19` and Erlang/OTP `28`. The pinned toolchain
