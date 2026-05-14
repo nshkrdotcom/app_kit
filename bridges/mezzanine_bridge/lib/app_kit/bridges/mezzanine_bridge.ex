@@ -101,6 +101,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   }
 
   alias AppKit.Core.RuntimeSurface.{
+    GitHubPrBranchCleanupReceipt,
     GitHubPrEvidenceReceipt,
     LiveEffectReceipt,
     RuntimeLogPage,
@@ -267,6 +268,23 @@ defmodule AppKit.Bridges.MezzanineBridge do
            |> normalize_result_attrs()
            |> Map.put_new(:tenant_ref, tenant_id)
            |> GitHubPrEvidenceReceipt.new() do
+      {:ok, receipt}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+    end
+  end
+
+  @impl true
+  def cleanup_github_pr_branch(%RequestContext{} = context, request, opts \\ [])
+      when is_map(request) and is_list(opts) do
+    with {:ok, tenant_id} <- tenant_id(context),
+         attrs <- github_pr_branch_cleanup_attrs(context, tenant_id, request),
+         {:ok, result} <- github_pr_branch_cleanup_service(opts).cleanup(attrs, opts),
+         {:ok, receipt} <-
+           result
+           |> normalize_result_attrs()
+           |> Map.put_new(:tenant_ref, tenant_id)
+           |> GitHubPrBranchCleanupReceipt.new() do
       {:ok, receipt}
     else
       {:error, reason} -> normalize_surface_error(reason)
@@ -1926,7 +1944,23 @@ defmodule AppKit.Bridges.MezzanineBridge do
         Mezzanine.IntegrationBridge.GitHubPrEvidenceRuntime
       )
 
+  defp github_pr_branch_cleanup_service(opts),
+    do:
+      Keyword.get(
+        opts,
+        :github_pr_branch_cleanup_service,
+        Mezzanine.IntegrationBridge.GitHubPrBranchCleanupRuntime
+      )
+
   defp github_pr_evidence_attrs(%RequestContext{} = context, tenant_id, request) do
+    request
+    |> Map.new()
+    |> Map.put_new(:tenant_id, tenant_id)
+    |> Map.put_new(:actor_id, context.actor_ref.id)
+    |> Map.put_new(:trace_id, context.trace_id)
+  end
+
+  defp github_pr_branch_cleanup_attrs(%RequestContext{} = context, tenant_id, request) do
     request
     |> Map.new()
     |> Map.put_new(:tenant_id, tenant_id)

@@ -4,6 +4,7 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
   alias AppKit.Bridges.MezzanineBridge
 
   alias AppKit.Core.RuntimeSurface.{
+    GitHubPrBranchCleanupReceipt,
     GitHubPrEvidenceReceipt,
     LiveEffectReceipt,
     RuntimeLogPage,
@@ -18,10 +19,10 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
       {:ok,
        %{
          status: :updated,
-         profile_ref: "runtime-profile://#{tenant_id}/symphony",
-         program_ref: "program://symphony-workflow",
-         policy_bundle_ref: "policy-bundle://symphony",
-         work_class_ref: "work-class://symphony",
+         profile_ref: "runtime-profile://#{tenant_id}/sample",
+         program_ref: "program://sample-workflow",
+         policy_bundle_ref: "policy-bundle://sample",
+         work_class_ref: "work-class://sample",
          placement_profile_ref: "placement-profile://local",
          metadata: %{"source" => "runtime-profile-service"}
        }}
@@ -93,7 +94,7 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
          repo: attrs.repo,
          pull_number: attrs.pull_number,
          head_sha: attrs.ref,
-         evidence_ref: "evidence://github-pr/nshkrdotcom/extravaganza/17/test",
+         evidence_ref: "evidence://github-pr/nshkrdotcom/sample-app/17/test",
          credential_present?: true,
          credential_redeemed?: true,
          provider_request_sent?: true,
@@ -101,11 +102,45 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
          receipt_recorded?: true,
          product_readback_confirmed?: true,
          provider_ids: %{pull_request: "17"},
-         provider_refs: %{pull_request: "https://github.com/nshkrdotcom/extravaganza/pull/17"},
+         provider_refs: %{pull_request: "https://github.com/nshkrdotcom/sample-app/pull/17"},
          write_operations: [],
          receipt_refs: %{
            lower_request_refs: ["lower-request://github/pr-fetch"],
            lower_receipt_refs: ["lower-receipt://github/pr-fetch/succeeded"]
+         }
+       }}
+    end
+  end
+
+  defmodule GitHubPrBranchCleanupService do
+    def cleanup(attrs, opts) do
+      send(self(), {:cleanup_github_pr_branch, attrs, opts})
+
+      {:ok,
+       %{
+         effect_ref: "live-effect://github/pr-branch-cleanup/cleanup-branch",
+         provider: "github",
+         effect: "github_pr_branch_cleanup",
+         status: :receipt_recorded,
+         capability_ids: ["github.pr.list", "github.comment.create", "github.pr.update"],
+         repo: attrs.repo,
+         branch: attrs.branch,
+         pull_numbers: [17],
+         closed_pull_numbers: [17],
+         credential_present?: true,
+         credential_redeemed?: true,
+         provider_request_sent?: true,
+         provider_response_received?: true,
+         receipt_recorded?: true,
+         product_readback_confirmed?: true,
+         provider_ids: %{pull_requests: ["17"]},
+         provider_refs: %{
+           pull_requests: ["https://github.com/nshkrdotcom/sample-app/pull/17"]
+         },
+         write_operations: ["github.comment.create", "github.pr.update"],
+         receipt_refs: %{
+           lower_request_refs: ["lower-request://github/pr-cleanup"],
+           lower_receipt_refs: ["lower-receipt://github/pr-cleanup/succeeded"]
          }
        }}
     end
@@ -122,8 +157,8 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
 
     assert_received {:runtime_profile_apply, "tenant-1", ^runtime_profile}
     assert result.status == :updated
-    assert result.profile_ref == "runtime-profile://tenant-1/symphony"
-    assert result.program_ref == "program://symphony-workflow"
+    assert result.profile_ref == "runtime-profile://tenant-1/sample"
+    assert result.program_ref == "program://sample-workflow"
   end
 
   test "exposes status and logs as operator-safe runtime DTOs" do
@@ -200,7 +235,7 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
 
   test "fetches GitHub PR evidence through the Mezzanine evidence service" do
     context = request_context()
-    request = %{repo: "nshkrdotcom/extravaganza", pull_number: 17, ref: "head-sha"}
+    request = %{repo: "nshkrdotcom/sample-app", pull_number: 17, ref: "head-sha"}
 
     assert {:ok, %GitHubPrEvidenceReceipt{} = receipt} =
              MezzanineBridge.fetch_github_pr_evidence(context, request,
@@ -210,7 +245,7 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
     assert_received {:fetch_github_pr_evidence, attrs, opts}
     assert attrs.tenant_id == "tenant-1"
     assert attrs.actor_id == "operator"
-    assert attrs.repo == "nshkrdotcom/extravaganza"
+    assert attrs.repo == "nshkrdotcom/sample-app"
     assert attrs.pull_number == 17
     assert attrs.ref == "head-sha"
     assert Keyword.fetch!(opts, :github_pr_evidence_service) == GitHubPrEvidenceService
@@ -219,13 +254,35 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
     assert receipt.write_operations == []
   end
 
+  test "cleans up GitHub PRs for a branch through the Mezzanine cleanup service" do
+    context = request_context()
+    request = %{repo: "nshkrdotcom/sample-app", branch: "cleanup-branch", confirm_close?: true}
+
+    assert {:ok, %GitHubPrBranchCleanupReceipt{} = receipt} =
+             MezzanineBridge.cleanup_github_pr_branch(context, request,
+               github_pr_branch_cleanup_service: GitHubPrBranchCleanupService
+             )
+
+    assert_received {:cleanup_github_pr_branch, attrs, opts}
+    assert attrs.tenant_id == "tenant-1"
+    assert attrs.actor_id == "operator"
+    assert attrs.repo == "nshkrdotcom/sample-app"
+    assert attrs.branch == "cleanup-branch"
+    assert attrs.confirm_close? == true
+    assert Keyword.fetch!(opts, :github_pr_branch_cleanup_service) == GitHubPrBranchCleanupService
+    assert receipt.provider == "github"
+    assert receipt.effect == "github_pr_branch_cleanup"
+    assert receipt.closed_pull_numbers == [17]
+    assert receipt.write_operations == ["github.comment.create", "github.pr.update"]
+  end
+
   defp request_context(metadata \\ %{}) do
     {:ok, context} =
       AppKit.Core.RequestContext.new(%{
         trace_id: "11111111111111111111111111111111",
         actor_ref: %{id: "operator", kind: :human},
         tenant_ref: %{id: "tenant-1"},
-        installation_ref: %{id: "installation-1", pack_slug: "extravaganza"},
+        installation_ref: %{id: "installation-1", pack_slug: "sample-host"},
         metadata: metadata
       })
 
@@ -234,9 +291,9 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
 
   defp runtime_profile do
     %{
-      "program" => %{"slug" => "symphony-workflow"},
-      "policy_bundle" => %{"name" => "symphony_policy"},
-      "work_class" => %{"name" => "symphony_work"},
+      "program" => %{"slug" => "sample-workflow"},
+      "policy_bundle" => %{"name" => "sample_policy"},
+      "work_class" => %{"name" => "sample_work"},
       "placement_profile" => %{"profile_id" => "local"}
     }
   end

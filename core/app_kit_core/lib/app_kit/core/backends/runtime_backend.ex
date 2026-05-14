@@ -6,6 +6,7 @@ defmodule AppKit.Core.Backends.RuntimeBackend do
   alias AppKit.Core.{RequestContext, SurfaceError}
 
   alias AppKit.Core.RuntimeSurface.{
+    GitHubPrBranchCleanupReceipt,
     GitHubPrEvidenceReceipt,
     LiveEffectReceipt,
     RuntimeLogPage,
@@ -27,4 +28,7 @@ defmodule AppKit.Core.Backends.RuntimeBackend do
 
   @callback fetch_github_pr_evidence(RequestContext.t(), map(), keyword()) ::
               {:ok, GitHubPrEvidenceReceipt.t()} | {:error, SurfaceError.t()}
+
+  @callback cleanup_github_pr_branch(RequestContext.t(), map(), keyword()) ::
+              {:ok, GitHubPrBranchCleanupReceipt.t()} | {:error, SurfaceError.t()}
 end
