@@ -357,10 +357,33 @@ defmodule Mezzanine.AppKitBridge.SourceService do
         {:ok, invocation, opts}
 
       {:error, :missing_authorized_source_invocation} ->
-        prepare_linear_api_key_invocation(context, allowed_operations, subject_hint, opts)
+        prepare_connection_invocation(context, allowed_operations, subject_hint, opts)
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp prepare_connection_invocation(context, allowed_operations, subject_hint, opts) do
+    case string_opt(opts, :connection_id) do
+      nil ->
+        prepare_linear_api_key_invocation(context, allowed_operations, subject_hint, opts)
+
+      connection_id ->
+        with {:ok, service} <- linear_connection_ingress_service(opts),
+             {:ok, prepared} <-
+               service.prepare_linear_connection_invocation(
+                 connection_id,
+                 invocation_ingress_attrs(context, allowed_operations, subject_hint, opts),
+                 opts
+               ),
+             {:ok, %AuthorizedInvocation{} = invocation} <-
+               prepared_authorized_invocation(prepared) do
+          {:ok, invocation, merge_prepared_source_opts(opts, prepared)}
+        else
+          {:error, reason} -> {:error, reason}
+          _other -> {:error, :invalid_prepared_linear_invocation}
+        end
     end
   end
 
@@ -398,6 +421,16 @@ defmodule Mezzanine.AppKitBridge.SourceService do
       {:ok, service}
     else
       {:error, :linear_credential_ingress_not_configured}
+    end
+  end
+
+  defp linear_connection_ingress_service(opts) do
+    service = integration_bridge_service(opts)
+
+    if service_exports?(service, :prepare_linear_connection_invocation, 3) do
+      {:ok, service}
+    else
+      {:error, :linear_connection_ingress_not_configured}
     end
   end
 
@@ -440,6 +473,17 @@ defmodule Mezzanine.AppKitBridge.SourceService do
       :invoke_opts, left, right -> Keyword.merge(List.wrap(left), List.wrap(right))
       _key, _left, right -> right
     end)
+  end
+
+  defp string_opt(opts, key) do
+    case Keyword.get(opts, key) do
+      value when is_binary(value) ->
+        value = String.trim(value)
+        if value == "", do: nil, else: value
+
+      _other ->
+        nil
+    end
   end
 
   defp service_exports?(service, function, arity) when is_atom(service) do

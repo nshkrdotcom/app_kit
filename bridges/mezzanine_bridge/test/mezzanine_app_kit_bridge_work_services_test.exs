@@ -91,6 +91,43 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     end
   end
 
+  defmodule ExistingConnectionBridge do
+    def prepare_linear_connection_invocation(connection_id, attrs, opts \\ []) do
+      send(self(), {:prepare_linear_connection_invocation, connection_id, attrs, opts})
+
+      {:ok,
+       %{
+         authorized_invocation:
+           Process.get(:connection_ingress_invocation) ||
+             raise("connection ingress invocation missing"),
+         connection_id: connection_id,
+         credential_ref_id: Keyword.get(opts, :credential_ref_id),
+         source_opts: [
+           invoke_opts: [connection_id: connection_id],
+           credential_ref_id: Keyword.get(opts, :credential_ref_id),
+           credential_lease_ref: Keyword.get(opts, :credential_lease_ref),
+           credential_redeemed?: true
+         ]
+       }}
+    end
+
+    def fetch_linear_candidates(invocation, source_binding, opts) do
+      send(self(), {:fetch_linear_candidates, invocation, source_binding, opts})
+
+      {:ok,
+       %{
+         source_binding_id: source_binding.source_binding_id,
+         credential_redeemed?: Keyword.get(opts, :credential_redeemed?),
+         provider_request_sent?: true,
+         provider_response_received?: true,
+         source_intake: %{
+           operation: "linear.issues.list",
+           subject_attrs: [%{source_ref: "linear://inst/issue/ENG-321"}]
+         }
+       }}
+    end
+  end
+
   defmodule StateUpdateBridge do
     def update_linear_issue_state(invocation, attrs, opts) do
       send(self(), {:update_linear_issue_state, invocation, attrs, opts})
@@ -401,6 +438,38 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     refute inspect(result) =~ api_key
   after
     Process.delete(:credential_ingress_invocation)
+  end
+
+  test "source service uses explicit connection binding without raw credential material" do
+    context = request_context_by_slug("tenant-linear-existing", "coding-ops", "coding_task")
+    invocation = authorized_invocation_allowing(["linear.users.get_self", "linear.issues.list"])
+    Process.put(:connection_ingress_invocation, invocation)
+
+    assert {:ok, result} =
+             SourceService.fetch_linear_candidates(context, source_binding(),
+               connection_id: "connection-linear-existing",
+               credential_ref_id: "credential-ref-linear-existing",
+               credential_lease_ref: "credential-lease-linear-existing",
+               integration_bridge_service: ExistingConnectionBridge
+             )
+
+    assert_received {:prepare_linear_connection_invocation, "connection-linear-existing", attrs,
+                     prepare_opts}
+
+    assert attrs.tenant_id == "tenant-linear-existing"
+    assert attrs.allowed_operations == ["linear.users.get_self", "linear.issues.list"]
+    assert Keyword.fetch!(prepare_opts, :credential_ref_id) == "credential-ref-linear-existing"
+
+    assert_received {:fetch_linear_candidates, ^invocation, requested_binding, opts}
+    assert requested_binding.source_binding_id == "linear-primary"
+    assert Keyword.fetch!(opts, :invoke_opts)[:connection_id] == "connection-linear-existing"
+    assert Keyword.fetch!(opts, :credential_ref_id) == "credential-ref-linear-existing"
+    assert Keyword.fetch!(opts, :credential_lease_ref) == "credential-lease-linear-existing"
+    assert result.credential_redeemed? == true
+    refute Keyword.has_key?(opts, :linear_api_key)
+    refute Keyword.has_key?(opts, :api_key)
+  after
+    Process.delete(:connection_ingress_invocation)
   end
 
   test "source service prepares Linear API key credentials before current-state lookup" do
