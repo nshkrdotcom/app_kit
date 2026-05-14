@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/nshkrdotcom/app_kit/actions/workflows/ci.yml">
-    <img alt="GitHub Actions Workflow Status" src="https://github.com/nshkrdotcom/app_kit/actions/workflows/ci.yml/badge.svg" />
+  <a href="https://github.com/nshkrdotcom/app_kit">
+    <img alt="GitHub: app_kit" src="https://img.shields.io/badge/GitHub-app_kit-0b0f14?logo=github" />
   </a>
   <a href="https://github.com/nshkrdotcom/app_kit/blob/main/LICENSE">
     <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-0b0f14.svg" />
@@ -126,6 +126,33 @@ Tests and fixture hosts may pass explicit backends through AppKit backend
 options. Governed runtime code must not use ambient app env as authority for
 backend selection, provider identity, tenant identity, source binding, or
 runtime target choice.
+
+## Boundary Diagrams
+
+```mermaid
+flowchart TD
+  Product["Product repo"] --> Surface["AppKit public surfaces"]
+  Surface --> DTO["Product-safe DTOs"]
+  Surface --> Bridge["AppKit bridge packages"]
+  Bridge --> Mezzanine["Mezzanine engines"]
+  Mezzanine --> Citadel["Citadel governance"]
+  Mezzanine --> Jido["Jido Integration"]
+  Jido --> Execution["Execution Plane"]
+  Product -. "blocked by no-bypass" .-> Citadel
+  Product -. "blocked by no-bypass" .-> Jido
+  Product -. "blocked by no-bypass" .-> Execution
+```
+
+```mermaid
+flowchart LR
+  Work["Work and runtime"] --> Operator["Operator state"]
+  Operator --> Review["Review decisions"]
+  Review --> Evidence["Evidence and audit refs"]
+  Source["Source intake"] --> Work
+  Install["Installation and packs"] --> Work
+  Semantic["Semantic, model, eval, cost, replay"] --> Operator
+  Web["Reusable web surfaces"] --> Operator
+```
 
 ## Development
 
