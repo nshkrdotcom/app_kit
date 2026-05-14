@@ -3099,6 +3099,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
              status_reason: stalled_runtime_status_reason(stall_decision),
              updated_at: now,
              polling_state: %{checking?: false, poll_interval_ms: 1_000, staleness_ms: 0},
+             token_totals: readback_token_totals(projection),
              extensions:
                runtime_stall_extensions(fetch_value(projection, :extensions), stall_decision)
            }),

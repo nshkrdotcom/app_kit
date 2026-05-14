@@ -752,6 +752,13 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
          workflow_ref: workflow_ref,
          status: "completed",
          terminal_state: "completed",
+         token_totals: %{
+           total_input_tokens: 120,
+           total_output_tokens: 45,
+           total_tokens: 165,
+           cached_input_tokens: 12,
+           source: "runtime:event:codex-token-accounting"
+         },
          turn_states: [
            %{
              turn_ref: "turn://agent-loop/#{ref_suffix(run_ref)}/1",
@@ -1419,6 +1426,11 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     assert detail.run_ref == future.run_ref
     assert detail.runtime_row.workflow_ref == future.workflow_ref
+    assert detail.runtime_row.token_totals.total_input_tokens == 120
+    assert detail.runtime_row.token_totals.total_output_tokens == 45
+    assert detail.runtime_row.token_totals.total_tokens == 165
+    assert detail.runtime_row.token_totals.cached_input_tokens == 12
+    assert detail.runtime_row.token_totals.source == "runtime:event:codex-token-accounting"
     assert Enum.any?(detail.events, &(&1.event_kind == "run.terminal"))
     assert detail.budget_state["turns_remaining"] == 2
 
@@ -1472,6 +1484,8 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     assert detail.run_ref == future.run_ref
     assert detail.runtime_row.workflow_ref == future.workflow_ref
     assert detail.runtime_row.state == "completed"
+    assert detail.runtime_row.token_totals.total_tokens == 165
+    assert detail.runtime_row.token_totals.source == "runtime:event:codex-token-accounting"
     assert Enum.any?(detail.events, &(&1.event_kind == "run.terminal"))
     assert [%{state: "completed"}] = detail.turns
     assert detail.budget_state["turns_remaining"] == 2
