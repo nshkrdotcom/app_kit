@@ -131,27 +131,27 @@ runtime target choice.
 
 ```mermaid
 flowchart TD
-  Product["Product repo"] --> Surface["AppKit public surfaces"]
-  Surface --> DTO["Product-safe DTOs"]
-  Surface --> Bridge["AppKit bridge packages"]
-  Bridge --> Mezzanine["Mezzanine engines"]
-  Mezzanine --> Citadel["Citadel governance"]
-  Mezzanine --> Jido["Jido Integration"]
-  Jido --> Execution["Execution Plane"]
-  Product -. "blocked by no-bypass" .-> Citadel
-  Product -. "blocked by no-bypass" .-> Jido
-  Product -. "blocked by no-bypass" .-> Execution
+  Product["Product<br/>repo"] --> Surface["AppKit<br/>surfaces"]
+  Surface --> DTO["Safe<br/>DTOs"]
+  Surface --> Bridge["Bridge<br/>packages"]
+  Bridge --> Mezzanine["Mezzanine<br/>engines"]
+  Mezzanine --> Citadel["Citadel<br/>governance"]
+  Mezzanine --> Jido["Jido<br/>Integration"]
+  Jido --> Execution["Execution<br/>Plane"]
+  Product -. "blocked" .-> Citadel
+  Product -. "blocked" .-> Jido
+  Product -. "blocked" .-> Execution
 ```
 
 ```mermaid
 flowchart LR
-  Work["Work and runtime"] --> Operator["Operator state"]
-  Operator --> Review["Review decisions"]
-  Review --> Evidence["Evidence and audit refs"]
-  Source["Source intake"] --> Work
-  Install["Installation and packs"] --> Work
-  Semantic["Semantic, model, eval, cost, replay"] --> Operator
-  Web["Reusable web surfaces"] --> Operator
+  Work["Work<br/>runtime"] --> Operator["Operator<br/>state"]
+  Operator --> Review["Review<br/>decisions"]
+  Review --> Evidence["Evidence<br/>audit refs"]
+  Source["Source<br/>intake"] --> Work
+  Install["Install<br/>packs"] --> Work
+  Semantic["Semantic<br/>surfaces"] --> Operator
+  Web["Web<br/>surfaces"] --> Operator
 ```
 
 ## Development
