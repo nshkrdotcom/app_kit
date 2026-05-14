@@ -154,6 +154,29 @@ flowchart LR
   Web["Web<br/>surfaces"] --> Operator
 ```
 
+## Developer Flow Diagrams
+
+```mermaid
+flowchart TD
+  Product["Product<br/>code"] --> Surface["Surface<br/>module"]
+  Surface --> Backend["Backend<br/>behaviour"]
+  Backend --> Bridge["AppKit<br/>bridge"]
+  Bridge --> Service["Bridge<br/>service"]
+  Service --> Owner["Lower<br/>owner"]
+  Owner --> DTO["Mapped<br/>DTO"]
+  DTO --> Product
+```
+
+```mermaid
+flowchart LR
+  Edit["DTO<br/>edit"] --> Registry["Schema<br/>registry"]
+  Registry --> Generate["Boundary<br/>generator"]
+  Generate --> Tests["Mapper<br/>tests"]
+  Tests --> Scan["No-bypass<br/>scan"]
+  Scan --> Manifest["Release<br/>manifest"]
+  Manifest --> Track["Projection<br/>branch"]
+```
+
 ## Development
 
 The project targets Elixir `~> 1.19` and Erlang/OTP `28`. The pinned toolchain
