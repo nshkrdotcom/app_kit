@@ -33,14 +33,22 @@ defmodule AppKit.Core.PersistencePostureTest do
   end
 
   test "unsupported durable adapter selections fail instead of falling back to memory" do
-    assert_raise ArgumentError, ~r/unsupported persistence profile/, fn ->
-      PersistencePosture.resolve(:runtime_projection, persistence_profile: :integration_postgres)
-    end
+    error =
+      assert_raise ArgumentError, fn ->
+        PersistencePosture.resolve(:runtime_projection,
+          persistence_profile: :integration_postgres
+        )
+      end
 
-    assert_raise ArgumentError, ~r/unsupported persistence profile/, fn ->
-      PersistencePosture.resolve(:runtime_projection,
-        persistence_profile_ref: "persistence-profile://local-restart-safe"
-      )
-    end
+    assert String.contains?(Exception.message(error), "unsupported persistence profile")
+
+    error =
+      assert_raise ArgumentError, fn ->
+        PersistencePosture.resolve(:runtime_projection,
+          persistence_profile_ref: "persistence-profile://local-restart-safe"
+        )
+      end
+
+    assert String.contains?(Exception.message(error), "unsupported persistence profile")
   end
 end
