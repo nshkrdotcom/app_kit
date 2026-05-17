@@ -5,10 +5,11 @@ defmodule AppKit.SourceSurfaceTest do
     @behaviour AppKit.Core.Backends.SourceBackend
 
     @impl true
-    def sync_linear_issues(_context, source_page, _opts) do
+    def sync_source(_context, source_role_ref, source_page, _opts) do
       {:ok,
        %{
          operation: "linear.issues.list",
+         source_role_ref: source_role_ref,
          subjects: [
            %{
              payload: %{
@@ -22,14 +23,22 @@ defmodule AppKit.SourceSurfaceTest do
     end
 
     @impl true
-    def current_linear_issue_states(_context, issue_ids, _source_binding, _opts) do
-      {:ok, %{requested_issue_ids: issue_ids, missing_issue_ids: []}}
+    def current_states(_context, source_role_ref, request, _opts) do
+      {:ok,
+       %{
+         source_role_ref: source_role_ref,
+         requested_issue_ids: Map.fetch!(request, :issue_ids),
+         missing_issue_ids: []
+       }}
     end
 
     @impl true
-    def fetch_linear_candidates(_context, source_binding, _opts) do
+    def fetch_candidates(_context, source_role_ref, request, _opts) do
+      source_binding = Map.fetch!(request, :source_binding)
+
       {:ok,
        %{
+         source_role_ref: source_role_ref,
          source_binding_id: source_binding.source_binding_id,
          source_intake: %{
            operation: "linear.issues.list",
@@ -83,36 +92,44 @@ defmodule AppKit.SourceSurfaceTest do
     context = request_context()
 
     assert {:ok, sync} =
-             SourceSurface.sync_linear_issues(
+             SourceSurface.sync_source(
                context,
+               :issue_tracker,
                %{issues: [%{id: "lin-issue-321"}], page_info: %{has_next_page: false}},
                source_backend: FakeSourceBackend
              )
 
+    assert sync.source_role_ref == :issue_tracker
     assert sync.operation == "linear.issues.list"
     assert hd(sync.subjects).payload.external_ref == "linear://inst-1/issue/ENG-321"
 
     assert {:ok, states} =
-             SourceSurface.current_linear_issue_states(
+             SourceSurface.current_states(
                context,
-               ["lin-issue-321"],
-               %{source_binding_id: "linear-primary"},
+               :issue_tracker,
+               %{
+                 issue_ids: ["lin-issue-321"],
+                 source_binding: %{source_binding_id: "linear-primary"}
+               },
                source_backend: FakeSourceBackend
              )
 
+    assert states.source_role_ref == :issue_tracker
     assert states.requested_issue_ids == ["lin-issue-321"]
   end
 
-  test "delegates Linear candidate fetch through the configured backend" do
+  test "delegates source candidate fetch through the configured backend" do
     context = request_context()
 
     assert {:ok, candidates} =
-             SourceSurface.fetch_linear_candidates(
+             SourceSurface.fetch_candidates(
                context,
-               %{source_binding_id: "linear-primary"},
+               :issue_tracker,
+               %{source_binding: %{source_binding_id: "linear-primary"}},
                source_backend: FakeSourceBackend
              )
 
+    assert candidates.source_role_ref == :issue_tracker
     assert candidates.source_binding_id == "linear-primary"
     assert candidates.source_intake.operation == "linear.issues.list"
     assert candidates.provider_request_sent? == true

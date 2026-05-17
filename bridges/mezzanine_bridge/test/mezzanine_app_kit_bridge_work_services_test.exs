@@ -22,11 +22,18 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
   alias Mezzanine.Work.{WorkClass, WorkObject}
 
   defmodule CurrentStateBridge do
-    def fetch_linear_current_issue_states(invocation, issue_ids, source_binding, opts) do
-      send(self(), {:current_state_requested, invocation, issue_ids, source_binding, opts})
+    def source_read_allowed_operations(_source_role_ref, _source_binding, _opts),
+      do: ["linear.users.get_self", "linear.issues.list"]
+
+    def fetch_source_current_states(invocation, source_role_ref, issue_ids, source_binding, opts) do
+      send(
+        self(),
+        {:current_state_requested, invocation, source_role_ref, issue_ids, source_binding, opts}
+      )
 
       {:ok,
        %{
+         source_role_ref: source_role_ref,
          source_current_state: %{
            operation: "linear.issues.list",
            subject_attrs: [%{provider_external_ref: "lin-issue-321"}],
@@ -37,6 +44,9 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
   end
 
   defmodule CredentialIngressBridge do
+    def source_read_allowed_operations(_source_role_ref, _source_binding, _opts),
+      do: ["linear.users.get_self", "linear.issues.list"]
+
     def prepare_linear_api_key_invocation(api_key, attrs, opts \\ []) do
       send(self(), {:prepare_linear_api_key_invocation, api_key, attrs, opts})
 
@@ -55,11 +65,12 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
        }}
     end
 
-    def fetch_linear_candidates(invocation, source_binding, opts) do
-      send(self(), {:fetch_linear_candidates, invocation, source_binding, opts})
+    def fetch_source_candidates(invocation, source_role_ref, source_binding, opts) do
+      send(self(), {:fetch_source_candidates, invocation, source_role_ref, source_binding, opts})
 
       {:ok,
        %{
+         source_role_ref: source_role_ref,
          source_binding_id: source_binding.source_binding_id,
          credential_redeemed?: Keyword.get(opts, :credential_redeemed?),
          provider_request_sent?: true,
@@ -71,14 +82,16 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
        }}
     end
 
-    def fetch_linear_current_issue_states(invocation, issue_ids, source_binding, opts) do
+    def fetch_source_current_states(invocation, source_role_ref, issue_ids, source_binding, opts) do
       send(
         self(),
-        {:fetch_linear_current_issue_states, invocation, issue_ids, source_binding, opts}
+        {:fetch_source_current_states, invocation, source_role_ref, issue_ids, source_binding,
+         opts}
       )
 
       {:ok,
        %{
+         source_role_ref: source_role_ref,
          credential_redeemed?: Keyword.get(opts, :credential_redeemed?),
          provider_request_sent?: true,
          provider_response_received?: true,
@@ -92,6 +105,9 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
   end
 
   defmodule ExistingConnectionBridge do
+    def source_read_allowed_operations(_source_role_ref, _source_binding, _opts),
+      do: ["linear.users.get_self", "linear.issues.list"]
+
     def prepare_linear_connection_invocation(connection_id, attrs, opts \\ []) do
       send(self(), {:prepare_linear_connection_invocation, connection_id, attrs, opts})
 
@@ -111,11 +127,12 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
        }}
     end
 
-    def fetch_linear_candidates(invocation, source_binding, opts) do
-      send(self(), {:fetch_linear_candidates, invocation, source_binding, opts})
+    def fetch_source_candidates(invocation, source_role_ref, source_binding, opts) do
+      send(self(), {:fetch_source_candidates, invocation, source_role_ref, source_binding, opts})
 
       {:ok,
        %{
+         source_role_ref: source_role_ref,
          source_binding_id: source_binding.source_binding_id,
          credential_redeemed?: Keyword.get(opts, :credential_redeemed?),
          provider_request_sent?: true,
@@ -295,15 +312,16 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert stats.active_count >= 1
   end
 
-  test "source service syncs Linear issue pages through SourceEngine and durable work intake" do
+  test "source service syncs product-role source pages through adapter normalization and durable work intake" do
     %{tenant_id: tenant_id, program: program, work_class: work_class} =
       fixture_stack("tenant-bridge-source-sync")
 
     context = request_context_by_slug(tenant_id, program.slug, work_class.name)
 
     assert {:ok, result} =
-             SourceService.sync_linear_issues(
+             SourceService.sync_source(
                context,
+               :issue_tracker,
                %{
                  issues: [linear_issue()],
                  page_info: %{has_next_page: false},
@@ -312,6 +330,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
                }
              )
 
+    assert result.source_role_ref == :issue_tracker
     assert result.source_intake.operation == "linear.issues.list"
 
     assert [
@@ -390,29 +409,30 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
              "linear://tenant-bridge-source-sync/issue/ENG-321"
   end
 
-  test "source service delegates Linear current-state lookups through an authorized invocation" do
+  test "source service delegates current-state lookups with a product role ref" do
     context = request_context_by_slug("tenant-current-state", "coding-ops", "coding_task")
     invocation = authorized_invocation_allowing(["linear.issues.list"])
 
     assert {:ok, result} =
-             SourceService.current_linear_issue_states(
+             SourceService.current_states(
                context,
-               ["lin-issue-321", "lin-missing"],
-               source_binding(),
+               :issue_tracker,
+               %{issue_ids: ["lin-issue-321", "lin-missing"], source_binding: source_binding()},
                authorized_invocation: invocation,
                integration_bridge_service: CurrentStateBridge
              )
 
+    assert result.source_role_ref == :issue_tracker
     assert result.source_current_state.operation == "linear.issues.list"
     assert result.source_current_state.missing_issue_ids == ["lin-missing"]
 
-    assert_received {:current_state_requested, ^invocation, ["lin-issue-321", "lin-missing"],
-                     requested_binding, _opts}
+    assert_received {:current_state_requested, ^invocation, :issue_tracker,
+                     ["lin-issue-321", "lin-missing"], requested_binding, _opts}
 
     assert requested_binding.source_binding_id == "linear-primary"
   end
 
-  test "source service prepares Linear API key credentials before candidate fetch" do
+  test "source service prepares API key credentials before candidate fetch" do
     context = request_context_by_slug("tenant-linear-live", "coding-ops", "coding_task")
     invocation = authorized_invocation_allowing(["linear.users.get_self", "linear.issues.list"])
     api_key = "lin_api_live_secret"
@@ -420,7 +440,10 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     Process.put(:credential_ingress_invocation, invocation)
 
     assert {:ok, result} =
-             SourceService.fetch_linear_candidates(context, source_binding(),
+             SourceService.fetch_candidates(
+               context,
+               :issue_tracker,
+               %{source_binding: source_binding()},
                linear_api_key: api_key,
                integration_bridge_service: CredentialIngressBridge
              )
@@ -430,11 +453,16 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert attrs.installation_id == "tenant-linear-live"
     assert attrs.allowed_operations == ["linear.users.get_self", "linear.issues.list"]
 
-    assert_received {:fetch_linear_candidates, ^invocation, requested_binding, opts}
+    assert attrs.subject_id == "issue_tracker"
+
+    assert_received {:fetch_source_candidates, ^invocation, :issue_tracker, requested_binding,
+                     opts}
+
     assert requested_binding.source_binding_id == "linear-primary"
     assert Keyword.fetch!(opts, :invoke_opts)[:connection_id] == "connection-linear-live"
     refute Keyword.has_key?(opts, :linear_api_key)
     assert result.credential_redeemed? == true
+    assert result.source_role_ref == :issue_tracker
     refute inspect(result) =~ api_key
   after
     Process.delete(:credential_ingress_invocation)
@@ -446,7 +474,10 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     Process.put(:connection_ingress_invocation, invocation)
 
     assert {:ok, result} =
-             SourceService.fetch_linear_candidates(context, source_binding(),
+             SourceService.fetch_candidates(
+               context,
+               :issue_tracker,
+               %{source_binding: source_binding()},
                connection_id: "connection-linear-existing",
                credential_ref_id: "credential-ref-linear-existing",
                credential_lease_ref: "credential-lease-linear-existing",
@@ -460,19 +491,24 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert attrs.allowed_operations == ["linear.users.get_self", "linear.issues.list"]
     assert Keyword.fetch!(prepare_opts, :credential_ref_id) == "credential-ref-linear-existing"
 
-    assert_received {:fetch_linear_candidates, ^invocation, requested_binding, opts}
+    assert attrs.subject_id == "issue_tracker"
+
+    assert_received {:fetch_source_candidates, ^invocation, :issue_tracker, requested_binding,
+                     opts}
+
     assert requested_binding.source_binding_id == "linear-primary"
     assert Keyword.fetch!(opts, :invoke_opts)[:connection_id] == "connection-linear-existing"
     assert Keyword.fetch!(opts, :credential_ref_id) == "credential-ref-linear-existing"
     assert Keyword.fetch!(opts, :credential_lease_ref) == "credential-lease-linear-existing"
     assert result.credential_redeemed? == true
+    assert result.source_role_ref == :issue_tracker
     refute Keyword.has_key?(opts, :linear_api_key)
     refute Keyword.has_key?(opts, :api_key)
   after
     Process.delete(:connection_ingress_invocation)
   end
 
-  test "source service prepares Linear API key credentials before current-state lookup" do
+  test "source service prepares API key credentials before current-state lookup" do
     context = request_context_by_slug("tenant-linear-current-live", "coding-ops", "coding_task")
     invocation = authorized_invocation_allowing(["linear.users.get_self", "linear.issues.list"])
     api_key = "lin_api_live_secret"
@@ -480,10 +516,10 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     Process.put(:credential_ingress_invocation, invocation)
 
     assert {:ok, result} =
-             SourceService.current_linear_issue_states(
+             SourceService.current_states(
                context,
-               ["lin-issue-321"],
-               source_binding(),
+               :issue_tracker,
+               %{issue_ids: ["lin-issue-321"], source_binding: source_binding()},
                linear_api_key: api_key,
                integration_bridge_service: CredentialIngressBridge
              )
@@ -491,15 +527,16 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert_received {:prepare_linear_api_key_invocation, ^api_key, attrs, _opts}
     assert attrs.tenant_id == "tenant-linear-current-live"
     assert attrs.allowed_operations == ["linear.users.get_self", "linear.issues.list"]
-    assert attrs.subject_id == "linear-primary"
+    assert attrs.subject_id == "issue_tracker"
 
-    assert_received {:fetch_linear_current_issue_states, ^invocation, ["lin-issue-321"],
+    assert_received {:fetch_source_current_states, ^invocation, :issue_tracker, ["lin-issue-321"],
                      requested_binding, opts}
 
     assert requested_binding.source_binding_id == "linear-primary"
     assert Keyword.fetch!(opts, :invoke_opts)[:connection_id] == "connection-linear-live"
     refute Keyword.has_key?(opts, :linear_api_key)
     assert result.credential_redeemed? == true
+    assert result.source_role_ref == :issue_tracker
     refute inspect(result) =~ api_key
   after
     Process.delete(:credential_ingress_invocation)

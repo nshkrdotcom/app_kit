@@ -112,21 +112,23 @@ defmodule AppKit.Bridges.MezzanineBridge do
   alias Mezzanine.Archival.Query, as: ArchivalQuery
 
   @impl true
-  def sync_linear_issues(%RequestContext{} = context, source_page, opts)
-      when is_map(source_page) and is_list(opts) do
-    case source_service(opts).sync_linear_issues(context, source_page, opts) do
+  def sync_source(%RequestContext{} = context, source_role_ref, source_page, opts)
+      when (is_atom(source_role_ref) or is_binary(source_role_ref)) and is_map(source_page) and
+             is_list(opts) do
+    case source_service(opts).sync_source(context, source_role_ref, source_page, opts) do
       {:ok, result} -> {:ok, result}
       {:error, reason} -> normalize_surface_error(reason)
     end
   end
 
   @impl true
-  def current_linear_issue_states(%RequestContext{} = context, issue_ids, source_binding, opts)
-      when is_list(issue_ids) and is_map(source_binding) and is_list(opts) do
+  def current_states(%RequestContext{} = context, source_role_ref, request, opts)
+      when (is_atom(source_role_ref) or is_binary(source_role_ref)) and is_map(request) and
+             is_list(opts) do
     service = source_service(opts)
 
-    if service_exports?(service, :current_linear_issue_states, 4) do
-      case service.current_linear_issue_states(context, issue_ids, source_binding, opts) do
+    if service_exports?(service, :current_states, 4) do
+      case service.current_states(context, source_role_ref, request, opts) do
         {:ok, result} -> {:ok, result}
         {:error, reason} -> normalize_surface_error(reason)
       end
@@ -136,12 +138,13 @@ defmodule AppKit.Bridges.MezzanineBridge do
   end
 
   @impl true
-  def fetch_linear_candidates(%RequestContext{} = context, source_binding, opts)
-      when is_map(source_binding) and is_list(opts) do
+  def fetch_candidates(%RequestContext{} = context, source_role_ref, request, opts)
+      when (is_atom(source_role_ref) or is_binary(source_role_ref)) and is_map(request) and
+             is_list(opts) do
     service = source_service(opts)
 
-    if service_exports?(service, :fetch_linear_candidates, 3) do
-      case service.fetch_linear_candidates(context, source_binding, opts) do
+    if service_exports?(service, :fetch_candidates, 4) do
+      case service.fetch_candidates(context, source_role_ref, request, opts) do
         {:ok, result} -> {:ok, result}
         {:error, reason} -> normalize_surface_error(reason)
       end

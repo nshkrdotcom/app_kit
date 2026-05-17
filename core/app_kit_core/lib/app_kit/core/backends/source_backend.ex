@@ -5,13 +5,15 @@ defmodule AppKit.Core.Backends.SourceBackend do
 
   alias AppKit.Core.{RequestContext, SurfaceError}
 
-  @callback sync_linear_issues(RequestContext.t(), map(), keyword()) ::
+  @type source_role_ref :: atom() | String.t()
+
+  @callback sync_source(RequestContext.t(), source_role_ref(), map(), keyword()) ::
               {:ok, map()} | {:error, SurfaceError.t()}
 
-  @callback current_linear_issue_states(RequestContext.t(), [String.t()], map(), keyword()) ::
+  @callback current_states(RequestContext.t(), source_role_ref(), map(), keyword()) ::
               {:ok, map()} | {:error, SurfaceError.t()}
 
-  @callback fetch_linear_candidates(RequestContext.t(), map(), keyword()) ::
+  @callback fetch_candidates(RequestContext.t(), source_role_ref(), map(), keyword()) ::
               {:ok, map()} | {:error, SurfaceError.t()}
 
   @callback publish_linear_source(RequestContext.t(), map(), keyword()) ::

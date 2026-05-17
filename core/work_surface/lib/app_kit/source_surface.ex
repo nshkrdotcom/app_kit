@@ -6,30 +6,30 @@ defmodule AppKit.SourceSurface do
   alias AppKit.BackendConfig
   alias AppKit.Core.{RequestContext, SurfaceError}
 
-  @spec sync_linear_issues(RequestContext.t(), map(), keyword()) ::
+  @type source_role_ref :: atom() | String.t()
+
+  @spec sync_source(RequestContext.t(), source_role_ref(), map(), keyword()) ::
           {:ok, map()} | {:error, SurfaceError.t()}
-  def sync_linear_issues(%RequestContext{} = context, source_page, opts \\ [])
-      when is_map(source_page) and is_list(opts) do
-    backend(opts).sync_linear_issues(context, source_page, opts)
+  def sync_source(%RequestContext{} = context, source_role_ref, source_page, opts \\ [])
+      when (is_atom(source_role_ref) or is_binary(source_role_ref)) and is_map(source_page) and
+             is_list(opts) do
+    backend(opts).sync_source(context, source_role_ref, source_page, opts)
   end
 
-  @spec current_linear_issue_states(RequestContext.t(), [String.t()], map(), keyword()) ::
+  @spec current_states(RequestContext.t(), source_role_ref(), map(), keyword()) ::
           {:ok, map()} | {:error, SurfaceError.t()}
-  def current_linear_issue_states(
-        %RequestContext{} = context,
-        issue_ids,
-        source_binding,
-        opts \\ []
-      )
-      when is_list(issue_ids) and is_map(source_binding) and is_list(opts) do
-    backend(opts).current_linear_issue_states(context, issue_ids, source_binding, opts)
+  def current_states(%RequestContext{} = context, source_role_ref, request, opts \\ [])
+      when (is_atom(source_role_ref) or is_binary(source_role_ref)) and is_map(request) and
+             is_list(opts) do
+    backend(opts).current_states(context, source_role_ref, request, opts)
   end
 
-  @spec fetch_linear_candidates(RequestContext.t(), map(), keyword()) ::
+  @spec fetch_candidates(RequestContext.t(), source_role_ref(), map(), keyword()) ::
           {:ok, map()} | {:error, SurfaceError.t()}
-  def fetch_linear_candidates(%RequestContext{} = context, source_binding, opts \\ [])
-      when is_map(source_binding) and is_list(opts) do
-    backend(opts).fetch_linear_candidates(context, source_binding, opts)
+  def fetch_candidates(%RequestContext{} = context, source_role_ref, request, opts \\ [])
+      when (is_atom(source_role_ref) or is_binary(source_role_ref)) and is_map(request) and
+             is_list(opts) do
+    backend(opts).fetch_candidates(context, source_role_ref, request, opts)
   end
 
   @spec publish_linear_source(RequestContext.t(), map(), keyword()) ::

@@ -5,24 +5,33 @@ defmodule Mezzanine.AppKitBridge.SourceService do
   alias Mezzanine.AppKitBridge.{ProgramContextService, WorkQueryService}
   alias Mezzanine.IntegrationBridge
   alias Mezzanine.IntegrationBridge.AuthorizedInvocation
-  alias Mezzanine.SourceEngine.LinearSourceFlow
 
   @default_source_binding_id "linear-primary"
 
-  @spec sync_linear_issues(RequestContext.t(), map(), keyword()) ::
+  @type source_role_ref :: atom() | String.t()
+
+  @spec sync_source(RequestContext.t(), source_role_ref(), map(), keyword()) ::
           {:ok, map()} | {:error, term()}
-  def sync_linear_issues(%RequestContext{} = context, source_page, opts \\ [])
-      when is_map(source_page) and is_list(opts) do
+  def sync_source(%RequestContext{} = context, source_role_ref, source_page, opts \\ [])
+      when (is_atom(source_role_ref) or is_binary(source_role_ref)) and is_map(source_page) and
+             is_list(opts) do
     with {:ok, route} <- route_context(context, opts),
          binding <- source_binding(context, source_page, opts),
          envelope <- source_envelope(context, source_page, binding),
          {:ok, source_intake} <-
-           LinearSourceFlow.normalize_candidate_page(page_output(source_page), envelope, binding),
+           integration_bridge_service(opts).normalize_source_page(
+             source_role_ref,
+             page_output(source_page),
+             envelope,
+             binding,
+             opts
+           ),
          {:ok, subjects, skipped} <-
            ingest_subject_attrs(source_intake.subject_attrs, route, opts) do
       {:ok,
        %{
          operation: source_intake.operation,
+         source_role_ref: source_role_ref,
          source_binding_id: source_intake.source_binding_id,
          source_intake: source_intake,
          subjects: subjects,
@@ -32,25 +41,25 @@ defmodule Mezzanine.AppKitBridge.SourceService do
     end
   end
 
-  @spec current_linear_issue_states(RequestContext.t(), [String.t()], map(), keyword()) ::
+  @spec current_states(RequestContext.t(), source_role_ref(), map(), keyword()) ::
           {:ok, map()} | {:error, term()}
-  def current_linear_issue_states(
-        %RequestContext{} = context,
-        issue_ids,
-        source_binding,
-        opts \\ []
-      )
-      when is_list(issue_ids) and is_map(source_binding) and is_list(opts) do
+  def current_states(%RequestContext{} = context, source_role_ref, request, opts \\ [])
+      when (is_atom(source_role_ref) or is_binary(source_role_ref)) and is_map(request) and
+             is_list(opts) do
+    source_binding = source_binding(context, request, opts)
+
     with {:ok, _tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
+         {:ok, issue_ids} <- issue_ids(request),
          {:ok, invocation, opts} <-
            authorized_invocation(
              context,
-             ["linear.users.get_self", "linear.issues.list"],
-             value(source_binding, :source_binding_id) || @default_source_binding_id,
+             source_allowed_operations(source_role_ref, source_binding, opts),
+             source_role_ref,
              opts
            ) do
-      integration_bridge_service(opts).fetch_linear_current_issue_states(
+      integration_bridge_service(opts).fetch_source_current_states(
         invocation,
+        source_role_ref,
         issue_ids,
         source_binding,
         opts
@@ -58,19 +67,27 @@ defmodule Mezzanine.AppKitBridge.SourceService do
     end
   end
 
-  @spec fetch_linear_candidates(RequestContext.t(), map(), keyword()) ::
+  @spec fetch_candidates(RequestContext.t(), source_role_ref(), map(), keyword()) ::
           {:ok, map()} | {:error, term()}
-  def fetch_linear_candidates(%RequestContext{} = context, source_binding, opts \\ [])
-      when is_map(source_binding) and is_list(opts) do
+  def fetch_candidates(%RequestContext{} = context, source_role_ref, request, opts \\ [])
+      when (is_atom(source_role_ref) or is_binary(source_role_ref)) and is_map(request) and
+             is_list(opts) do
+    source_binding = source_binding(context, request, opts)
+
     with {:ok, _tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
          {:ok, invocation, opts} <-
            authorized_invocation(
              context,
-             ["linear.users.get_self", "linear.issues.list"],
-             value(source_binding, :source_binding_id) || @default_source_binding_id,
+             source_allowed_operations(source_role_ref, source_binding, opts),
+             source_role_ref,
              opts
            ) do
-      integration_bridge_service(opts).fetch_linear_candidates(invocation, source_binding, opts)
+      integration_bridge_service(opts).fetch_source_candidates(
+        invocation,
+        source_role_ref,
+        source_binding,
+        opts
+      )
     end
   end
 
@@ -203,6 +220,38 @@ defmodule Mezzanine.AppKitBridge.SourceService do
       "completed" => ["Done", "Completed"],
       "rejected" => ["Canceled", "Duplicate"]
     })
+  end
+
+  defp issue_ids(request) do
+    request
+    |> value(:issue_ids)
+    |> List.wrap()
+    |> Enum.filter(&is_binary/1)
+    |> Enum.reject(&(&1 == ""))
+    |> case do
+      [] -> {:error, :missing_source_current_state_ids}
+      ids -> {:ok, ids}
+    end
+  end
+
+  defp source_allowed_operations(source_role_ref, source_binding, opts) do
+    explicit_operations =
+      Keyword.get(opts, :allowed_operations) || value(source_binding, :allowed_operations)
+
+    cond do
+      is_list(explicit_operations) and explicit_operations != [] ->
+        explicit_operations
+
+      service_exports?(integration_bridge_service(opts), :source_read_allowed_operations, 3) ->
+        integration_bridge_service(opts).source_read_allowed_operations(
+          source_role_ref,
+          source_binding,
+          opts
+        )
+
+      true ->
+        []
+    end
   end
 
   defp source_envelope(%RequestContext{} = context, source_page, binding) do
