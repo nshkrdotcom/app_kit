@@ -26,7 +26,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   ]
   @agent_projection_table __MODULE__.AgentProjectionStore
 
-  alias AppKit.Core.AgentIntake.RunOutcomeFuture
+  alias AppKit.Core.AgentIntake.{AgentRunRequest, RunOutcomeFuture}
 
   alias AppKit.Core.{
     ActionResult,
@@ -101,8 +101,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
   }
 
   alias AppKit.Core.RuntimeSurface.{
-    GitHubPrBranchCleanupReceipt,
-    GitHubPrEvidenceReceipt,
     LiveEffectReceipt,
     RuntimeLogPage,
     RuntimeProfileApplyResult,
@@ -179,7 +177,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
       when (is_atom(runtime_role_ref) or is_binary(runtime_role_ref)) and
              (is_atom(operation_role_ref) or is_binary(operation_role_ref)) and is_map(request) and
              is_list(opts) do
-    with {:ok, agent_request} <- AppKit.Core.AgentIntake.AgentRunRequest.new(request),
+    with {:ok, agent_request} <- AgentRunRequest.new(request),
          {:ok, spec_attrs} <- agent_run_spec_attrs(context, agent_request),
          {:ok, projection} <-
            runtime_gateway_service(opts).invoke_runtime_operation(
@@ -307,37 +305,33 @@ defmodule AppKit.Bridges.MezzanineBridge do
     end
   end
 
-  @impl true
-  def fetch_github_pr_evidence(%RequestContext{} = context, request, opts \\ [])
-      when is_map(request) and is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         attrs <- github_pr_evidence_attrs(context, tenant_id, request),
-         {:ok, result} <- github_pr_evidence_service(opts).fetch(attrs, opts),
-         {:ok, receipt} <-
-           result
-           |> normalize_result_attrs()
-           |> Map.put_new(:tenant_ref, tenant_id)
-           |> GitHubPrEvidenceReceipt.new() do
-      {:ok, receipt}
+  def collect_evidence(%RequestContext{} = context, evidence_role_ref, request, opts)
+      when (is_atom(evidence_role_ref) or is_binary(evidence_role_ref)) and is_map(request) and
+             is_list(opts) do
+    service = runtime_gateway_service(opts)
+
+    if service_exports?(service, :collect_evidence, 4) do
+      case service.collect_evidence(context, evidence_role_ref, request, opts) do
+        {:ok, result} -> {:ok, result}
+        {:error, reason} -> normalize_surface_error(reason)
+      end
     else
-      {:error, reason} -> normalize_surface_error(reason)
+      normalize_surface_error(:evidence_collection_not_configured)
     end
   end
 
-  @impl true
-  def cleanup_github_pr_branch(%RequestContext{} = context, request, opts \\ [])
-      when is_map(request) and is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         attrs <- github_pr_branch_cleanup_attrs(context, tenant_id, request),
-         {:ok, result} <- github_pr_branch_cleanup_service(opts).cleanup(attrs, opts),
-         {:ok, receipt} <-
-           result
-           |> normalize_result_attrs()
-           |> Map.put_new(:tenant_ref, tenant_id)
-           |> GitHubPrBranchCleanupReceipt.new() do
-      {:ok, receipt}
+  def invoke_resource_effect(%RequestContext{} = context, resource_effect_role_ref, request, opts)
+      when (is_atom(resource_effect_role_ref) or is_binary(resource_effect_role_ref)) and
+             is_map(request) and is_list(opts) do
+    service = runtime_gateway_service(opts)
+
+    if service_exports?(service, :invoke_resource_effect, 4) do
+      case service.invoke_resource_effect(context, resource_effect_role_ref, request, opts) do
+        {:ok, result} -> {:ok, result}
+        {:error, reason} -> normalize_surface_error(reason)
+      end
     else
-      {:error, reason} -> normalize_surface_error(reason)
+      normalize_surface_error(:resource_effect_not_configured)
     end
   end
 
@@ -1994,41 +1988,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
         Mezzanine.AppKitBridge.RuntimeGatewayService
       )
 
-  defp github_pr_evidence_service(opts),
-    do:
-      Keyword.get(
-        opts,
-        :github_pr_evidence_service,
-        Mezzanine.IntegrationBridge.GitHubPrEvidenceRuntime
-      )
-
-  defp github_pr_branch_cleanup_service(opts),
-    do:
-      Keyword.get(
-        opts,
-        :github_pr_branch_cleanup_service,
-        Mezzanine.IntegrationBridge.GitHubPrBranchCleanupRuntime
-      )
-
-  defp github_pr_evidence_attrs(%RequestContext{} = context, tenant_id, request) do
-    request
-    |> Map.new()
-    |> Map.put_new(:tenant_id, tenant_id)
-    |> Map.put_new(:actor_id, context.actor_ref.id)
-    |> Map.put_new(:trace_id, context.trace_id)
-  end
-
-  defp github_pr_branch_cleanup_attrs(%RequestContext{} = context, tenant_id, request) do
-    request
-    |> Map.new()
-    |> Map.put_new(:tenant_id, tenant_id)
-    |> Map.put_new(:actor_id, context.actor_ref.id)
-    |> Map.put_new(:trace_id, context.trace_id)
-  end
-
-  defp normalize_result_attrs(%_{} = result), do: Map.from_struct(result)
-  defp normalize_result_attrs(%{} = result), do: Map.new(result)
-
   defp service_exports?(service, function_name, arity)
        when is_atom(service) and is_atom(function_name) and is_integer(arity) do
     match?({:module, ^service}, Code.ensure_loaded(service)) and
@@ -3356,8 +3315,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
     true = :ets.insert(table, {run_ref, projection})
     :ok
   end
-
-  defp store_agent_loop_projection(_run_ref, _projection), do: :ok
 
   defp fetch_agent_loop_projection(run_ref) when is_binary(run_ref) do
     table = ensure_agent_projection_table()

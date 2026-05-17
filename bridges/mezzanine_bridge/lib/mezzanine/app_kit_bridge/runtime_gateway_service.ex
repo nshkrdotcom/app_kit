@@ -89,6 +89,48 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
     end
   end
 
+  @spec collect_evidence(RequestContext.t(), term(), map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def collect_evidence(%RequestContext{} = context, evidence_role_ref, attrs, opts \\ [])
+      when (is_atom(evidence_role_ref) or is_binary(evidence_role_ref)) and is_map(attrs) and
+             is_list(opts) do
+    evidence_binding = evidence_binding(attrs, opts)
+    attrs = gateway_attrs(context, attrs)
+    service = integration_bridge_service(opts)
+
+    if service_exports?(service, :collect_evidence, 4) do
+      service.collect_evidence(evidence_role_ref, attrs, evidence_binding, opts)
+    else
+      {:error, :evidence_collection_not_configured}
+    end
+  end
+
+  @spec invoke_resource_effect(RequestContext.t(), term(), map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def invoke_resource_effect(
+        %RequestContext{} = context,
+        resource_effect_role_ref,
+        attrs,
+        opts \\ []
+      )
+      when (is_atom(resource_effect_role_ref) or is_binary(resource_effect_role_ref)) and
+             is_map(attrs) and is_list(opts) do
+    resource_effect_binding = resource_effect_binding(attrs, opts)
+    attrs = gateway_attrs(context, attrs)
+    service = integration_bridge_service(opts)
+
+    if service_exports?(service, :invoke_resource_effect, 4) do
+      service.invoke_resource_effect(
+        resource_effect_role_ref,
+        attrs,
+        resource_effect_binding,
+        opts
+      )
+    else
+      {:error, :resource_effect_not_configured}
+    end
+  end
+
   defp runtime_tool_allowed_operations(
          tool_role_ref,
          operation_role_ref,
@@ -123,6 +165,27 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
     Keyword.get(opts, :tool_binding) ||
       value(attrs, :tool_binding) ||
       value(attrs, "tool_binding")
+  end
+
+  defp evidence_binding(attrs, opts) do
+    Keyword.get(opts, :evidence_binding) ||
+      value(attrs, :evidence_binding) ||
+      value(attrs, "evidence_binding")
+  end
+
+  defp resource_effect_binding(attrs, opts) do
+    Keyword.get(opts, :resource_effect_binding) ||
+      value(attrs, :resource_effect_binding) ||
+      value(attrs, "resource_effect_binding")
+  end
+
+  defp gateway_attrs(%RequestContext{} = context, attrs) do
+    attrs
+    |> Map.new()
+    |> Map.put_new(:tenant_id, context.tenant_ref.id)
+    |> Map.put_new(:actor_id, context.actor_ref.id)
+    |> Map.put_new(:trace_id, context.trace_id)
+    |> Map.put_new(:installation_id, installation_id(context))
   end
 
   defp required_context_id(%{id: id}, _key) when is_binary(id) and id != "", do: {:ok, id}
@@ -292,8 +355,6 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
       _existing_key -> false
     end)
   end
-
-  defp alternate_key(_map, _key), do: nil
 
   defp string_opt(opts, key) do
     case Keyword.get(opts, key) do

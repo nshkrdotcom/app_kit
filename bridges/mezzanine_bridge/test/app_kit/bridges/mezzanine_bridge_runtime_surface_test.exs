@@ -4,8 +4,6 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
   alias AppKit.Bridges.MezzanineBridge
 
   alias AppKit.Core.RuntimeSurface.{
-    GitHubPrBranchCleanupReceipt,
-    GitHubPrEvidenceReceipt,
     LiveEffectReceipt,
     RuntimeLogPage,
     RuntimeProfileApplyResult,
@@ -80,9 +78,9 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
     end
   end
 
-  defmodule GitHubPrEvidenceService do
-    def fetch(attrs, opts) do
-      send(self(), {:fetch_github_pr_evidence, attrs, opts})
+  defmodule RuntimeGatewayService do
+    def collect_evidence(context, evidence_role_ref, attrs, opts) do
+      send(self(), {:collect_evidence, context.tenant_ref.id, evidence_role_ref, attrs, opts})
 
       {:ok,
        %{
@@ -101,7 +99,7 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
          provider_response_received?: true,
          receipt_recorded?: true,
          product_readback_confirmed?: true,
-         provider_ids: %{pull_request: "17"},
+         provider_ids: %{"pull_request" => "17"},
          provider_refs: %{pull_request: "https://github.com/nshkrdotcom/sample-app/pull/17"},
          write_operations: [],
          receipt_refs: %{
@@ -110,11 +108,12 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
          }
        }}
     end
-  end
 
-  defmodule GitHubPrBranchCleanupService do
-    def cleanup(attrs, opts) do
-      send(self(), {:cleanup_github_pr_branch, attrs, opts})
+    def invoke_resource_effect(context, resource_effect_role_ref, attrs, opts) do
+      send(
+        self(),
+        {:invoke_resource_effect, context.tenant_ref.id, resource_effect_role_ref, attrs, opts}
+      )
 
       {:ok,
        %{
@@ -133,7 +132,7 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
          provider_response_received?: true,
          receipt_recorded?: true,
          product_readback_confirmed?: true,
-         provider_ids: %{pull_requests: ["17"]},
+         provider_ids: %{"pull_requests" => ["17"]},
          provider_refs: %{
            pull_requests: ["https://github.com/nshkrdotcom/sample-app/pull/17"]
          },
@@ -235,47 +234,55 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
     assert result.source_publication_receipt.authority_ref == "authority-decision://linear/test"
   end
 
-  test "fetches GitHub PR evidence through the Mezzanine evidence service" do
+  test "collects proposed-change evidence through the generic runtime gateway service" do
     context = request_context()
-    request = %{repo: "nshkrdotcom/sample-app", pull_number: 17, ref: "head-sha"}
 
-    assert {:ok, %GitHubPrEvidenceReceipt{} = receipt} =
-             MezzanineBridge.fetch_github_pr_evidence(context, request,
-               github_pr_evidence_service: GitHubPrEvidenceService
+    request = %{
+      repo: "nshkrdotcom/sample-app",
+      pull_number: 17,
+      ref: "head-sha",
+      evidence_binding: %{operation_refs: %{fetch: "github.pr.fetch"}}
+    }
+
+    assert {:ok, receipt} =
+             MezzanineBridge.collect_evidence(context, :proposed_change_evidence, request,
+               runtime_gateway_service: RuntimeGatewayService
              )
 
-    assert_received {:fetch_github_pr_evidence, attrs, opts}
-    assert attrs.tenant_id == "tenant-1"
-    assert attrs.actor_id == "operator"
+    assert_received {:collect_evidence, "tenant-1", :proposed_change_evidence, attrs, opts}
     assert attrs.repo == "nshkrdotcom/sample-app"
     assert attrs.pull_number == 17
     assert attrs.ref == "head-sha"
-    assert Keyword.fetch!(opts, :github_pr_evidence_service) == GitHubPrEvidenceService
     assert receipt.provider == "github"
     assert receipt.provider_ids["pull_request"] == "17"
     assert receipt.write_operations == []
+    assert Keyword.fetch!(opts, :runtime_gateway_service) == RuntimeGatewayService
   end
 
-  test "cleans up GitHub PRs for a branch through the Mezzanine cleanup service" do
+  test "invokes proposed-change cleanup through the generic runtime gateway service" do
     context = request_context()
-    request = %{repo: "nshkrdotcom/sample-app", branch: "cleanup-branch", confirm_close?: true}
 
-    assert {:ok, %GitHubPrBranchCleanupReceipt{} = receipt} =
-             MezzanineBridge.cleanup_github_pr_branch(context, request,
-               github_pr_branch_cleanup_service: GitHubPrBranchCleanupService
+    request = %{
+      repo: "nshkrdotcom/sample-app",
+      branch: "cleanup-branch",
+      confirm_close?: true,
+      resource_effect_binding: %{operation_refs: %{close: "github.pr.update"}}
+    }
+
+    assert {:ok, receipt} =
+             MezzanineBridge.invoke_resource_effect(context, :proposed_change_cleanup, request,
+               runtime_gateway_service: RuntimeGatewayService
              )
 
-    assert_received {:cleanup_github_pr_branch, attrs, opts}
-    assert attrs.tenant_id == "tenant-1"
-    assert attrs.actor_id == "operator"
+    assert_received {:invoke_resource_effect, "tenant-1", :proposed_change_cleanup, attrs, opts}
     assert attrs.repo == "nshkrdotcom/sample-app"
     assert attrs.branch == "cleanup-branch"
     assert attrs.confirm_close? == true
-    assert Keyword.fetch!(opts, :github_pr_branch_cleanup_service) == GitHubPrBranchCleanupService
     assert receipt.provider == "github"
     assert receipt.effect == "github_pr_branch_cleanup"
     assert receipt.closed_pull_numbers == [17]
     assert receipt.write_operations == ["github.comment.create", "github.pr.update"]
+    assert Keyword.fetch!(opts, :runtime_gateway_service) == RuntimeGatewayService
   end
 
   defp request_context(metadata \\ %{}) do

@@ -61,7 +61,8 @@ defmodule AppKit.RuntimeGateway do
     ])
   end
 
-  def collect_evidence(%Context{} = context, evidence_role_ref, request, opts \\ []) do
+  def collect_evidence(context, evidence_role_ref, request, opts \\ [])
+      when is_struct(context, Context) or is_struct(context, RequestContext) do
     GenericSurfaceSupport.dispatch(opts, @backend_key, :collect_evidence, [
       context,
       evidence_role_ref,
@@ -69,7 +70,8 @@ defmodule AppKit.RuntimeGateway do
     ])
   end
 
-  def invoke_resource_effect(%Context{} = context, resource_effect_role_ref, request, opts \\ []) do
+  def invoke_resource_effect(context, resource_effect_role_ref, request, opts \\ [])
+      when is_struct(context, Context) or is_struct(context, RequestContext) do
     GenericSurfaceSupport.dispatch(opts, @backend_key, :invoke_resource_effect, [
       context,
       resource_effect_role_ref,
@@ -77,7 +79,8 @@ defmodule AppKit.RuntimeGateway do
     ])
   end
 
-  def get_receipt(%Context{} = context, receipt_ref, opts \\ []) do
+  def get_receipt(context, receipt_ref, opts \\ [])
+      when is_struct(context, Context) or is_struct(context, RequestContext) do
     GenericSurfaceSupport.dispatch(opts, @backend_key, :collect_evidence, [
       context,
       :receipt_readback,

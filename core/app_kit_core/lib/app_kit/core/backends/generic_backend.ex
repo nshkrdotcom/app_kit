@@ -3,39 +3,41 @@ defmodule AppKit.Core.Backends.GenericBackend do
   Generic AppKit backend contract for role-based product calls.
   """
 
-  alias AppKit.Core.{Context, SurfaceError}
+  alias AppKit.Core.{Context, RequestContext, SurfaceError}
 
-  @callback sync_source(Context.t(), term(), map(), keyword()) ::
+  @type context :: Context.t() | RequestContext.t()
+
+  @callback sync_source(context(), term(), map(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
-  @callback fetch_candidates(Context.t(), term(), map(), keyword()) ::
+  @callback fetch_candidates(context(), term(), map(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
-  @callback current_states(Context.t(), term(), map(), keyword()) ::
+  @callback current_states(context(), term(), map(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
-  @callback publish(Context.t(), term(), map(), keyword()) ::
+  @callback publish(context(), term(), map(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
-  @callback execute_operation(Context.t(), term(), term(), map(), keyword()) ::
+  @callback execute_operation(context(), term(), term(), map(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
-  @callback submit_work(Context.t(), map(), keyword()) ::
+  @callback submit_work(context(), map(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
-  @callback invoke_runtime_operation(Context.t(), term(), term(), map(), keyword()) ::
+  @callback invoke_runtime_operation(context(), term(), term(), map(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
-  @callback invoke_runtime_tool(Context.t(), term(), term(), map(), keyword()) ::
+  @callback invoke_runtime_tool(context(), term(), term(), map(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
-  @callback collect_evidence(Context.t(), term(), map(), keyword()) ::
+  @callback collect_evidence(context(), term(), map(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
-  @callback invoke_resource_effect(Context.t(), term(), map(), keyword()) ::
+  @callback invoke_resource_effect(context(), term(), map(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
-  @callback open_review(Context.t(), term(), map(), keyword()) ::
+  @callback open_review(context(), term(), map(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
-  @callback submit_review_decision(Context.t(), term(), map(), keyword()) ::
+  @callback submit_review_decision(context(), term(), map(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
-  @callback get_projection(Context.t(), map(), keyword()) ::
+  @callback get_projection(context(), map(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
-  @callback lookup_trace(Context.t(), term(), keyword()) ::
+  @callback lookup_trace(context(), term(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
-  @callback replay_trace(Context.t(), term(), keyword()) ::
+  @callback replay_trace(context(), term(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
-  @callback request_lower_read(Context.t(), term(), term(), keyword()) ::
+  @callback request_lower_read(context(), term(), term(), keyword()) ::
               {:ok, term()} | {:error, SurfaceError.t()}
 
   @optional_callbacks sync_source: 4,

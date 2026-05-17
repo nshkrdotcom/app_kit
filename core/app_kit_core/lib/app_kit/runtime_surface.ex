@@ -39,20 +39,6 @@ defmodule AppKit.RuntimeSurface do
     backend(opts).record_live_effect(context, attrs, opts)
   end
 
-  @spec fetch_github_pr_evidence(RequestContext.t(), map(), keyword()) ::
-          {:ok, struct()} | {:error, term()}
-  def fetch_github_pr_evidence(%RequestContext{} = context, request, opts \\ [])
-      when is_map(request) and is_list(opts) do
-    backend(opts).fetch_github_pr_evidence(context, request, opts)
-  end
-
-  @spec cleanup_github_pr_branch(RequestContext.t(), map(), keyword()) ::
-          {:ok, struct()} | {:error, term()}
-  def cleanup_github_pr_branch(%RequestContext{} = context, request, opts \\ [])
-      when is_map(request) and is_list(opts) do
-    backend(opts).cleanup_github_pr_branch(context, request, opts)
-  end
-
   defp backend(opts) do
     BackendConfig.resolve(opts, :backend, @backend_key, @default_backend)
   end
