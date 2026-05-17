@@ -32,11 +32,12 @@ defmodule AppKit.SourceSurface do
     backend(opts).fetch_candidates(context, source_role_ref, request, opts)
   end
 
-  @spec publish_linear_source(RequestContext.t(), map(), keyword()) ::
+  @spec publish(RequestContext.t(), source_role_ref(), map(), keyword()) ::
           {:ok, map()} | {:error, SurfaceError.t()}
-  def publish_linear_source(%RequestContext{} = context, attrs, opts \\ [])
-      when is_map(attrs) and is_list(opts) do
-    backend(opts).publish_linear_source(context, attrs, opts)
+  def publish(%RequestContext{} = context, publication_role_ref, request, opts \\ [])
+      when (is_atom(publication_role_ref) or is_binary(publication_role_ref)) and
+             is_map(request) and is_list(opts) do
+    backend(opts).publish_source(context, publication_role_ref, request, opts)
   end
 
   @spec execute_linear_graphql_tool(RequestContext.t(), map(), keyword()) ::

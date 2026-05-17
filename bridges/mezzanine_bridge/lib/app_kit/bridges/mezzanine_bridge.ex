@@ -154,12 +154,13 @@ defmodule AppKit.Bridges.MezzanineBridge do
   end
 
   @impl true
-  def publish_linear_source(%RequestContext{} = context, attrs, opts)
-      when is_map(attrs) and is_list(opts) do
+  def publish_source(%RequestContext{} = context, publication_role_ref, request, opts)
+      when (is_atom(publication_role_ref) or is_binary(publication_role_ref)) and
+             is_map(request) and is_list(opts) do
     service = source_service(opts)
 
-    if service_exports?(service, :publish_linear_source, 3) do
-      case service.publish_linear_source(context, attrs, opts) do
+    if service_exports?(service, :publish_source, 4) do
+      case service.publish_source(context, publication_role_ref, request, opts) do
         {:ok, result} -> {:ok, result}
         {:error, reason} -> normalize_surface_error(reason)
       end

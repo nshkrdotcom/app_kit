@@ -146,8 +146,15 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
   end
 
   defmodule StateUpdateBridge do
-    def update_linear_issue_state(invocation, attrs, opts) do
-      send(self(), {:update_linear_issue_state, invocation, attrs, opts})
+    def source_publication_allowed_operations(:source_publication, _source_binding, _attrs, _opts) do
+      ["linear.workflow_states.list", "linear.issues.update"]
+    end
+
+    def publish_source(invocation, publication_role_ref, attrs, source_binding, opts) do
+      send(
+        self(),
+        {:publish_source, invocation, publication_role_ref, attrs, source_binding, opts}
+      )
 
       {:ok,
        %{
@@ -168,15 +175,18 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
          provider_response_received?: true
        }}
     end
-
-    def publish_linear_source(_invocation, _attrs, _opts) do
-      raise "state-update publication must use update_linear_issue_state"
-    end
   end
 
   defmodule DryRunPublicationBridge do
-    def publish_linear_source(invocation, attrs, opts) do
-      send(self(), {:dry_run_publish_linear_source, invocation, attrs, opts})
+    def source_publication_allowed_operations(:source_publication, _source_binding, _attrs, _opts) do
+      ["linear.comments.create", "linear.comments.update"]
+    end
+
+    def publish_source(invocation, publication_role_ref, attrs, source_binding, opts) do
+      send(
+        self(),
+        {:dry_run_publish_source, invocation, publication_role_ref, attrs, source_binding, opts}
+      )
 
       {:ok,
        %{
@@ -200,10 +210,6 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
          provider_response_received?: false,
          credential_redeemed?: Keyword.get(opts, :credential_redeemed?)
        }}
-    end
-
-    def update_linear_issue_state(_invocation, _attrs, _opts) do
-      raise "comment dry-run publication must use publish_linear_source"
     end
   end
 
@@ -558,12 +564,15 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     }
 
     assert {:ok, result} =
-             SourceService.publish_linear_source(context, attrs,
+             SourceService.publish_source(context, :source_publication, attrs,
                authorized_invocation: invocation,
                integration_bridge_service: StateUpdateBridge
              )
 
-    assert_received {:update_linear_issue_state, ^invocation, requested_attrs, _opts}
+    assert_received {:publish_source, ^invocation, :source_publication, requested_attrs,
+                     source_binding, _opts}
+
+    assert source_binding.source_binding_id == "linear-primary"
     assert requested_attrs.state_name == "Done"
     assert requested_attrs.team_id == "team-linear"
     assert result.source_publication_receipt.capability_id == "linear.issues.update"
@@ -584,14 +593,17 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     }
 
     assert {:ok, result} =
-             SourceService.publish_linear_source(context, attrs,
+             SourceService.publish_source(context, :source_publication, attrs,
                authorized_invocation: invocation,
                integration_bridge_service: DryRunPublicationBridge,
                dry_run?: true,
                credential_redeemed?: true
              )
 
-    assert_received {:dry_run_publish_linear_source, ^invocation, requested_attrs, opts}
+    assert_received {:dry_run_publish_source, ^invocation, :source_publication, requested_attrs,
+                     source_binding, opts}
+
+    assert source_binding.source_binding_id == "linear-primary"
     assert requested_attrs.issue_id == "lin-issue-321"
     assert Keyword.fetch!(opts, :dry_run?) == true
     assert Keyword.fetch!(opts, :credential_redeemed?) == true

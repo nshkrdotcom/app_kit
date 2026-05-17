@@ -52,9 +52,10 @@ defmodule AppKit.SourceSurfaceTest do
     end
 
     @impl true
-    def publish_linear_source(_context, attrs, _opts) do
+    def publish_source(_context, publication_role_ref, attrs, _opts) do
       {:ok,
        %{
+         publication_role_ref: publication_role_ref,
          source_publication_receipt: %{
            source_publication_receipt_ref: "source-publication://linear-primary/test",
            source_publish_ref: attrs.source_publish_ref,
@@ -140,8 +141,9 @@ defmodule AppKit.SourceSurfaceTest do
     context = request_context()
 
     assert {:ok, publication} =
-             SourceSurface.publish_linear_source(
+             SourceSurface.publish(
                context,
+               :source_publication,
                %{
                  source_publish_ref: "linear_workpad_review",
                  source_binding_id: "linear-primary",
@@ -152,6 +154,7 @@ defmodule AppKit.SourceSurfaceTest do
                source_backend: FakeSourceBackend
              )
 
+    assert publication.publication_role_ref == :source_publication
     assert publication.source_publication_receipt.status == "published"
     assert publication.source_publication_receipt.capability_id == "linear.comments.update"
   end

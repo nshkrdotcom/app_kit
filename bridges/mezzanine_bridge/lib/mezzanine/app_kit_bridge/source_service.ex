@@ -91,22 +91,25 @@ defmodule Mezzanine.AppKitBridge.SourceService do
     end
   end
 
-  @spec publish_linear_source(RequestContext.t(), map(), keyword()) ::
+  @spec publish_source(RequestContext.t(), source_role_ref(), map(), keyword()) ::
           {:ok, map()} | {:error, term()}
-  def publish_linear_source(%RequestContext{} = context, attrs, opts \\ [])
-      when is_map(attrs) and is_list(opts) do
+  def publish_source(%RequestContext{} = context, publication_role_ref, attrs, opts \\ [])
+      when (is_atom(publication_role_ref) or is_binary(publication_role_ref)) and is_map(attrs) and
+             is_list(opts) do
+    source_binding = source_binding(context, attrs, opts)
+
     with {:ok, _tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
          {:ok, invocation, opts} <-
            authorized_invocation(
              context,
-             [
-               "linear.comments.create",
-               "linear.comments.update",
-               "linear.issues.update",
-               "linear.workflow_states.list"
-             ],
+             source_publication_allowed_operations(
+               publication_role_ref,
+               source_binding,
+               attrs,
+               opts
+             ),
              value(attrs, :source_ref) || value(attrs, :source_publish_ref) ||
-               "linear-publication",
+               publication_role_ref,
              opts
            ) do
       attrs =
@@ -114,11 +117,13 @@ defmodule Mezzanine.AppKitBridge.SourceService do
         |> Map.new()
         |> Map.put_new(:trace_id, context.trace_id)
 
-      if issue_state_publication?(attrs) do
-        integration_bridge_service(opts).update_linear_issue_state(invocation, attrs, opts)
-      else
-        integration_bridge_service(opts).publish_linear_source(invocation, attrs, opts)
-      end
+      integration_bridge_service(opts).publish_source(
+        invocation,
+        publication_role_ref,
+        attrs,
+        source_binding,
+        opts
+      )
     end
   end
 
@@ -254,6 +259,33 @@ defmodule Mezzanine.AppKitBridge.SourceService do
     end
   end
 
+  defp source_publication_allowed_operations(publication_role_ref, source_binding, attrs, opts) do
+    explicit_operations =
+      Keyword.get(opts, :allowed_operations) ||
+        value(attrs, :allowed_operations) ||
+        value(source_binding, :allowed_operations)
+
+    cond do
+      is_list(explicit_operations) and explicit_operations != [] ->
+        explicit_operations
+
+      service_exports?(
+        integration_bridge_service(opts),
+        :source_publication_allowed_operations,
+        4
+      ) ->
+        integration_bridge_service(opts).source_publication_allowed_operations(
+          publication_role_ref,
+          source_binding,
+          attrs,
+          opts
+        )
+
+      true ->
+        []
+    end
+  end
+
   defp source_envelope(%RequestContext{} = context, source_page, binding) do
     tenant_id = context.tenant_ref.id
     installation_id = value(binding, :installation_id) || installation_id(context, binding)
@@ -376,15 +408,6 @@ defmodule Mezzanine.AppKitBridge.SourceService do
     |> Enum.reject(fn {_key, value} -> value in [nil, "", [], %{}] end)
     |> Map.new()
   end
-
-  defp issue_state_publication?(attrs) do
-    present?(value(attrs, :state_id)) or present?(value(attrs, :state_name)) or
-      value(attrs, :capability_id) == "linear.issues.update" or
-      value(attrs, :publication_kind) in [:issue_state_update, "issue_state_update"]
-  end
-
-  defp present?(value) when is_binary(value), do: String.trim(value) != ""
-  defp present?(value), do: not is_nil(value)
 
   defp program_context_service(opts),
     do: Keyword.get(opts, :program_context_service, ProgramContextService)

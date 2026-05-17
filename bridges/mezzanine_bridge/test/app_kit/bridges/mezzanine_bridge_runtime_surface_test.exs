@@ -60,8 +60,8 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
   end
 
   defmodule SourceService do
-    def publish_linear_source(context, attrs, _opts) do
-      send(self(), {:publish_linear_source, context.tenant_ref.id, attrs})
+    def publish_source(context, publication_role_ref, attrs, _opts) do
+      send(self(), {:publish_source, context.tenant_ref.id, publication_role_ref, attrs})
 
       {:ok,
        %{
@@ -226,9 +226,11 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
     }
 
     assert {:ok, result} =
-             MezzanineBridge.publish_linear_source(context, attrs, source_service: SourceService)
+             MezzanineBridge.publish_source(context, :source_publication, attrs,
+               source_service: SourceService
+             )
 
-    assert_received {:publish_linear_source, "tenant-1", ^attrs}
+    assert_received {:publish_source, "tenant-1", :source_publication, ^attrs}
     assert result.source_publication_receipt.status == "published"
     assert result.source_publication_receipt.authority_ref == "authority-decision://linear/test"
   end
