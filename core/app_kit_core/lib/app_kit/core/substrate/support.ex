@@ -1,10 +1,8 @@
 defmodule AppKit.Core.Substrate.SelectorRejection do
-  @moduledoc "Shared provider-selector rejection for AppKit substrate DTOs."
+  @moduledoc "Shared static-selector rejection for AppKit substrate DTOs."
 
-  @forbidden MapSet.new(~w[
-    codex_session_id github_issue_id github_issue_number github_pr_id github_pr_number
-    issue_id issue_number linear_issue_id linear_issue_number model_id pr_id pr_number
-    prompt raw_prompt raw_provider_body raw_provider_payload tool_call workflow_id workspace_path
+  @forbidden_exact_keys MapSet.new(~w[
+    prompt raw_prompt raw_provider_body raw_provider_payload tool_call workspace_path
   ])
 
   def reject(attrs, error) when is_map(attrs) do
@@ -22,8 +20,21 @@ defmodule AppKit.Core.Substrate.SelectorRejection do
   defp selector?(_value), do: false
 
   defp forbidden?(key) when is_atom(key), do: forbidden?(Atom.to_string(key))
-  defp forbidden?(key) when is_binary(key), do: MapSet.member?(@forbidden, String.downcase(key))
+
+  defp forbidden?(key) when is_binary(key) do
+    normalized = String.downcase(key)
+    parts = String.split(normalized, "_")
+
+    MapSet.member?(@forbidden_exact_keys, normalized) or static_selector_parts?(parts)
+  end
+
   defp forbidden?(_key), do: false
+
+  defp static_selector_parts?(parts) do
+    ("pr" in parts and Enum.any?(parts, &(&1 in ["id", "number"]))) or
+      ("issue" in parts and Enum.any?(parts, &(&1 in ["id", "number"]))) or
+      ("model" in parts and "id" in parts)
+  end
 end
 
 defmodule AppKit.Core.Substrate.Redaction do

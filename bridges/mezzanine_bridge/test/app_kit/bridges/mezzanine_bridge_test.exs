@@ -176,7 +176,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
              "evidence_refs" => [
                %{
                  "evidence_id" => "evidence-1",
-                 "evidence_kind" => "github_pr",
+                 "evidence_kind" => "provider_evidence",
                  "content_ref" => "evidence://github-pr/pr-dynamic",
                  "status" => "present"
                }
@@ -224,7 +224,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
              "scenario_refs" => ["stacklab://scenario/local-single-node"],
              "claim_refs" => ["claim://sample-app/local-run"]
            },
-           github_pr: %{
+           provider_evidence: %{
              "provider" => "github",
              "evidence_ref" => "evidence://github-pr/pr-dynamic",
              "content_ref" => "github-pr://example/sample-app/17"

@@ -709,7 +709,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
          payload: %{
            "subject" => %{
              "subject_id" => subject_id,
-             "subject_kind" => "linear_coding_ticket",
+             "subject_kind" => "work_item",
              "lifecycle_state" => "awaiting_review"
            },
            "source_binding" => %{
@@ -743,7 +743,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
              )
 
     assert projection.subject_id == subject_id
-    assert projection.subject_kind == "linear_coding_ticket"
+    assert projection.subject_kind == "work_item"
     assert projection.lifecycle_state == "awaiting_review"
     assert projection.work_status == :awaiting_review
     assert projection.review_status == :pending
@@ -766,7 +766,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
          payload: %{
            "subject" => %{
              "subject_id" => subject_id,
-             "subject_kind" => "linear_coding_ticket",
+             "subject_kind" => "work_item",
              "lifecycle_state" => "provider_supplied_future_lifecycle"
            },
            "source_binding" => %{"source_ref" => "source://linear/#{subject_id}"},
@@ -1106,7 +1106,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert runtime_projection.runtime["event_counts"]["codex.session.completed"] == 1
     assert runtime_projection.runtime["token_totals"]["total"] == 192
     assert runtime_projection.source_publication["capability_id"] == "linear.comments.update"
-    assert runtime_projection.github_pr["provider"] == "github"
+    assert runtime_projection.provider_evidence["provider"] == "github"
 
     assert {:ok, typed_runtime_projection} =
              AppKit.Bridges.MezzanineBridge.get_runtime_projection(
@@ -1124,7 +1124,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
 
     assert Enum.any?(
              typed_runtime_projection.evidence,
-             &(&1.evidence_kind == "github_pr" and
+             &(&1.evidence_kind == "provider_evidence" and
                  String.starts_with?(&1.content_ref, "github-pr://"))
            )
   end

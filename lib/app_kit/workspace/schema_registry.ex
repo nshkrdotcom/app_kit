@@ -360,8 +360,6 @@ defmodule AppKit.Workspace.SchemaRegistry do
     "AppKit.Core.RuntimeOperationRequest",
     "AppKit.Core.RuntimeFactsProjection",
     "AppKit.Core.RuntimeProjectionSupport",
-    "AppKit.Core.RuntimeSurface.GitHubPrBranchCleanupReceipt",
-    "AppKit.Core.RuntimeSurface.GitHubPrEvidenceReceipt",
     "AppKit.Core.RuntimeSurface.LiveEffectReceipt",
     "AppKit.Core.RuntimeSurface.RuntimeLogPage",
     "AppKit.Core.RuntimeSurface.RuntimeLogRow",

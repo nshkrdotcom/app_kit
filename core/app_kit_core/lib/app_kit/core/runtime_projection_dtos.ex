@@ -3,32 +3,18 @@ defmodule AppKit.Core.RuntimeProjectionSupport do
 
   alias AppKit.Core.Support
 
-  @forbidden_selector_keys MapSet.new([
-                             "codex_session_id",
-                             "github_issue_id",
-                             "github_issue_number",
-                             "github_pr_id",
-                             "github_pr_number",
-                             "issue_id",
-                             "issue_number",
-                             "linear_comment_id",
-                             "linear_issue_id",
-                             "linear_issue_number",
-                             "access_token",
-                             "api_key",
-                             "authorization",
-                             "credential_secret",
-                             "password",
-                             "pr_id",
-                             "pr_number",
-                             "provider_account_id",
-                             "raw_credential",
-                             "raw_prompt",
-                             "raw_provider_payload",
-                             "refresh_token",
-                             "secret",
-                             "workflow_id"
-                           ])
+  @forbidden_exact_keys MapSet.new([
+                          "access_token",
+                          "api_key",
+                          "authorization",
+                          "credential_secret",
+                          "password",
+                          "raw_credential",
+                          "raw_prompt",
+                          "raw_provider_payload",
+                          "refresh_token",
+                          "secret"
+                        ])
 
   @spec normalize_attrs(map() | keyword()) :: {:ok, map()} | {:error, :invalid_attrs}
   def normalize_attrs(attrs), do: Support.normalize_attrs(attrs)
@@ -76,10 +62,20 @@ defmodule AppKit.Core.RuntimeProjectionSupport do
   defp forbidden_key?(key) when is_atom(key), do: forbidden_key?(Atom.to_string(key))
 
   defp forbidden_key?(key) when is_binary(key) do
-    MapSet.member?(@forbidden_selector_keys, String.downcase(key))
+    normalized = String.downcase(key)
+    parts = String.split(normalized, "_")
+
+    MapSet.member?(@forbidden_exact_keys, normalized) or static_selector_parts?(parts)
   end
 
   defp forbidden_key?(_key), do: false
+
+  defp static_selector_parts?(parts) do
+    ("pr" in parts and Enum.any?(parts, &(&1 in ["id", "number"]))) or
+      ("pull" in parts and "number" in parts) or
+      ("issue" in parts and Enum.any?(parts, &(&1 in ["id", "number"]))) or
+      ("model" in parts and "id" in parts)
+  end
 end
 
 defmodule AppKit.Core.SourceBindingProjection do

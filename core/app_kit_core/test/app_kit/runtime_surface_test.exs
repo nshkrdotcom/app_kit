@@ -2,8 +2,6 @@ defmodule AppKit.RuntimeSurfaceTest do
   use ExUnit.Case, async: true
 
   alias AppKit.Core.RuntimeSurface.{
-    GitHubPrBranchCleanupReceipt,
-    GitHubPrEvidenceReceipt,
     LiveEffectReceipt,
     RuntimeLogPage,
     RuntimeProfileApplyResult,
@@ -116,32 +114,6 @@ defmodule AppKit.RuntimeSurfaceTest do
                effect: "source_intake",
                status: :provider_response_received,
                api_key: "secret"
-             })
-  end
-
-  test "github evidence DTO rejects raw secret-bearing fields" do
-    assert {:error, :invalid_github_pr_evidence_receipt} =
-             GitHubPrEvidenceReceipt.new(%{
-               effect_ref: "live-effect://github/pr-evidence/17",
-               provider: "github",
-               effect: "github_pr_evidence",
-               status: :receipt_recorded,
-               repo: "nshkrdotcom/sample-app",
-               pull_number: 17,
-               token: "secret"
-             })
-  end
-
-  test "github branch cleanup DTO rejects raw secret-bearing fields" do
-    assert {:error, :invalid_github_pr_branch_cleanup_receipt} =
-             GitHubPrBranchCleanupReceipt.new(%{
-               effect_ref: "live-effect://github/pr-branch-cleanup/cleanup-branch",
-               provider: "github",
-               effect: "github_pr_branch_cleanup",
-               status: :receipt_recorded,
-               repo: "nshkrdotcom/sample-app",
-               branch: "cleanup-branch",
-               token: "secret"
              })
   end
 

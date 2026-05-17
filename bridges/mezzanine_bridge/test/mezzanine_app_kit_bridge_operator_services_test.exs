@@ -980,11 +980,15 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
       installation_id: installation_id,
       source_ref: "linear://#{installation_id}/issue/#{suffix}",
       source_binding_id: "linear-primary",
-      subject_kind: "linear_coding_ticket",
+      subject_kind: "work_item",
       lifecycle_state: "queued",
-      schema_ref: SubjectPayloadSchema.default_schema_ref!("linear_coding_ticket"),
-      schema_version: SubjectPayloadSchema.default_schema_version!("linear_coding_ticket"),
-      payload: %{},
+      schema_ref: SubjectPayloadSchema.default_schema_ref!("work_item"),
+      schema_version: SubjectPayloadSchema.default_schema_version!("work_item"),
+      payload: %{
+        "identifier" => suffix,
+        "source_kind" => "linear_issue",
+        "title" => "Subject #{suffix}"
+      },
       trace_id: "trace-ingest-#{suffix}",
       causation_id: "cause-ingest-#{suffix}",
       actor_ref: %{kind: :source_ingest, tenant_id: installation_id}

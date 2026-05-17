@@ -1272,7 +1272,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
         "incident_bundles" => fetch_value(projection, :incident_bundles),
         "retry_receipts" => fetch_value(projection, :retry_receipts),
         "acceptance" => fetch_value(projection, :acceptance),
-        "github_pr" => fetch_value(projection, :github_pr),
+        "provider_evidence" => fetch_value(projection, :provider_evidence),
         "source_publication" => fetch_value(projection, :source_publication),
         "diagnostics" => fetch_value(projection, :diagnostics)
       }
