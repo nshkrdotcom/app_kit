@@ -787,6 +787,8 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
        }}
     end
 
+    def run(attrs, _opts), do: run(attrs)
+
     defp ref_suffix(ref) do
       ref
       |> ascii_alnum_dash()
@@ -820,6 +822,8 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
       send(self(), {:agent_runtime_attrs, attrs})
       FakeAgentRuntime.run(attrs)
     end
+
+    def run(attrs, _opts), do: run(attrs)
   end
 
   alias AppKit.Bridges.MezzanineBridge
@@ -1383,7 +1387,11 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     request =
       AgentIntakeBackendConformance.fixture_agent_run_request(%{
-        params: %{max_turns: 3, fixture_script: "success_first_try"}
+        params: %{
+          max_turns: 3,
+          fixture_script: "success_first_try",
+          runtime_binding: codex_runtime_binding()
+        }
       })
 
     assert {:ok, future} =
@@ -1470,7 +1478,11 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     request =
       AgentIntakeBackendConformance.fixture_agent_run_request(%{
-        params: %{max_turns: 3, fixture_script: "success_first_try"}
+        params: %{
+          max_turns: 3,
+          fixture_script: "success_first_try",
+          runtime_binding: codex_runtime_binding()
+        }
       })
 
     assert {:ok, future} =
@@ -1496,7 +1508,11 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     request =
       AgentIntakeBackendConformance.fixture_agent_run_request(%{
-        params: %{max_turns: 3, fixture_script: "success_first_try"}
+        params: %{
+          max_turns: 3,
+          fixture_script: "success_first_try",
+          runtime_binding: codex_runtime_binding()
+        }
       })
 
     assert {:ok, future} =
@@ -1574,7 +1590,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     assert [%{code: "runtime_stall_timeout"}] = Enum.map(detail.diagnostics, &Map.from_struct/1)
   end
 
-  test "routes Codex AgentIntake requests to the codex agent runtime" do
+  test "routes AgentIntake requests through generic runtime dispatch" do
     context = request_context()
 
     request =
@@ -1582,14 +1598,13 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
         params: %{
           capability_id: "codex.session.turn",
           provider_family: "codex",
-          max_turns: 1
+          max_turns: 1,
+          runtime_binding: codex_runtime_binding()
         }
       })
 
     assert {:ok, future} =
-             MezzanineBridge.start_agent_run(context, request,
-               codex_agent_runtime: FakeAgentRuntime
-             )
+             MezzanineBridge.start_agent_run(context, request, runtime_adapter: FakeAgentRuntime)
 
     assert future.accepted?
     assert future.run_ref == "run://agent-loop/dedupe-agent-run"
@@ -1607,6 +1622,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
           capability_id: "codex.session.turn",
           provider_family: "codex",
           max_turns: 1,
+          runtime_binding: codex_runtime_binding(),
           initial_input: %{
             body: prompt,
             input_ref: "prompt://product/task/first-turn",
@@ -1620,7 +1636,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     assert {:ok, future} =
              MezzanineBridge.start_agent_run(context, request,
-               codex_agent_runtime: PromptCapturingAgentRuntime
+               runtime_adapter: PromptCapturingAgentRuntime
              )
 
     assert future.accepted?
@@ -1645,6 +1661,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
           capability_id: "codex.session.turn",
           provider_family: "codex",
           max_turns: 2,
+          runtime_binding: codex_runtime_binding(),
           continuation_policy: %{
             mode: "until_max_turns",
             active_state?: true
@@ -1662,7 +1679,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     assert {:ok, future} =
              MezzanineBridge.start_agent_run(context, request,
-               codex_agent_runtime: PromptCapturingAgentRuntime
+               runtime_adapter: PromptCapturingAgentRuntime
              )
 
     assert future.accepted?
@@ -2174,6 +2191,16 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
   defp sha256(value) when is_binary(value) do
     digest = :crypto.hash(:sha256, value)
     "sha256:" <> Base.encode16(digest, case: :lower)
+  end
+
+  defp codex_runtime_binding do
+    %{
+      runtime_binding_ref: "runtime-binding://extravaganza/coding-agent-runtime",
+      adapter_ref: :codex_cli,
+      manifest_ref: "manifest://jido/connectors/codex_cli@local",
+      operation_ref: "codex.session.turn",
+      allowed_operations: ["codex.session.turn"]
+    }
   end
 
   defp request_context(metadata \\ %{}) do

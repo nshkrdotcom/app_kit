@@ -3,7 +3,7 @@ defmodule AppKit.RuntimeGateway do
   App-facing runtime gateway descriptors above lower runtime mechanics.
   """
 
-  alias AppKit.Core.{Context, GenericSurfaceSupport}
+  alias AppKit.Core.{Context, GenericSurfaceSupport, RequestContext}
   alias AppKit.ScopeObjects.ManagedTarget
 
   @backend_key :generic_backend
@@ -30,12 +30,13 @@ defmodule AppKit.RuntimeGateway do
   end
 
   def invoke_runtime_operation(
-        %Context{} = context,
+        context,
         runtime_role_ref,
         operation_role_ref,
         request,
         opts \\ []
-      ) do
+      )
+      when is_struct(context, Context) or is_struct(context, RequestContext) do
     GenericSurfaceSupport.dispatch(opts, @backend_key, :invoke_runtime_operation, [
       context,
       runtime_role_ref,
@@ -45,12 +46,13 @@ defmodule AppKit.RuntimeGateway do
   end
 
   def invoke_runtime_tool(
-        %Context{} = context,
+        context,
         tool_role_ref,
         operation_role_ref,
         request,
         opts \\ []
-      ) do
+      )
+      when is_struct(context, Context) or is_struct(context, RequestContext) do
     GenericSurfaceSupport.dispatch(opts, @backend_key, :invoke_runtime_tool, [
       context,
       tool_role_ref,

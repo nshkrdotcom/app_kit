@@ -82,10 +82,12 @@ defmodule AppKit.Core.GenericSurfaceSupport do
   end
 
   defp ensure_callback(backend, callback, arity) do
-    if function_exported?(backend, callback, arity) do
+    with {:module, ^backend} <- Code.ensure_loaded(backend),
+         true <- function_exported?(backend, callback, arity) do
       :ok
     else
-      {:error, {:unsupported_generic_callback, callback, arity}}
+      false -> {:error, {:unsupported_generic_callback, callback, arity}}
+      {:error, reason} -> {:error, {:backend_not_loaded, backend, reason}}
     end
   end
 

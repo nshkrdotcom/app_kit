@@ -12,6 +12,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
   alias Mezzanine.AppKitBridge.{
     ProgramContextService,
     ReviewQueryService,
+    RuntimeGatewayService,
     SourceService,
     WorkControlService,
     WorkQueryService
@@ -214,8 +215,27 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
   end
 
   defmodule LinearGraphQLToolBridge do
-    def execute_linear_graphql_tool(invocation, attrs, opts) do
-      send(self(), {:linear_graphql_tool, invocation, attrs, opts})
+    def runtime_tool_allowed_operations(
+          _tool_role_ref,
+          _operation_role_ref,
+          tool_binding,
+          _attrs,
+          _opts
+        ),
+        do: Map.fetch!(tool_binding, :allowed_operations)
+
+    def invoke_runtime_tool(
+          invocation,
+          tool_role_ref,
+          operation_role_ref,
+          attrs,
+          tool_binding,
+          opts
+        ) do
+      send(
+        self(),
+        {:runtime_tool, invocation, tool_role_ref, operation_role_ref, attrs, tool_binding, opts}
+      )
 
       {:ok,
        %{
@@ -613,7 +633,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert result.source_publication_receipt.lower_denial_ref =~ "policy_denied"
   end
 
-  test "source service forwards Linear GraphQL dynamic tool execution to the lower bridge" do
+  test "runtime gateway service forwards tool execution to the lower bridge" do
     context = request_context_by_slug("tenant-linear-graphql", "coding-ops", "coding_task")
     invocation = authorized_invocation_allowing(["linear.graphql.execute"])
 
@@ -622,14 +642,27 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
       variables: %{"includeTeams" => false}
     }
 
+    tool_binding = %{
+      tool_binding_ref: "tool-binding://extravaganza/issue-graphql-tool",
+      operation_ref: "linear.graphql.execute",
+      allowed_operations: ["linear.graphql.execute"]
+    }
+
     assert {:ok, result} =
-             SourceService.execute_linear_graphql_tool(context, attrs,
+             RuntimeGatewayService.invoke_runtime_tool(
+               context,
+               :issue_graphql_tool,
+               :execute_query,
+               attrs,
                authorized_invocation: invocation,
                integration_bridge_service: LinearGraphQLToolBridge,
+               tool_binding: tool_binding,
                credential_redeemed?: true
              )
 
-    assert_received {:linear_graphql_tool, ^invocation, requested_attrs, opts}
+    assert_received {:runtime_tool, ^invocation, :issue_graphql_tool, :execute_query,
+                     requested_attrs, ^tool_binding, opts}
+
     assert requested_attrs.query == "query Viewer { viewer { id } }"
     assert requested_attrs.variables == %{"includeTeams" => false}
     assert Keyword.fetch!(opts, :credential_redeemed?) == true

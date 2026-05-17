@@ -67,23 +67,6 @@ defmodule AppKit.SourceSurfaceTest do
          }
        }}
     end
-
-    @impl true
-    def execute_linear_graphql_tool(_context, attrs, _opts) do
-      output = ~s({"data":{"viewer":{"id":"usr-linear-viewer"}}})
-
-      {:ok,
-       %{
-         operation: "linear.graphql.execute",
-         tool_name: "linear_graphql",
-         query: attrs.query,
-         dynamic_tool_response: %{
-           "success" => true,
-           "output" => output,
-           "contentItems" => [%{"type" => "inputText", "text" => output}]
-         }
-       }}
-    end
   end
 
   alias AppKit.Core.RequestContext
@@ -157,21 +140,6 @@ defmodule AppKit.SourceSurfaceTest do
     assert publication.publication_role_ref == :source_publication
     assert publication.source_publication_receipt.status == "published"
     assert publication.source_publication_receipt.capability_id == "linear.comments.update"
-  end
-
-  test "delegates Linear GraphQL dynamic-tool execution through the configured backend" do
-    context = request_context()
-
-    assert {:ok, tool_result} =
-             SourceSurface.execute_linear_graphql_tool(
-               context,
-               %{query: "query Viewer { viewer { id } }", variables: %{}},
-               source_backend: FakeSourceBackend
-             )
-
-    assert tool_result.operation == "linear.graphql.execute"
-    assert tool_result.tool_name == "linear_graphql"
-    assert tool_result.dynamic_tool_response["success"] == true
   end
 
   defp request_context do

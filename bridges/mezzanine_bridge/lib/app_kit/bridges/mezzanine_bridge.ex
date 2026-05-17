@@ -169,18 +169,64 @@ defmodule AppKit.Bridges.MezzanineBridge do
     end
   end
 
-  @impl true
-  def execute_linear_graphql_tool(%RequestContext{} = context, attrs, opts)
-      when is_map(attrs) and is_list(opts) do
-    service = source_service(opts)
+  def invoke_runtime_operation(
+        %RequestContext{} = context,
+        runtime_role_ref,
+        operation_role_ref,
+        request,
+        opts
+      )
+      when (is_atom(runtime_role_ref) or is_binary(runtime_role_ref)) and
+             (is_atom(operation_role_ref) or is_binary(operation_role_ref)) and is_map(request) and
+             is_list(opts) do
+    with {:ok, agent_request} <- AppKit.Core.AgentIntake.AgentRunRequest.new(request),
+         {:ok, spec_attrs} <- agent_run_spec_attrs(context, agent_request),
+         {:ok, projection} <-
+           runtime_gateway_service(opts).invoke_runtime_operation(
+             context,
+             runtime_role_ref,
+             operation_role_ref,
+             spec_attrs,
+             runtime_binding(agent_request, opts),
+             opts
+           ),
+         run_ref when is_binary(run_ref) <- fetch_value(projection, :run_ref),
+         :ok <- store_agent_loop_projection(run_ref, projection),
+         {:ok, future} <-
+           RunOutcomeFuture.new(%{
+             run_ref: run_ref,
+             workflow_ref: fetch_value(projection, :workflow_ref),
+             accepted?: true,
+             command_ref: "command://#{agent_request.idempotency_key}",
+             correlation_id: agent_request.correlation_id,
+             polling_hint: %{checking?: false, poll_interval_ms: 1_000, staleness_ms: 0}
+           }) do
+      {:ok, future}
+    else
+      {:error, reason} -> normalize_surface_error(reason)
+      _other -> normalize_surface_error(:runtime_operation_not_configured)
+    end
+  end
 
-    if service_exports?(service, :execute_linear_graphql_tool, 3) do
-      case service.execute_linear_graphql_tool(context, attrs, opts) do
+  def invoke_runtime_tool(
+        %RequestContext{} = context,
+        tool_role_ref,
+        operation_role_ref,
+        request,
+        opts
+      )
+      when (is_atom(tool_role_ref) or is_binary(tool_role_ref)) and
+             (is_atom(operation_role_ref) or is_binary(operation_role_ref)) and is_map(request) and
+             is_list(opts) do
+    service = runtime_gateway_service(opts)
+
+    if service_exports?(service, :invoke_runtime_tool, 5) do
+      case service.invoke_runtime_tool(context, tool_role_ref, operation_role_ref, request, opts) do
         {:ok, result} -> {:ok, result}
         {:error, reason} -> normalize_surface_error(reason)
       end
     else
-      normalize_surface_error(:linear_graphql_tool_not_configured)
+      normalize_surface_error(:runtime_tool_not_configured)
     end
   end
 
@@ -1940,6 +1986,14 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp source_service(opts),
     do: Keyword.get(opts, :source_service, Mezzanine.AppKitBridge.SourceService)
 
+  defp runtime_gateway_service(opts),
+    do:
+      Keyword.get(
+        opts,
+        :runtime_gateway_service,
+        Mezzanine.AppKitBridge.RuntimeGatewayService
+      )
+
   defp github_pr_evidence_service(opts),
     do:
       Keyword.get(
@@ -2924,25 +2978,13 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   @impl AppKit.Core.Backends.AgentIntakeBackend
   def start_agent_run(%RequestContext{} = context, request, opts) do
-    runtime = agent_runtime(request, opts)
-
-    with {:ok, spec_attrs} <- agent_run_spec_attrs(context, request),
-         true <- runtime_available?(runtime),
-         {:ok, projection} <- runtime.run(spec_attrs),
-         run_ref <- fetch_value(projection, :run_ref),
-         :ok <- store_agent_loop_projection(run_ref, projection) do
-      RunOutcomeFuture.new(%{
-        run_ref: run_ref,
-        workflow_ref: fetch_value(projection, :workflow_ref),
-        accepted?: true,
-        command_ref: "command://#{request.idempotency_key}",
-        correlation_id: request.correlation_id,
-        polling_hint: %{checking?: false, poll_interval_ms: 1_000, staleness_ms: 0}
-      })
-    else
-      false -> {:error, :agent_turn_runtime_not_available}
-      {:error, reason} -> {:error, reason}
-    end
+    invoke_runtime_operation(
+      context,
+      runtime_role_ref(request, opts),
+      operation_role_ref(request, opts),
+      request,
+      opts
+    )
   end
 
   @impl AppKit.Core.Backends.AgentIntakeBackend
@@ -3280,32 +3322,33 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   defp runtime_available?(_runtime), do: false
 
-  defp agent_runtime(request, opts) do
-    BackendConfig.resolve_optional(opts, :agent_loop_runtime, :agent_runtime) ||
-      codex_agent_runtime(request, opts)
-  end
-
   defp agent_runtime(opts),
-    do: BackendConfig.resolve_optional(opts, :agent_loop_runtime, :agent_runtime)
+    do:
+      BackendConfig.resolve_optional(opts, :agent_loop_runtime, :agent_runtime) ||
+        Keyword.get(opts, :runtime_adapter)
 
-  defp codex_agent_runtime(request, opts) do
-    if codex_agent_request?(request) do
-      BackendConfig.resolve_optional(opts, :codex_agent_runtime, :codex_runtime) ||
-        default_codex_agent_runtime()
-    end
+  defp runtime_binding(request, opts) do
+    params = fetch_value(request, :params) || %{}
+
+    Keyword.get(opts, :runtime_binding) ||
+      fetch_value(params, :runtime_binding) ||
+      fetch_value(params, "runtime_binding")
   end
 
-  defp default_codex_agent_runtime do
-    runtime = Mezzanine.IntegrationBridge.CodexAgentRuntime
+  defp runtime_role_ref(request, opts) do
+    params = fetch_value(request, :params) || %{}
 
-    if runtime_available?(runtime), do: runtime
+    Keyword.get(opts, :runtime_role_ref) ||
+      fetch_value(params, :runtime_role_ref) ||
+      :coding_agent_runtime
   end
 
-  defp codex_agent_request?(request) do
-    params = fetch_value(request || %{}, :params) || %{}
+  defp operation_role_ref(request, opts) do
+    params = fetch_value(request, :params) || %{}
 
-    fetch_value(params, :provider_family) in ["codex", :codex] or
-      fetch_value(params, :capability_id) == "codex.session.turn"
+    Keyword.get(opts, :operation_role_ref) ||
+      fetch_value(params, :operation_role_ref) ||
+      :session_turn
   end
 
   defp store_agent_loop_projection(run_ref, projection) when is_binary(run_ref) do

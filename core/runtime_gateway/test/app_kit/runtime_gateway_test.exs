@@ -1,7 +1,7 @@
 defmodule AppKit.RuntimeGatewayTest do
   use ExUnit.Case, async: true
 
-  alias AppKit.Core.Context
+  alias AppKit.Core.{Context, RequestContext}
   alias AppKit.Core.Backends.GenericBackend
   alias AppKit.RuntimeGateway
   alias AppKit.ScopeObjects
@@ -11,20 +11,22 @@ defmodule AppKit.RuntimeGatewayTest do
 
     def invoke_runtime_operation(context, runtime_role_ref, operation_role_ref, request, _opts) do
       {:ok,
-       {:runtime_operation, context.trace_ref, runtime_role_ref, operation_role_ref, request}}
+       {:runtime_operation, trace_ref(context), runtime_role_ref, operation_role_ref, request}}
     end
 
     def invoke_runtime_tool(context, tool_role_ref, operation_role_ref, request, _opts) do
-      {:ok, {:runtime_tool, context.trace_ref, tool_role_ref, operation_role_ref, request}}
+      {:ok, {:runtime_tool, trace_ref(context), tool_role_ref, operation_role_ref, request}}
     end
 
     def collect_evidence(context, evidence_role_ref, request, _opts) do
-      {:ok, {:evidence, context.trace_ref, evidence_role_ref, request}}
+      {:ok, {:evidence, trace_ref(context), evidence_role_ref, request}}
     end
 
     def invoke_resource_effect(context, role_ref, request, _opts) do
-      {:ok, {:resource_effect, context.trace_ref, role_ref, request}}
+      {:ok, {:resource_effect, trace_ref(context), role_ref, request}}
     end
+
+    defp trace_ref(context), do: Map.get(context, :trace_ref) || Map.fetch!(context, :trace_id)
   end
 
   test "opens an app-facing runtime gateway" do
@@ -84,6 +86,18 @@ defmodule AppKit.RuntimeGatewayTest do
     assert error.code == "generic_app_kit_surface_not_ready"
   end
 
+  test "invokes runtime tools from the existing request context envelope" do
+    assert {:ok,
+            {:runtime_tool, "cccccccccccccccccccccccccccccccc", :issue_query_tool, :execute, %{}}} =
+             RuntimeGateway.invoke_runtime_tool(
+               request_context!(),
+               :issue_query_tool,
+               :execute,
+               %{},
+               generic_backend: FakeGenericBackend
+             )
+  end
+
   defp context! do
     {:ok, context} =
       Context.new(%{
@@ -92,6 +106,20 @@ defmodule AppKit.RuntimeGatewayTest do
         installation_ref: %{id: "install-a", pack_slug: "product-a"},
         trace_ref: "trace://tenant-a/request-a",
         request_ref: "request://tenant-a/request-a",
+        idempotency_key: "idempotency://tenant-a/request-a"
+      })
+
+    context
+  end
+
+  defp request_context! do
+    {:ok, context} =
+      RequestContext.new(%{
+        trace_id: "cccccccccccccccccccccccccccccccc",
+        actor_ref: %{id: "actor-a", kind: :user},
+        tenant_ref: %{id: "tenant-a"},
+        installation_ref: %{id: "install-a", pack_slug: "product-a"},
+        request_id: "request://tenant-a/request-a",
         idempotency_key: "idempotency://tenant-a/request-a"
       })
 

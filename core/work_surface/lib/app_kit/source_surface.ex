@@ -40,13 +40,6 @@ defmodule AppKit.SourceSurface do
     backend(opts).publish_source(context, publication_role_ref, request, opts)
   end
 
-  @spec execute_linear_graphql_tool(RequestContext.t(), map(), keyword()) ::
-          {:ok, map()} | {:error, SurfaceError.t()}
-  def execute_linear_graphql_tool(%RequestContext{} = context, attrs, opts \\ [])
-      when is_map(attrs) and is_list(opts) do
-    backend(opts).execute_linear_graphql_tool(context, attrs, opts)
-  end
-
   defp backend(opts) do
     BackendConfig.resolve(
       opts,
