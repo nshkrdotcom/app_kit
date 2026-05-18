@@ -48,8 +48,8 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     def source_read_allowed_operations(_source_role_ref, _source_binding, _opts),
       do: ["linear.users.get_self", "linear.issues.list"]
 
-    def prepare_linear_api_key_invocation(api_key, attrs, opts \\ []) do
-      send(self(), {:prepare_linear_api_key_invocation, api_key, attrs, opts})
+    def prepare_credential_invocation(credential_request, attrs, opts \\ []) do
+      send(self(), {:prepare_credential_invocation, credential_request, attrs, opts})
 
       {:ok,
        %{
@@ -109,8 +109,9 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     def source_read_allowed_operations(_source_role_ref, _source_binding, _opts),
       do: ["linear.users.get_self", "linear.issues.list"]
 
-    def prepare_linear_connection_invocation(connection_id, attrs, opts \\ []) do
-      send(self(), {:prepare_linear_connection_invocation, connection_id, attrs, opts})
+    def prepare_credential_invocation(credential_request, attrs, opts \\ []) do
+      send(self(), {:prepare_credential_invocation, credential_request, attrs, opts})
+      connection_id = Map.fetch!(credential_request, :credential_material)
 
       {:ok,
        %{
@@ -458,6 +459,41 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert requested_binding.source_binding_id == "linear-primary"
   end
 
+  test "source service rejects missing source binding instead of synthesizing provider defaults" do
+    context =
+      request_context_by_slug("tenant-missing-source-binding", "coding-ops", "coding_task")
+
+    assert {:error, :missing_source_binding} =
+             SourceService.fetch_candidates(
+               context,
+               :issue_tracker,
+               %{},
+               authorized_invocation: authorized_invocation_allowing(["linear.issues.list"]),
+               integration_bridge_service: CurrentStateBridge
+             )
+  end
+
+  test "source service rejects concrete nested binding maps unless compiled" do
+    context =
+      request_context_by_slug("tenant-concrete-source-binding", "coding-ops", "coding_task")
+
+    assert {:error, :concrete_source_binding_requires_compiled_snapshot} =
+             SourceService.fetch_candidates(
+               context,
+               :issue_tracker,
+               %{
+                 source_binding: %{
+                   source_binding_id: "linear-primary",
+                   provider: "linear",
+                   adapter_ref: "linear",
+                   binding: %{operation_id: "linear.issues.list"}
+                 }
+               },
+               authorized_invocation: authorized_invocation_allowing(["linear.issues.list"]),
+               integration_bridge_service: CurrentStateBridge
+             )
+  end
+
   test "source service prepares API key credentials before candidate fetch" do
     context = request_context_by_slug("tenant-linear-live", "coding-ops", "coding_task")
     invocation = authorized_invocation_allowing(["linear.users.get_self", "linear.issues.list"])
@@ -474,7 +510,10 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
                integration_bridge_service: CredentialIngressBridge
              )
 
-    assert_received {:prepare_linear_api_key_invocation, ^api_key, attrs, _opts}
+    assert_received {:prepare_credential_invocation, credential_request, attrs, _opts}
+    assert credential_request.adapter_ref == "linear"
+    assert credential_request.credential_kind == :api_key
+    assert credential_request.credential_material == api_key
     assert attrs.tenant_id == "tenant-linear-live"
     assert attrs.installation_id == "tenant-linear-live"
     assert attrs.allowed_operations == ["linear.users.get_self", "linear.issues.list"]
@@ -510,8 +549,10 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
                integration_bridge_service: ExistingConnectionBridge
              )
 
-    assert_received {:prepare_linear_connection_invocation, "connection-linear-existing", attrs,
-                     prepare_opts}
+    assert_received {:prepare_credential_invocation, credential_request, attrs, prepare_opts}
+    assert credential_request.adapter_ref == "linear"
+    assert credential_request.credential_kind == :connection
+    assert credential_request.credential_material == "connection-linear-existing"
 
     assert attrs.tenant_id == "tenant-linear-existing"
     assert attrs.allowed_operations == ["linear.users.get_self", "linear.issues.list"]
@@ -550,7 +591,10 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
                integration_bridge_service: CredentialIngressBridge
              )
 
-    assert_received {:prepare_linear_api_key_invocation, ^api_key, attrs, _opts}
+    assert_received {:prepare_credential_invocation, credential_request, attrs, _opts}
+    assert credential_request.adapter_ref == "linear"
+    assert credential_request.credential_kind == :api_key
+    assert credential_request.credential_material == api_key
     assert attrs.tenant_id == "tenant-linear-current-live"
     assert attrs.allowed_operations == ["linear.users.get_self", "linear.issues.list"]
     assert attrs.subject_id == "issue_tracker"
@@ -577,6 +621,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     attrs = %{
       source_publish_ref: "linear_state_update",
       source_binding_id: "linear-primary",
+      source_binding: source_binding(),
       source_ref: "linear://inst-1/issue/ENG-321",
       issue_id: "lin-issue-321",
       state_name: "Done",
@@ -606,6 +651,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     attrs = %{
       source_publish_ref: "linear_workpad_review",
       source_binding_id: "linear-primary",
+      source_binding: source_binding(),
       source_ref: "linear://inst-1/issue/ENG-321",
       issue_id: "lin-issue-321",
       body: "Ready for review",
@@ -1315,8 +1361,14 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     %{
       source_binding_id: "linear-primary",
       installation_id: "tenant-bridge-source-sync",
+      compiled_binding_ref: "compiled-binding://tenant-bridge-source-sync/linear-primary",
+      adapter_ref: "linear",
       provider: "linear",
       connection_ref: "linear-primary",
+      operation_refs: %{
+        fetch_candidates: "linear.issues.list",
+        current_states: "linear.issues.list"
+      },
       candidate_filters: %{assignee: "me"},
       state_mapping: %{
         "submitted" => ["Todo"],

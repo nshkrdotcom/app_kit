@@ -6,8 +6,6 @@ defmodule Mezzanine.AppKitBridge.SourceService do
   alias Mezzanine.IntegrationBridge
   alias Mezzanine.IntegrationBridge.AuthorizedInvocation
 
-  @default_source_binding_id "linear-primary"
-
   @type source_role_ref :: atom() | String.t()
 
   @spec sync_source(RequestContext.t(), source_role_ref(), map(), keyword()) ::
@@ -16,7 +14,7 @@ defmodule Mezzanine.AppKitBridge.SourceService do
       when (is_atom(source_role_ref) or is_binary(source_role_ref)) and is_map(source_page) and
              is_list(opts) do
     with {:ok, route} <- route_context(context, opts),
-         binding <- source_binding(context, source_page, opts),
+         {:ok, binding} <- source_binding(context, source_page, opts),
          envelope <- source_envelope(context, source_page, binding),
          {:ok, source_intake} <-
            integration_bridge_service(opts).normalize_source_page(
@@ -46,16 +44,15 @@ defmodule Mezzanine.AppKitBridge.SourceService do
   def current_states(%RequestContext{} = context, source_role_ref, request, opts \\ [])
       when (is_atom(source_role_ref) or is_binary(source_role_ref)) and is_map(request) and
              is_list(opts) do
-    source_binding = source_binding(context, request, opts)
-
-    with {:ok, _tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
+    with {:ok, source_binding} <- source_binding(context, request, opts),
+         {:ok, _tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
          {:ok, issue_ids} <- issue_ids(request),
          {:ok, invocation, opts} <-
            authorized_invocation(
              context,
              source_allowed_operations(source_role_ref, source_binding, opts),
              source_role_ref,
-             opts
+             with_credential_adapter(opts, source_binding)
            ) do
       integration_bridge_service(opts).fetch_source_current_states(
         invocation,
@@ -72,15 +69,14 @@ defmodule Mezzanine.AppKitBridge.SourceService do
   def fetch_candidates(%RequestContext{} = context, source_role_ref, request, opts \\ [])
       when (is_atom(source_role_ref) or is_binary(source_role_ref)) and is_map(request) and
              is_list(opts) do
-    source_binding = source_binding(context, request, opts)
-
-    with {:ok, _tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
+    with {:ok, source_binding} <- source_binding(context, request, opts),
+         {:ok, _tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
          {:ok, invocation, opts} <-
            authorized_invocation(
              context,
              source_allowed_operations(source_role_ref, source_binding, opts),
              source_role_ref,
-             opts
+             with_credential_adapter(opts, source_binding)
            ) do
       integration_bridge_service(opts).fetch_source_candidates(
         invocation,
@@ -96,9 +92,8 @@ defmodule Mezzanine.AppKitBridge.SourceService do
   def publish_source(%RequestContext{} = context, publication_role_ref, attrs, opts \\ [])
       when (is_atom(publication_role_ref) or is_binary(publication_role_ref)) and is_map(attrs) and
              is_list(opts) do
-    source_binding = source_binding(context, attrs, opts)
-
-    with {:ok, _tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
+    with {:ok, source_binding} <- source_binding(context, attrs, opts),
+         {:ok, _tenant_id} <- required_context_id(context.tenant_ref, :tenant_ref),
          {:ok, invocation, opts} <-
            authorized_invocation(
              context,
@@ -110,7 +105,7 @@ defmodule Mezzanine.AppKitBridge.SourceService do
              ),
              value(attrs, :source_ref) || value(attrs, :source_publish_ref) ||
                publication_role_ref,
-             opts
+             with_credential_adapter(opts, source_binding)
            ) do
       attrs =
         attrs
@@ -187,23 +182,61 @@ defmodule Mezzanine.AppKitBridge.SourceService do
   end
 
   defp source_binding(context, source_page, opts) do
-    binding =
+    explicit_binding =
       Keyword.get(opts, :source_binding) ||
-        value(source_page, :source_binding) ||
-        %{}
+        value(source_page, :source_binding)
 
-    binding
-    |> Map.new()
-    |> Map.put_new(:source_binding_id, @default_source_binding_id)
-    |> Map.put_new(:installation_id, installation_id(context, binding))
-    |> Map.put_new(:provider, "linear")
-    |> Map.put_new(:connection_ref, @default_source_binding_id)
-    |> Map.put_new(:state_mapping, %{
-      "submitted" => ["Todo", "Backlog"],
-      "retry_submission" => ["Todo"],
-      "completed" => ["Done", "Completed"],
-      "rejected" => ["Canceled", "Duplicate"]
-    })
+    with {:ok, binding} <- normalize_source_binding(explicit_binding),
+         :ok <- reject_uncompiled_concrete_binding(binding),
+         :ok <- require_source_binding_id(binding),
+         :ok <- require_source_adapter_ref(binding) do
+      {:ok, Map.put_new(binding, :installation_id, installation_id(context, binding))}
+    end
+  end
+
+  defp normalize_source_binding(%_{} = struct), do: {:ok, Map.from_struct(struct)}
+  defp normalize_source_binding(%{} = binding), do: {:ok, Map.new(binding)}
+  defp normalize_source_binding(binding) when is_list(binding), do: {:ok, Map.new(binding)}
+  defp normalize_source_binding(_missing), do: {:error, :missing_source_binding}
+
+  defp reject_uncompiled_concrete_binding(binding) do
+    if concrete_binding_data?(binding) and not compiled_binding_snapshot?(binding) do
+      {:error, :concrete_source_binding_requires_compiled_snapshot}
+    else
+      :ok
+    end
+  end
+
+  defp concrete_binding_data?(binding) do
+    present?(value(binding, :provider)) or
+      present?(value(binding, :operation_id)) or
+      present?(value(binding, :capability_id)) or
+      is_map(value(binding, :binding))
+  end
+
+  defp compiled_binding_snapshot?(binding) do
+    truthy?(value(binding, :compiled_binding?)) or
+      present?(value(binding, :compiled_binding_ref)) or
+      present?(value(binding, :binding_snapshot_ref)) or
+      present?(value(binding, :binding_set_id)) or
+      present?(value(binding, :binding_epoch))
+  end
+
+  defp require_source_binding_id(binding) do
+    if present?(value(binding, :source_binding_id)) or present?(value(binding, :binding_ref)) do
+      :ok
+    else
+      {:error, :missing_source_binding_id}
+    end
+  end
+
+  defp require_source_adapter_ref(binding) do
+    if present?(value(binding, :adapter_ref)) or present?(value(binding, :source_adapter_ref)) or
+         is_atom(value(binding, :adapter_module)) do
+      :ok
+    else
+      {:error, :missing_source_adapter_ref}
+    end
   end
 
   defp issue_ids(request) do
@@ -272,7 +305,7 @@ defmodule Mezzanine.AppKitBridge.SourceService do
     %{
       tenant_id: tenant_id,
       installation_id: installation_id,
-      source_binding_id: value(binding, :source_binding_id) || @default_source_binding_id,
+      source_binding_id: value(binding, :source_binding_id) || value(binding, :binding_ref),
       authorization_scope: %{"tenant_id" => tenant_id},
       trace_id: context.trace_id,
       causation_id: context.causation_id || context.idempotency_key || context.trace_id,
@@ -382,6 +415,11 @@ defmodule Mezzanine.AppKitBridge.SourceService do
   defp value(%{} = map, key), do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
   defp value(_map, _key), do: nil
 
+  defp present?(value) when is_binary(value), do: String.trim(value) != ""
+  defp present?(value), do: not is_nil(value) and value != false
+
+  defp truthy?(value), do: value in [true, "true", 1, "1"]
+
   defp compact_map(map) do
     map
     |> Enum.reject(fn {_key, value} -> value in [nil, "", [], %{}] end)
@@ -418,13 +456,13 @@ defmodule Mezzanine.AppKitBridge.SourceService do
   defp prepare_connection_invocation(context, allowed_operations, subject_hint, opts) do
     case string_opt(opts, :connection_id) do
       nil ->
-        prepare_linear_api_key_invocation(context, allowed_operations, subject_hint, opts)
+        prepare_api_key_invocation(context, allowed_operations, subject_hint, opts)
 
       connection_id ->
-        with {:ok, service} <- linear_connection_ingress_service(opts),
+        with {:ok, service} <- credential_ingress_service(opts),
              {:ok, prepared} <-
-               service.prepare_linear_connection_invocation(
-                 connection_id,
+               service.prepare_credential_invocation(
+                 credential_request(:connection, connection_id, opts),
                  invocation_ingress_attrs(context, allowed_operations, subject_hint, opts),
                  opts
                ),
@@ -433,17 +471,17 @@ defmodule Mezzanine.AppKitBridge.SourceService do
           {:ok, invocation, merge_prepared_source_opts(opts, prepared)}
         else
           {:error, reason} -> {:error, reason}
-          _other -> {:error, :invalid_prepared_linear_invocation}
+          _other -> {:error, :invalid_prepared_credential_invocation}
         end
     end
   end
 
-  defp prepare_linear_api_key_invocation(context, allowed_operations, subject_hint, opts) do
+  defp prepare_api_key_invocation(context, allowed_operations, subject_hint, opts) do
     with {:ok, api_key} <- linear_api_key(opts),
-         {:ok, service} <- linear_credential_ingress_service(opts),
+         {:ok, service} <- credential_ingress_service(opts),
          {:ok, prepared} <-
-           service.prepare_linear_api_key_invocation(
-             api_key,
+           service.prepare_credential_invocation(
+             credential_request(:api_key, api_key, opts),
              invocation_ingress_attrs(context, allowed_operations, subject_hint, opts),
              opts
            ),
@@ -451,7 +489,7 @@ defmodule Mezzanine.AppKitBridge.SourceService do
       {:ok, invocation, merge_prepared_source_opts(opts, prepared)}
     else
       {:error, reason} -> {:error, reason}
-      _other -> {:error, :invalid_prepared_linear_invocation}
+      _other -> {:error, :invalid_prepared_credential_invocation}
     end
   end
 
@@ -465,30 +503,20 @@ defmodule Mezzanine.AppKitBridge.SourceService do
     end
   end
 
-  defp linear_credential_ingress_service(opts) do
+  defp credential_ingress_service(opts) do
     service = integration_bridge_service(opts)
 
-    if service_exports?(service, :prepare_linear_api_key_invocation, 3) do
+    if service_exports?(service, :prepare_credential_invocation, 3) do
       {:ok, service}
     else
-      {:error, :linear_credential_ingress_not_configured}
-    end
-  end
-
-  defp linear_connection_ingress_service(opts) do
-    service = integration_bridge_service(opts)
-
-    if service_exports?(service, :prepare_linear_connection_invocation, 3) do
-      {:ok, service}
-    else
-      {:error, :linear_connection_ingress_not_configured}
+      {:error, :credential_ingress_not_configured}
     end
   end
 
   defp prepared_authorized_invocation(prepared) do
     case value(prepared, :authorized_invocation) do
       %AuthorizedInvocation{} = invocation -> {:ok, invocation}
-      _other -> {:error, :invalid_prepared_linear_invocation}
+      _other -> {:error, :invalid_prepared_credential_invocation}
     end
   end
 
@@ -524,6 +552,24 @@ defmodule Mezzanine.AppKitBridge.SourceService do
       :invoke_opts, left, right -> Keyword.merge(List.wrap(left), List.wrap(right))
       _key, _left, right -> right
     end)
+  end
+
+  defp with_credential_adapter(opts, binding) do
+    case value(binding, :adapter_ref) || value(binding, :source_adapter_ref) do
+      adapter_ref when is_atom(adapter_ref) or is_binary(adapter_ref) ->
+        Keyword.put_new(opts, :credential_adapter_ref, adapter_ref)
+
+      _missing ->
+        opts
+    end
+  end
+
+  defp credential_request(kind, material, opts) do
+    %{
+      adapter_ref: Keyword.get(opts, :credential_adapter_ref),
+      credential_kind: kind,
+      credential_material: material
+    }
   end
 
   defp string_opt(opts, key) do

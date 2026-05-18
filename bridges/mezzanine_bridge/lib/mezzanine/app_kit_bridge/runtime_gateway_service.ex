@@ -74,7 +74,7 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
              context,
              allowed_operations,
              value(attrs, :tool_ref) || value(tool_binding, :tool_ref) || tool_role_ref,
-             opts
+             with_credential_adapter(opts, tool_binding)
            ),
          attrs <- attrs |> Map.new() |> Map.put_new(:trace_id, context.trace_id),
          {:ok, service} <- runtime_tool_service(opts) do
@@ -215,13 +215,13 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
   defp prepare_connection_invocation(context, allowed_operations, subject_hint, opts) do
     case string_opt(opts, :connection_id) do
       nil ->
-        prepare_linear_api_key_invocation(context, allowed_operations, subject_hint, opts)
+        prepare_api_key_invocation(context, allowed_operations, subject_hint, opts)
 
       connection_id ->
-        with {:ok, service} <- linear_connection_ingress_service(opts),
+        with {:ok, service} <- credential_ingress_service(opts),
              {:ok, prepared} <-
-               service.prepare_linear_connection_invocation(
-                 connection_id,
+               service.prepare_credential_invocation(
+                 credential_request(:connection, connection_id, opts),
                  invocation_ingress_attrs(context, allowed_operations, subject_hint, opts),
                  opts
                ),
@@ -230,17 +230,17 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
           {:ok, invocation, merge_prepared_runtime_opts(opts, prepared)}
         else
           {:error, reason} -> {:error, reason}
-          _other -> {:error, :invalid_prepared_runtime_invocation}
+          _other -> {:error, :invalid_prepared_credential_invocation}
         end
     end
   end
 
-  defp prepare_linear_api_key_invocation(context, allowed_operations, subject_hint, opts) do
+  defp prepare_api_key_invocation(context, allowed_operations, subject_hint, opts) do
     with {:ok, api_key} <- linear_api_key(opts),
-         {:ok, service} <- linear_credential_ingress_service(opts),
+         {:ok, service} <- credential_ingress_service(opts),
          {:ok, prepared} <-
-           service.prepare_linear_api_key_invocation(
-             api_key,
+           service.prepare_credential_invocation(
+             credential_request(:api_key, api_key, opts),
              invocation_ingress_attrs(context, allowed_operations, subject_hint, opts),
              opts
            ),
@@ -248,7 +248,7 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
       {:ok, invocation, merge_prepared_runtime_opts(opts, prepared)}
     else
       {:error, reason} -> {:error, reason}
-      _other -> {:error, :invalid_prepared_runtime_invocation}
+      _other -> {:error, :invalid_prepared_credential_invocation}
     end
   end
 
@@ -269,30 +269,20 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
     end
   end
 
-  defp linear_credential_ingress_service(opts) do
+  defp credential_ingress_service(opts) do
     service = integration_bridge_service(opts)
 
-    if service_exports?(service, :prepare_linear_api_key_invocation, 3) do
+    if service_exports?(service, :prepare_credential_invocation, 3) do
       {:ok, service}
     else
-      {:error, :linear_credential_ingress_not_configured}
-    end
-  end
-
-  defp linear_connection_ingress_service(opts) do
-    service = integration_bridge_service(opts)
-
-    if service_exports?(service, :prepare_linear_connection_invocation, 3) do
-      {:ok, service}
-    else
-      {:error, :linear_connection_ingress_not_configured}
+      {:error, :credential_ingress_not_configured}
     end
   end
 
   defp prepared_authorized_invocation(prepared) do
     case value(prepared, :authorized_invocation) do
       %AuthorizedInvocation{} = invocation -> {:ok, invocation}
-      _other -> {:error, :invalid_prepared_runtime_invocation}
+      _other -> {:error, :invalid_prepared_credential_invocation}
     end
   end
 
@@ -334,6 +324,24 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
       :invoke_opts, left, right -> Keyword.merge(List.wrap(left), List.wrap(right))
       _key, _left, right -> right
     end)
+  end
+
+  defp with_credential_adapter(opts, binding) do
+    case value(binding, :adapter_ref) || value(binding, :source_adapter_ref) do
+      adapter_ref when is_atom(adapter_ref) or is_binary(adapter_ref) ->
+        Keyword.put_new(opts, :credential_adapter_ref, adapter_ref)
+
+      _missing ->
+        opts
+    end
+  end
+
+  defp credential_request(kind, material, opts) do
+    %{
+      adapter_ref: Keyword.get(opts, :credential_adapter_ref),
+      credential_kind: kind,
+      credential_material: material
+    }
   end
 
   defp integration_bridge_service(opts),
