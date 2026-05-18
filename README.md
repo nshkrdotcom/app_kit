@@ -305,6 +305,40 @@ release boundary exists.
 This project is licensed under the MIT License.
 (c) 2026 nshkrdotcom. See `LICENSE`.
 
+## gn-ten Implementation Guides
+
+AppKit is the product-facing API boundary for the generalized stack. Product
+repos call AppKit surfaces; AppKit bridges translate those calls into lower
+repo contracts without letting product code import Mezzanine, Citadel, Jido
+Integration, Execution Plane, OuterBrain, or GroundPlane internals.
+
+Read these implementation guides before changing public surfaces:
+
+- [Generalized Stack Boundary](https://github.com/nshkrdotcom/app_kit/blob/main/guides/generalized_stack.md)
+- [QC And Operations](https://github.com/nshkrdotcom/app_kit/blob/main/guides/qc_and_operations.md)
+
+Operational rules:
+
+- Public interfaces live in the `core/*_surface`, `core/runtime_gateway`,
+  `core/run_governance`, `core/scope_objects`, web, and bridge packages listed
+  in this README.
+- AppKit may depend on lower published contracts and bridge packages. It must
+  not make product code depend on lower internals or choose providers through
+  hidden fallback dispatch.
+- Provider words are allowed in product-visible DTOs only as product data,
+  receipts, projection facts, or explicit adapter facts. Generic AppKit
+  commands should use product role refs and lower binding refs instead of
+  provider-named authority.
+- AppKit does not own GitHub or Linear live credentials. Product or StackLab
+  live commands that reach those providers must be run through
+  `~/scripts/with_bash_secrets`.
+- Local development uses `mix deps.get`, `mix ci`,
+  `mix app_kit.schema_registry.verify`, and `mix app_kit.no_bypass` as
+  described above.
+- Evidence is emitted through AppKit tests, schema registry receipts,
+  no-bypass scanner output, StackLab proof receipts, and product acceptance
+  receipts that exercise the AppKit boundary.
+
 ## Temporal developer environment
 
 Temporal runtime development is managed from `/home/home/p/g/n/mezzanine`
