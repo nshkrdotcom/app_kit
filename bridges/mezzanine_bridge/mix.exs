@@ -56,6 +56,7 @@ defmodule AppKitMezzanineBridge.MixProject do
       {:app_kit_core, path: "../../core/app_kit_core"},
       {:app_kit_run_governance, path: "../../core/run_governance"},
       DependencySources.dep(:execution_plane, @repo_root, override: true),
+      DependencySources.dep(:ground_plane_contracts, @repo_root, override: true),
       DependencySources.dep(:ground_plane_persistence_policy, @repo_root, override: true),
       DependencySources.dep(:jido_integration_contracts, @repo_root, override: true),
       DependencySources.dep(:mezzanine_audit_engine, @repo_root),

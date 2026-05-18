@@ -26,6 +26,7 @@ end
       default_order: [:github, :hex, :path],
       publish_order: [:hex]
     },
+    ground_plane_contracts: dep.("ground_plane", "core/ground_plane_contracts", "~> 0.1.0"),
     ground_plane_persistence_policy: dep.("ground_plane", "core/persistence_policy", "~> 0.1.0"),
     jido_hive_agent_coordinator: dep.("jido_hive", "core/agent_coordinator", "~> 0.1.0"),
     jido_hive_coordination_patterns: dep.("jido_hive", "core/coordination_patterns", "~> 0.1.0"),
