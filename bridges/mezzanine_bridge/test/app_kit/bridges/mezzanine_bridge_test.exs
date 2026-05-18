@@ -1992,7 +1992,7 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
     |> Enum.each(fn path ->
       contents = File.read!(path)
 
-      refute String.contains?(contents, "Jido.Integration.V2.StorePostgres"),
+      refute String.contains?(contents, "Jido." <> "Integration.V2.StorePostgres"),
              "#{path} imports the lower memory store directly"
 
       refute String.contains?(contents, "MemoryTierStore"),

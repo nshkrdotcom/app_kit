@@ -14,7 +14,6 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
 
   alias Ecto.Adapters.SQL
   alias Ecto.Adapters.SQL.Sandbox
-  alias Jido.Integration.V2.TenantScope
 
   alias Mezzanine.AppKitBridge.{
     OperatorActionService,
@@ -54,8 +53,8 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
     def operation_supported?(operation),
       do: operation in [:fetch_run, :events, :attempts, :run_artifacts]
 
-    def fetch_run(%TenantScope{} = scope, run_id) do
-      send(self(), {:fetch_run, [scope.tenant_id, run_id]})
+    def fetch_run(%{tenant_id: tenant_id}, run_id) do
+      send(self(), {:fetch_run, [tenant_id, run_id]})
 
       {:ok,
        %{
@@ -65,8 +64,8 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
        }}
     end
 
-    def events(%TenantScope{} = scope, run_id) do
-      send(self(), {:events, [scope.tenant_id, run_id]})
+    def events(%{tenant_id: tenant_id}, run_id) do
+      send(self(), {:events, [tenant_id, run_id]})
 
       [
         %{
@@ -78,8 +77,8 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
       ]
     end
 
-    def attempts(%TenantScope{} = scope, run_id) do
-      send(self(), {:attempts, [scope.tenant_id, run_id]})
+    def attempts(%{tenant_id: tenant_id}, run_id) do
+      send(self(), {:attempts, [tenant_id, run_id]})
 
       [
         %{
@@ -91,8 +90,8 @@ defmodule Mezzanine.AppKitBridge.OperatorServicesTest do
       ]
     end
 
-    def run_artifacts(%TenantScope{} = scope, run_id) do
-      send(self(), {:run_artifacts, [scope.tenant_id, run_id]})
+    def run_artifacts(%{tenant_id: tenant_id}, run_id) do
+      send(self(), {:run_artifacts, [tenant_id, run_id]})
 
       [
         %{

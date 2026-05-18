@@ -275,7 +275,7 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
       string_opt(opts, :credential_env_var) ->
         {:ok,
          %{
-           secret_provider: Jido.Integration.Secrets.EnvProvider,
+           secret_source_ref: :env,
            secret_scope: %{
              env_var: string_opt(opts, :credential_env_var),
              secret_key: :api_key
@@ -286,7 +286,7 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
       string_opt(opts, :linear_api_key_env_var) ->
         {:ok,
          %{
-           secret_provider: Jido.Integration.Secrets.EnvProvider,
+           secret_source_ref: :env,
            secret_scope: %{
              env_var: string_opt(opts, :linear_api_key_env_var),
              secret_key: :api_key
@@ -304,7 +304,7 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
       api_key when is_binary(api_key) and api_key != "" ->
         {:ok,
          %{
-           secret_provider: Jido.Integration.Secrets.EphemeralProvider,
+           secret_source_ref: :ephemeral,
            secret_scope: %{provider_ref: "ephemeral://app-kit-runtime", secret_key: :api_key},
            secret_opts: [
              secret_materializer: fn -> %{api_key: api_key} end
@@ -395,11 +395,15 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
     %{
       adapter_ref: Keyword.get(opts, :credential_adapter_ref),
       credential_kind: :api_key,
-      secret_provider: Map.fetch!(secret_source, :secret_provider),
       secret_scope: Map.fetch!(secret_source, :secret_scope),
       lease_ref: Keyword.get(opts, :credential_lease_ref)
     }
+    |> maybe_put(:secret_provider, Map.get(secret_source, :secret_provider))
+    |> maybe_put(:secret_source_ref, Map.get(secret_source, :secret_source_ref))
   end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp credential_ingress_opts(opts, secret_source) do
     opts

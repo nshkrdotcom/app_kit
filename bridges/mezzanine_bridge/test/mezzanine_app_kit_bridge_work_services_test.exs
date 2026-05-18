@@ -513,7 +513,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert_received {:prepare_credential_invocation, credential_request, attrs, _opts}
     assert credential_request.adapter_ref == "linear"
     assert credential_request.credential_kind == :api_key
-    assert credential_request.secret_provider == Jido.Integration.Secrets.EphemeralProvider
+    assert credential_request.secret_source_ref == :ephemeral
     assert credential_request.secret_scope.secret_key == :api_key
     refute Map.has_key?(credential_request, :credential_material)
     refute inspect(credential_request) =~ api_key
@@ -597,7 +597,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert_received {:prepare_credential_invocation, credential_request, attrs, _opts}
     assert credential_request.adapter_ref == "linear"
     assert credential_request.credential_kind == :api_key
-    assert credential_request.secret_provider == Jido.Integration.Secrets.EphemeralProvider
+    assert credential_request.secret_source_ref == :ephemeral
     assert credential_request.secret_scope.secret_key == :api_key
     refute Map.has_key?(credential_request, :credential_material)
     refute inspect(credential_request) =~ api_key
