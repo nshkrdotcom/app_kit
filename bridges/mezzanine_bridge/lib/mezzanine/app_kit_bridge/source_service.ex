@@ -514,24 +514,13 @@ defmodule Mezzanine.AppKitBridge.SourceService do
            secret_opts: []
          }}
 
-      string_opt(opts, :linear_api_key_env_var) ->
-        {:ok,
-         %{
-           secret_source_ref: :env,
-           secret_scope: %{
-             env_var: string_opt(opts, :linear_api_key_env_var),
-             secret_key: :api_key
-           },
-           secret_opts: []
-         }}
-
       true ->
         ephemeral_secret_source(opts)
     end
   end
 
   defp ephemeral_secret_source(opts) do
-    case Keyword.get(opts, :linear_api_key) || Keyword.get(opts, :api_key) do
+    case Keyword.get(opts, :api_key) do
       api_key when is_binary(api_key) and api_key != "" ->
         {:ok,
          %{
@@ -638,13 +627,11 @@ defmodule Mezzanine.AppKitBridge.SourceService do
 
   defp secret_option_keys do
     [
-      :linear_api_key,
       :api_key,
       :credential_secret_provider,
       :credential_secret_scope,
       :credential_secret_opts,
-      :credential_env_var,
-      :linear_api_key_env_var
+      :credential_env_var
     ]
   end
 

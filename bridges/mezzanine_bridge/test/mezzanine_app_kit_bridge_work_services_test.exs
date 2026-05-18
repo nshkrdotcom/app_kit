@@ -506,7 +506,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
                context,
                :issue_tracker,
                %{source_binding: source_binding()},
-               linear_api_key: api_key,
+               api_key: api_key,
                integration_bridge_service: CredentialIngressBridge
              )
 
@@ -528,7 +528,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
 
     assert requested_binding.source_binding_id == "linear-primary"
     assert Keyword.fetch!(opts, :invoke_opts)[:connection_id] == "connection-linear-live"
-    refute Keyword.has_key?(opts, :linear_api_key)
+    refute Keyword.has_key?(opts, :api_key)
     assert result.credential_redeemed? == true
     assert result.source_role_ref == :issue_tracker
     refute inspect(result) =~ api_key
@@ -572,7 +572,6 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert Keyword.fetch!(opts, :credential_lease_ref) == "credential-lease-linear-existing"
     assert result.credential_redeemed? == true
     assert result.source_role_ref == :issue_tracker
-    refute Keyword.has_key?(opts, :linear_api_key)
     refute Keyword.has_key?(opts, :api_key)
   after
     Process.delete(:connection_ingress_invocation)
@@ -590,7 +589,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
                context,
                :issue_tracker,
                %{issue_ids: ["lin-issue-321"], source_binding: source_binding()},
-               linear_api_key: api_key,
+               api_key: api_key,
                integration_bridge_service: CredentialIngressBridge
              )
 
@@ -610,7 +609,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
 
     assert requested_binding.source_binding_id == "linear-primary"
     assert Keyword.fetch!(opts, :invoke_opts)[:connection_id] == "connection-linear-live"
-    refute Keyword.has_key?(opts, :linear_api_key)
+    refute Keyword.has_key?(opts, :api_key)
     assert result.credential_redeemed? == true
     assert result.source_role_ref == :issue_tracker
     refute inspect(result) =~ api_key
