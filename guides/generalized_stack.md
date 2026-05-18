@@ -52,6 +52,33 @@ When provider-specific behavior is needed, keep it in product config, explicit
 adapter data, or a bridge module that translates a generic AppKit surface into a
 lower binding-driven request.
 
+## Extravaganza Cutover Proof
+
+The current Extravaganza product path is the reference proof for this boundary.
+The product still exposes provider-named examples where those names are part of
+the product, but governed calls enter AppKit through generic work, source,
+runtime, and headless surfaces.
+
+The live proof completed these lanes through AppKit and the lower stack:
+
+- issue-tracker source discovery and current-state readback;
+- source publication create, update fallback, and same-state update;
+- dynamic source-tool execution;
+- coding-agent runtime turn execution;
+- proposed-change evidence collection;
+- proposed-change cleanup, including a disposable destructive fixture.
+
+Route evidence returned to the product includes role, binding, manifest,
+authority, connector-binding, credential-lease, lower-request, receipt,
+projection, evidence, and trace refs. Those refs are the northbound proof that
+provider facts are data selected below AppKit, not AppKit-level control flow.
+
+The old provider-shaped AppKit public methods are treated as removed APIs.
+`test/app_kit/generic_surface_static_test.exs` protects that posture by scanning
+the public surface for the removed names. If a future product needs a new lower
+capability, add a role-ref based AppKit surface and map it through a bridge;
+do not reintroduce provider-named public calls.
+
 ## Cleanup Ownership
 
 AppKit cleanup work means deleting product bypasses, provider-default dispatch,

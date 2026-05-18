@@ -96,9 +96,9 @@ The workspace currently exposes these product-facing families:
   decisions, lower-read leases, stream-attach leases, and operator-visible
   projection state.
 - **Source and installation:** `AppKit.SourceSurface` and
-  `AppKit.InstallationSurface` provide Linear-style source intake,
-  current-state lookup, source publication, dynamic tool execution, installation
-  bootstrap, and authoring-bundle import.
+  `AppKit.InstallationSurface` provide issue-tracker source intake,
+  current-state lookup, source publication, dynamic source-tool execution,
+  installation bootstrap, and authoring-bundle import.
 - **Semantic and app surfaces:** chat, conversation, domain, model, prompt,
   guardrail, memory, budget, cost, eval, replay, coordination, optimization,
   adaptive control, skill, hive, and scope/target helpers provide stable DTO
@@ -107,11 +107,14 @@ The workspace currently exposes these product-facing families:
   dashboard, eval studio, and policy authoring packages give product shells a
   reusable UI vocabulary without making AppKit a product.
 
-Recent Extravaganza-driven work added concrete runtime readback through AppKit:
-Codex initial input, first prompt, continuation metadata, app-server protocol,
-session start/stop, event stream, token totals, stalled runtime state, Linear
-candidate/current-state/publication/GraphQL DTOs, source blocker denial, dry-run
-publication forwarding, GitHub PR evidence receipts, and runtime status/logs.
+Recent Extravaganza-driven cutover work proved those capabilities through
+generic AppKit surfaces rather than provider-shaped public methods. The live
+product proof covered issue-tracker source discovery, current state lookup,
+source publication create/update fallback/same-state update, source GraphQL tool
+execution, coding-agent runtime turns, proposed-change evidence, and
+proposed-change cleanup. Product names such as Linear, GitHub, and Codex remain
+valid product data and lower adapter facts; AppKit public calls must stay
+role-ref and product-surface based.
 
 ## How To Use AppKit Correctly
 
