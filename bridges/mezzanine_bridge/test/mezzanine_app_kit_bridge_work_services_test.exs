@@ -111,7 +111,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
 
     def prepare_credential_invocation(credential_request, attrs, opts \\ []) do
       send(self(), {:prepare_credential_invocation, credential_request, attrs, opts})
-      connection_id = Map.fetch!(credential_request, :credential_material)
+      connection_id = Map.fetch!(credential_request, :connection_id)
 
       {:ok,
        %{
@@ -513,7 +513,10 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert_received {:prepare_credential_invocation, credential_request, attrs, _opts}
     assert credential_request.adapter_ref == "linear"
     assert credential_request.credential_kind == :api_key
-    assert credential_request.credential_material == api_key
+    assert credential_request.secret_provider == Jido.Integration.Secrets.EphemeralProvider
+    assert credential_request.secret_scope.secret_key == :api_key
+    refute Map.has_key?(credential_request, :credential_material)
+    refute inspect(credential_request) =~ api_key
     assert attrs.tenant_id == "tenant-linear-live"
     assert attrs.installation_id == "tenant-linear-live"
     assert attrs.allowed_operations == ["linear.users.get_self", "linear.issues.list"]
@@ -552,7 +555,7 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert_received {:prepare_credential_invocation, credential_request, attrs, prepare_opts}
     assert credential_request.adapter_ref == "linear"
     assert credential_request.credential_kind == :connection
-    assert credential_request.credential_material == "connection-linear-existing"
+    assert credential_request.connection_id == "connection-linear-existing"
 
     assert attrs.tenant_id == "tenant-linear-existing"
     assert attrs.allowed_operations == ["linear.users.get_self", "linear.issues.list"]
@@ -594,7 +597,10 @@ defmodule Mezzanine.AppKitBridge.WorkServicesTest do
     assert_received {:prepare_credential_invocation, credential_request, attrs, _opts}
     assert credential_request.adapter_ref == "linear"
     assert credential_request.credential_kind == :api_key
-    assert credential_request.credential_material == api_key
+    assert credential_request.secret_provider == Jido.Integration.Secrets.EphemeralProvider
+    assert credential_request.secret_scope.secret_key == :api_key
+    refute Map.has_key?(credential_request, :credential_material)
+    refute inspect(credential_request) =~ api_key
     assert attrs.tenant_id == "tenant-linear-current-live"
     assert attrs.allowed_operations == ["linear.users.get_self", "linear.issues.list"]
     assert attrs.subject_id == "issue_tracker"

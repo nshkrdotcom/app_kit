@@ -236,13 +236,13 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
   end
 
   defp prepare_api_key_invocation(context, allowed_operations, subject_hint, opts) do
-    with {:ok, api_key} <- linear_api_key(opts),
+    with {:ok, secret_source} <- credential_secret_source(opts),
          {:ok, service} <- credential_ingress_service(opts),
          {:ok, prepared} <-
            service.prepare_credential_invocation(
-             credential_request(:api_key, api_key, opts),
+             credential_request(:api_key, secret_source, opts),
              invocation_ingress_attrs(context, allowed_operations, subject_hint, opts),
-             opts
+             credential_ingress_opts(opts, secret_source)
            ),
          {:ok, %AuthorizedInvocation{} = invocation} <- prepared_authorized_invocation(prepared) do
       {:ok, invocation, merge_prepared_runtime_opts(opts, prepared)}
@@ -262,10 +262,57 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
     end
   end
 
-  defp linear_api_key(opts) do
+  defp credential_secret_source(opts) do
+    cond do
+      Keyword.get(opts, :credential_secret_provider) ->
+        {:ok,
+         %{
+           secret_provider: Keyword.fetch!(opts, :credential_secret_provider),
+           secret_scope: Keyword.get(opts, :credential_secret_scope, %{}),
+           secret_opts: Keyword.get(opts, :credential_secret_opts, [])
+         }}
+
+      string_opt(opts, :credential_env_var) ->
+        {:ok,
+         %{
+           secret_provider: Jido.Integration.Secrets.EnvProvider,
+           secret_scope: %{
+             env_var: string_opt(opts, :credential_env_var),
+             secret_key: :api_key
+           },
+           secret_opts: []
+         }}
+
+      string_opt(opts, :linear_api_key_env_var) ->
+        {:ok,
+         %{
+           secret_provider: Jido.Integration.Secrets.EnvProvider,
+           secret_scope: %{
+             env_var: string_opt(opts, :linear_api_key_env_var),
+             secret_key: :api_key
+           },
+           secret_opts: []
+         }}
+
+      true ->
+        ephemeral_secret_source(opts)
+    end
+  end
+
+  defp ephemeral_secret_source(opts) do
     case Keyword.get(opts, :linear_api_key) || Keyword.get(opts, :api_key) do
-      api_key when is_binary(api_key) and api_key != "" -> {:ok, api_key}
-      _missing -> {:error, :missing_authorized_runtime_invocation}
+      api_key when is_binary(api_key) and api_key != "" ->
+        {:ok,
+         %{
+           secret_provider: Jido.Integration.Secrets.EphemeralProvider,
+           secret_scope: %{provider_ref: "ephemeral://app-kit-runtime", secret_key: :api_key},
+           secret_opts: [
+             secret_materializer: fn -> %{api_key: api_key} end
+           ]
+         }}
+
+      _missing ->
+        {:error, :missing_authorized_runtime_invocation}
     end
   end
 
@@ -319,7 +366,7 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
     prepared_opts = List.wrap(value(prepared, :source_opts))
 
     opts
-    |> Keyword.drop([:linear_api_key, :api_key])
+    |> Keyword.drop(secret_option_keys())
     |> Keyword.merge(prepared_opts, fn
       :invoke_opts, left, right -> Keyword.merge(List.wrap(left), List.wrap(right))
       _key, _left, right -> right
@@ -336,12 +383,40 @@ defmodule Mezzanine.AppKitBridge.RuntimeGatewayService do
     end
   end
 
-  defp credential_request(kind, material, opts) do
+  defp credential_request(:connection, connection_id, opts) do
     %{
       adapter_ref: Keyword.get(opts, :credential_adapter_ref),
-      credential_kind: kind,
-      credential_material: material
+      credential_kind: :connection,
+      connection_id: connection_id
     }
+  end
+
+  defp credential_request(:api_key, secret_source, opts) do
+    %{
+      adapter_ref: Keyword.get(opts, :credential_adapter_ref),
+      credential_kind: :api_key,
+      secret_provider: Map.fetch!(secret_source, :secret_provider),
+      secret_scope: Map.fetch!(secret_source, :secret_scope),
+      lease_ref: Keyword.get(opts, :credential_lease_ref)
+    }
+  end
+
+  defp credential_ingress_opts(opts, secret_source) do
+    opts
+    |> Keyword.drop(secret_option_keys())
+    |> Keyword.merge(Map.get(secret_source, :secret_opts, []), fn _key, _left, right -> right end)
+  end
+
+  defp secret_option_keys do
+    [
+      :linear_api_key,
+      :api_key,
+      :credential_secret_provider,
+      :credential_secret_scope,
+      :credential_secret_opts,
+      :credential_env_var,
+      :linear_api_key_env_var
+    ]
   end
 
   defp integration_bridge_service(opts),
