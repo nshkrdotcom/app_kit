@@ -8,7 +8,7 @@ defmodule AppKit.Bridges.MezzanineBridgeBoundaryProtocolTest do
   test "AppKit to Mezzanine boundary fixture is serializable and deterministic" do
     envelope = Fixtures.boundary_envelopes().appkit_mezzanine
 
-    assert envelope.source == "app_kit"
+    assert envelope.origin == "app_kit"
     assert envelope.target == "mezzanine"
     assert envelope.metadata.transport == "direct-module"
 
@@ -18,9 +18,9 @@ defmodule AppKit.Bridges.MezzanineBridgeBoundaryProtocolTest do
     assert String.starts_with?(Envelope.digest(envelope), "sha256:")
 
     assert %{
-             "source" => "app_kit",
+             "origin" => "app_kit",
              "target" => "mezzanine",
-             "operation" => "source.fetch_candidates"
+             "operation" => "intake.fetch_candidates"
            } = Codec.decode!(encoded)
   end
 
@@ -28,9 +28,9 @@ defmodule AppKit.Bridges.MezzanineBridgeBoundaryProtocolTest do
     assert {:error, :boundary_pid_not_serializable} =
              Envelope.new(%{
                id: "boundary://app_kit/mezzanine/bad-runtime-value",
-               source: "app_kit",
+               origin: "app_kit",
                target: "mezzanine",
-               operation: "source.fetch_candidates",
+               operation: "intake.fetch_candidates",
                tenant_id: "tenant-a",
                payload: %{pid: self()}
              })
@@ -38,7 +38,7 @@ defmodule AppKit.Bridges.MezzanineBridgeBoundaryProtocolTest do
     assert {:error, {:raw_credential_key_forbidden, "api_key"}} =
              Codec.encode(%{
                tenant_id: "tenant-a",
-               payload: %{source_role_ref: "role://issue-tracker"},
+               payload: %{role_ref: "role://issue-tracker"},
                api_key: "raw-secret"
              })
   end
