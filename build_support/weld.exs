@@ -127,11 +127,7 @@ defmodule AppKit.Build.WeldContract do
   end
 
   defp dependency_configs do
-    {config, _binding} =
-      @repo_root
-      |> Path.join("build_support/dependency_sources.config.exs")
-      |> Code.eval_file()
-
+    config = DependencySources.config!(@repo_root)
     Map.new(config[:deps], fn {app, dep_config} -> {app, Map.new(dep_config)} end)
   end
 
