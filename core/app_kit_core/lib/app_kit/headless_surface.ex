@@ -3,9 +3,9 @@ defmodule AppKit.HeadlessSurface do
   Product-facing M1 readback and control surface.
 
   Products call this module instead of lower Mezzanine internals. Standalone
-  backend fallback is configured under the real `:app_kit_core` application;
-  governed calls ignore that fallback and resolve to explicit options or the
-  compiled `AppKit.Bridges.MezzanineBridge` default.
+  backend selection is passed through `AppKit.BackendStack` or explicit
+  backend options; runtime application environment is not used as backend
+  authority.
   """
 
   alias AppKit.BackendConfig

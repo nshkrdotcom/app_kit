@@ -1,7 +1,7 @@
 defmodule AppKit.BackendConfigTest do
   use ExUnit.Case, async: false
 
-  alias AppKit.BackendConfig
+  alias AppKit.{BackendConfig, BackendStack}
 
   defmodule AppEnvBackend, do: nil
   defmodule AppEnvRuntime, do: nil
@@ -23,12 +23,12 @@ defmodule AppKit.BackendConfigTest do
     :ok
   end
 
-  test "standalone compatibility can still resolve backend from application env" do
+  test "unmarked calls ignore application env and use compiled defaults" do
     assert BackendConfig.resolve([], :work_backend, :work_backend, DefaultBackend) ==
-             AppEnvBackend
+             DefaultBackend
   end
 
-  test "governed calls ignore application env backend fallback" do
+  test "governed calls ignore application env backend settings" do
     assert BackendConfig.resolve([governed?: true], :work_backend, :work_backend, DefaultBackend) ==
              DefaultBackend
 
@@ -49,9 +49,42 @@ defmodule AppKit.BackendConfigTest do
            ) == ExplicitBackend
   end
 
+  test "backend stack selection wins over application env settings" do
+    stack =
+      BackendStack.new!(%{
+        work_backend: ExplicitBackend,
+        agent_runtime: ExplicitBackend
+      })
+
+    assert BackendConfig.resolve(
+             [backend_stack: stack],
+             :work_backend,
+             :work_backend,
+             DefaultBackend
+           ) == ExplicitBackend
+
+    assert BackendConfig.resolve(
+             [governed?: true, backend_stack: stack],
+             :work_backend,
+             :work_backend,
+             DefaultBackend
+           ) == ExplicitBackend
+
+    assert BackendConfig.resolve_optional(
+             [authority_packet_ref: "authority-packet://one", backend_stack: stack],
+             :agent_loop_runtime,
+             :agent_runtime
+           ) == ExplicitBackend
+  end
+
+  test "backend stack rejects unknown backend roles" do
+    assert {:error, {:unknown_backend_role, :unknown_backend}} =
+             BackendStack.new(%{unknown_backend: ExplicitBackend})
+  end
+
   test "optional runtimes fail closed for governed calls without explicit runtime" do
     assert BackendConfig.resolve_optional([], :agent_loop_runtime, :agent_runtime) ==
-             AppEnvRuntime
+             nil
 
     assert BackendConfig.resolve_optional(
              [authority_packet_ref: "authority-packet://one"],

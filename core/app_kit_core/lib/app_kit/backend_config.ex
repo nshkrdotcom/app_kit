@@ -2,12 +2,11 @@ defmodule AppKit.BackendConfig do
   @moduledoc """
   Backend resolver for AppKit surfaces.
 
-  Application environment fallback is standalone compatibility only. Governed
-  calls must pass explicit backends or use the compiled default backend so
-  process config cannot choose AppKit bridge or operator behavior.
+  Calls must pass explicit backends, pass an `AppKit.BackendStack`, or use the
+  compiled default backend so process config cannot choose AppKit bridge or
+  operator behavior.
   """
 
-  @app :app_kit_core
   @governed_markers [
     :governed?,
     :authority_context,
@@ -43,10 +42,31 @@ defmodule AppKit.BackendConfig do
   end
 
   defp fallback(opts, app_env_key, default_backend) do
-    if governed?(opts) do
-      default_backend
-    else
-      Application.get_env(@app, app_env_key, default_backend)
+    case fetch_stack_backend(opts, app_env_key) do
+      {:ok, backend} ->
+        backend
+
+      :error ->
+        default_backend
     end
+  end
+
+  defp fetch_stack_backend(opts, app_env_key) do
+    opts
+    |> backend_stacks()
+    |> Enum.reduce_while(:error, fn stack, :error ->
+      case AppKit.BackendStack.fetch(stack, app_env_key) do
+        {:ok, backend} -> {:halt, {:ok, backend}}
+        :error -> {:cont, :error}
+      end
+    end)
+  end
+
+  defp backend_stacks(opts) do
+    [
+      Keyword.get(opts, :backend_stack),
+      Keyword.get(opts, :app_kit_backend_stack)
+    ]
+    |> Enum.filter(&match?(%AppKit.BackendStack{}, &1))
   end
 end

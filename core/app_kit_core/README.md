@@ -30,6 +30,8 @@ Current contract groups:
 - extension supply-chain DTOs for pack integrity posture, pack bundle schema,
   and connector-admission projection
 - northbound backend behaviours for work queries, reviews, and installations
+- `AppKit.BackendStack`, the explicit backend-selection context shared by
+  AppKit surfaces
 
 `AuthoringBundleImport` is intentionally separate from ordinary installation
 templates. It carries bundle checksum/schema posture, manifest/spec echoes,

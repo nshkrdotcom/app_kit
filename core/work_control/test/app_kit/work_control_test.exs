@@ -122,6 +122,25 @@ defmodule AppKit.WorkControlTest do
     assert result.payload.opts.target == :custom
   end
 
+  test "delegates through backend stack before application env settings" do
+    previous_backend = Application.get_env(:app_kit_core, :work_backend, :unset)
+    Application.put_env(:app_kit_core, :work_backend, EnvWorkBackend)
+
+    on_exit(fn -> restore_work_backend(previous_backend) end)
+
+    backend_stack = AppKit.BackendStack.new!(%{work_backend: FakeWorkBackend})
+
+    assert {:ok, result} =
+             WorkControl.start_run(
+               %{route_name: :compile_workspace, scope_id: "workspace/main"},
+               backend_stack: backend_stack,
+               target: :stack_selected
+             )
+
+    assert result.payload.backend == :fake
+    assert result.payload.opts.target == :stack_selected
+  end
+
   test "governed calls do not select work backend from application env" do
     previous_backend = Application.get_env(:app_kit_core, :work_backend, :unset)
     Application.put_env(:app_kit_core, :work_backend, EnvWorkBackend)
