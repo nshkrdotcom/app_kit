@@ -62,6 +62,8 @@ end
 defmodule AppKit.Core.Substrate.Dump do
   @moduledoc "Stable string-keyed dump helpers for AppKit substrate DTOs."
 
+  def dump_value(%DateTime{} = value), do: DateTime.to_iso8601(value)
+
   def dump_value(%{__struct__: module} = value) do
     if function_exported?(module, :dump, 1), do: module.dump(value), else: Map.from_struct(value)
   end
@@ -71,6 +73,8 @@ defmodule AppKit.Core.Substrate.Dump do
   def dump_value(%{} = value),
     do: Map.new(value, fn {key, val} -> {to_string(key), dump_value(val)} end)
 
+  def dump_value(nil), do: nil
+  def dump_value(value) when is_boolean(value), do: value
   def dump_value(value) when is_atom(value), do: Atom.to_string(value)
   def dump_value(value), do: value
 
