@@ -4,12 +4,18 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
   alias AppKit.Bridges.MezzanineBridge
 
   alias AppKit.Bridges.MezzanineBridge.{
+    AgentIntakeAdapter,
+    HeadlessAdapter,
     InstallationAdapter,
     ReviewAdapter,
+    RuntimeAdapter,
     SourceAdapter,
     WorkAdapter,
     WorkQueryAdapter
   }
+
+  alias AppKit.Core.AgentIntake.{RunOutcomeFuture, TurnSubmission}
+  alias AppKit.Core.RuntimeReadback.{CommandResult, RuntimeStateSnapshot}
 
   alias AppKit.Core.{
     ActionResult,
@@ -354,6 +360,108 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
     end
   end
 
+  defmodule RuntimeGatewayService do
+    def invoke_runtime_operation(
+          context,
+          runtime_role_ref,
+          operation_role_ref,
+          spec_attrs,
+          runtime_binding,
+          opts
+        ) do
+      send(
+        self(),
+        {:runtime_gateway_service_called, :invoke_runtime_operation, context.tenant_ref.id,
+         runtime_role_ref, operation_role_ref, spec_attrs, runtime_binding, opts}
+      )
+
+      {:ok,
+       %{
+         run_ref: "run://agent-1",
+         workflow_ref: "workflow://agent-1",
+         subject_ref: spec_attrs.subject_ref,
+         status: "running"
+       }}
+    end
+
+    def invoke_runtime_tool(context, tool_role_ref, operation_role_ref, request, opts) do
+      send(
+        self(),
+        {:runtime_gateway_service_called, :invoke_runtime_tool, context.tenant_ref.id,
+         tool_role_ref, operation_role_ref, request, opts}
+      )
+
+      {:ok, %{tool_role_ref: tool_role_ref, operation_role_ref: operation_role_ref}}
+    end
+  end
+
+  defmodule RuntimeProfileService do
+    def apply(tenant_id, runtime_profile) do
+      send(self(), {:runtime_profile_service_called, :apply, tenant_id, runtime_profile})
+      {:ok, %{status: :updated, profile_ref: runtime_profile.profile_ref}}
+    end
+  end
+
+  defmodule OperatorQueryService do
+    def system_health(tenant_id, program_id) do
+      send(self(), {:operator_query_service_called, :system_health, tenant_id, program_id})
+      {:ok, %{status: "ok", preflight: %{checks: []}}}
+    end
+
+    def timeline(tenant_id, subject_id) do
+      send(self(), {:operator_query_service_called, :timeline, tenant_id, subject_id})
+      {:ok, %{entries: [%{message: "started"}], total_count: 1}}
+    end
+  end
+
+  defmodule HeadlessWorkQueryService do
+    def list_subjects(tenant_id, program_id, filters) do
+      send(
+        self(),
+        {:headless_work_query_service_called, :list_subjects, tenant_id, program_id, filters}
+      )
+
+      {:ok,
+       [
+         %{
+           subject_id: "subject-1",
+           status: "running",
+           title: "Subject one",
+           updated_at: DateTime.utc_now()
+         }
+       ]}
+    end
+
+    def get_subject_projection(tenant_id, subject_id, opts) do
+      send(
+        self(),
+        {:headless_work_query_service_called, :get_subject_projection, tenant_id, subject_id,
+         opts}
+      )
+
+      {:ok,
+       %{
+         projection_name: "operator_subject_runtime",
+         computed_at: DateTime.utc_now(),
+         subject_ref: subject_id,
+         execution: %{dispatch_state: "running"},
+         lower_receipt: %{run_id: "lower-run-1"},
+         source_bindings: [%{id: "source-binding-1"}],
+         runtime: %{
+           token_totals: %{
+             total_input_tokens: 1,
+             total_output_tokens: 2,
+             total_tokens: 3
+           }
+         }
+       }}
+    end
+  end
+
+  defmodule AgentRuntime do
+    def run(_request), do: :ok
+  end
+
   test "documents the extraction contract for every current bridge behaviour" do
     declared_behaviours =
       MezzanineBridge.module_info(:attributes)
@@ -578,6 +686,88 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
     assert_received {:installation_service_called, :list_installations, "tenant-1", %{}, ^opts}
   end
 
+  test "runtime adapter owns runtime gateway and runtime surface delegation behind the facade" do
+    context = request_context()
+
+    opts = [
+      runtime_gateway_service: RuntimeGatewayService,
+      runtime_profile_service: RuntimeProfileService,
+      operator_query_service: OperatorQueryService,
+      runtime_binding: %{driver: "fixture"},
+      program_id: "program-1"
+    ]
+
+    request = agent_run_request()
+
+    assert {:ok, %RunOutcomeFuture{run_ref: "run://agent-1", workflow_ref: "workflow://agent-1"}} =
+             MezzanineBridge.invoke_runtime_operation(
+               context,
+               :runtime_role,
+               :operation_role,
+               request,
+               opts
+             )
+
+    assert_received {:runtime_gateway_service_called, :invoke_runtime_operation, "tenant-1",
+                     :runtime_role, :operation_role, spec_attrs, %{driver: "fixture"}, ^opts}
+
+    assert spec_attrs.subject_ref == "subject-1"
+    assert spec_attrs.runtime_profile_ref == :runtime_default
+
+    assert {:ok, %{status: :updated, tenant_ref: "tenant-1", profile_ref: "runtime://default"}} =
+             RuntimeAdapter.apply_runtime_profile(
+               context,
+               %{profile_ref: "runtime://default"},
+               opts
+             )
+
+    assert_received {:runtime_profile_service_called, :apply, "tenant-1",
+                     %{profile_ref: "runtime://default"}}
+
+    assert {:ok, %{tenant_ref: "tenant-1", program_ref: "program-1", health: %{"status" => "ok"}}} =
+             MezzanineBridge.runtime_status(context, %{}, opts)
+
+    assert_received {:operator_query_service_called, :system_health, "tenant-1", "program-1"}
+  end
+
+  test "headless adapter owns runtime readback delegation behind the facade" do
+    context = request_context()
+    opts = [work_query_service: HeadlessWorkQueryService, program_id: "program-1"]
+
+    assert {:ok, %RuntimeStateSnapshot{tenant_ref: "tenant-1", rows: rows}} =
+             HeadlessAdapter.state_snapshot(context, %{page_size: 10}, opts)
+
+    assert [%{subject_ref: "subject://subject-1", state: "running"}] = rows
+
+    assert_received {:headless_work_query_service_called, :list_subjects, "tenant-1", "program-1",
+                     %{}}
+
+    assert_received {:headless_work_query_service_called, :get_subject_projection, "tenant-1",
+                     "subject-1", projection_opts}
+
+    assert Keyword.fetch!(projection_opts, :runtime_projection?)
+  end
+
+  test "agent intake adapter owns agent command delegation behind the facade" do
+    context = request_context()
+    opts = [agent_loop_runtime: AgentRuntime]
+
+    {:ok, turn_submission} =
+      TurnSubmission.new(%{
+        idempotency_key: "turn-1",
+        actor_ref: "actor-1",
+        run_ref: "run://agent-1",
+        kind: :user_input,
+        payload_ref: "payload://turn-1"
+      })
+
+    assert {:ok, %CommandResult{command_kind: :submit_turn, correlation_id: "run://agent-1"}} =
+             AgentIntakeAdapter.submit_agent_turn(context, turn_submission, opts)
+
+    assert {:ok, %CommandResult{command_kind: :cancel, correlation_id: "run://agent-1"}} =
+             MezzanineBridge.cancel_agent_run(context, "run://agent-1", opts)
+  end
+
   defp request_context do
     {:ok, context} =
       RequestContext.new(%{
@@ -588,5 +778,33 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
       })
 
     context
+  end
+
+  defp agent_run_request do
+    %{
+      tenant_ref: "tenant-1",
+      installation_ref: "installation-1",
+      subject_ref: "subject-1",
+      actor_ref: "actor-1",
+      profile_bundle: %{
+        source_profile_ref: :source_default,
+        runtime_profile_ref: :runtime_default,
+        tool_scope_ref: :tool_default,
+        evidence_profile_ref: :evidence_default,
+        publication_profile_ref: :publication_default,
+        review_profile_ref: :review_default,
+        memory_profile_ref: :none,
+        projection_profile_ref: :projection_default
+      },
+      tool_catalog_ref: "tool-catalog-1",
+      budget_ref: "budget-1",
+      recall_scope_ref: "recall-1",
+      idempotency_key: "agent-run-1",
+      trace_id: "trace-1",
+      correlation_id: "correlation-1",
+      submission_dedupe_key: "submission-1",
+      initial_input_ref: "input-1",
+      params: %{}
+    }
   end
 end

@@ -7,11 +7,12 @@ defmodule AppKit.Bridges.MezzanineBridge do
   structs or lower package topology.
   """
 
-  alias AppKit.BackendConfig
-
   alias AppKit.Bridges.MezzanineBridge.{
+    AgentIntakeAdapter,
+    HeadlessAdapter,
     InstallationAdapter,
     ReviewAdapter,
+    RuntimeAdapter,
     SourceAdapter,
     WorkAdapter,
     WorkQueryAdapter
@@ -32,10 +33,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
     :operator_actor_tenant_mismatch,
     :unauthorized_lower_read
   ]
-  @agent_projection_table __MODULE__.AgentProjectionStore
-
-  alias AppKit.Core.AgentIntake.{AgentRunRequest, RunOutcomeFuture}
-
   alias AppKit.Core.{
     ActionResult,
     ActorRef,
@@ -72,26 +69,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
     TimelineEvent,
     UnifiedTrace,
     UnifiedTraceStep
-  }
-
-  alias AppKit.Core.RuntimeReadback.{
-    CommandResult,
-    Diagnostic,
-    RateLimitSnapshot,
-    RetryRow,
-    RuntimeEventRow,
-    RuntimeRow,
-    RuntimeRunDetail,
-    RuntimeStateSnapshot,
-    RuntimeSubjectDetail,
-    TokenTotals
-  }
-
-  alias AppKit.Core.RuntimeSurface.{
-    LiveEffectReceipt,
-    RuntimeLogPage,
-    RuntimeProfileApplyResult,
-    RuntimeStatusSnapshot
   }
 
   alias Mezzanine.Archival.Query, as: ArchivalQuery
@@ -154,33 +131,13 @@ defmodule AppKit.Bridges.MezzanineBridge do
       when (is_atom(runtime_role_ref) or is_binary(runtime_role_ref)) and
              (is_atom(operation_role_ref) or is_binary(operation_role_ref)) and is_map(request) and
              is_list(opts) do
-    with {:ok, agent_request} <- AgentRunRequest.new(request),
-         {:ok, spec_attrs} <- agent_run_spec_attrs(context, agent_request),
-         {:ok, projection} <-
-           runtime_gateway_service(opts).invoke_runtime_operation(
-             context,
-             runtime_role_ref,
-             operation_role_ref,
-             spec_attrs,
-             runtime_binding(agent_request, opts),
-             opts
-           ),
-         run_ref when is_binary(run_ref) <- fetch_value(projection, :run_ref),
-         :ok <- store_agent_loop_projection(run_ref, projection),
-         {:ok, future} <-
-           RunOutcomeFuture.new(%{
-             run_ref: run_ref,
-             workflow_ref: fetch_value(projection, :workflow_ref),
-             accepted?: true,
-             command_ref: "command://#{agent_request.idempotency_key}",
-             correlation_id: agent_request.correlation_id,
-             polling_hint: %{checking?: false, poll_interval_ms: 1_000, staleness_ms: 0}
-           }) do
-      {:ok, future}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-      _other -> normalize_surface_error(:runtime_operation_not_configured)
-    end
+    RuntimeAdapter.invoke_runtime_operation(
+      context,
+      runtime_role_ref,
+      operation_role_ref,
+      request,
+      opts
+    )
   end
 
   def invoke_runtime_tool(
@@ -193,123 +150,43 @@ defmodule AppKit.Bridges.MezzanineBridge do
       when (is_atom(tool_role_ref) or is_binary(tool_role_ref)) and
              (is_atom(operation_role_ref) or is_binary(operation_role_ref)) and is_map(request) and
              is_list(opts) do
-    service = runtime_gateway_service(opts)
-
-    if service_exports?(service, :invoke_runtime_tool, 5) do
-      case service.invoke_runtime_tool(context, tool_role_ref, operation_role_ref, request, opts) do
-        {:ok, result} -> {:ok, result}
-        {:error, reason} -> normalize_surface_error(reason)
-      end
-    else
-      normalize_surface_error(:runtime_tool_not_configured)
-    end
+    RuntimeAdapter.invoke_runtime_tool(context, tool_role_ref, operation_role_ref, request, opts)
   end
 
   @impl true
   def apply_runtime_profile(%RequestContext{} = context, runtime_profile, opts)
       when is_map(runtime_profile) and is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         {:ok, bridge_result} <-
-           apply_runtime_profile_via_service(
-             runtime_profile_service(opts),
-             tenant_id,
-             runtime_profile
-           ),
-         {:ok, result} <- runtime_profile_apply_result_from_bridge(bridge_result, tenant_id) do
-      {:ok, result}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    RuntimeAdapter.apply_runtime_profile(context, runtime_profile, opts)
   end
 
   @impl true
   def runtime_status(%RequestContext{} = context, request, opts)
       when is_map(request) and is_list(opts) do
-    service = operator_query_service(opts)
-
-    with {:ok, tenant_id} <- tenant_id(context),
-         {:ok, program_id} <- runtime_program_id(context, request, opts),
-         {:ok, bridge_result} <- system_health_via_service(service, tenant_id, program_id),
-         {:ok, snapshot} <-
-           RuntimeStatusSnapshot.new(%{
-             tenant_ref: tenant_id,
-             program_ref: program_id,
-             health: bridge_result,
-             preflight:
-               fetch_value(request, :preflight) || fetch_value(bridge_result, :preflight) || %{},
-             metadata: fetch_value(bridge_result, :metadata) || %{}
-           }) do
-      {:ok, snapshot}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    RuntimeAdapter.runtime_status(context, request, opts)
   end
 
   @impl true
   def runtime_logs(%RequestContext{} = context, request, opts)
       when is_map(request) and is_list(opts) do
-    service = operator_query_service(opts)
-
-    with {:ok, tenant_id} <- tenant_id(context),
-         {:ok, subject_id} <- runtime_subject_id(request),
-         {:ok, bridge_result} <- timeline_via_service(service, tenant_id, subject_id),
-         entries <- fetch_value(bridge_result, :entries) || [],
-         {:ok, page} <-
-           RuntimeLogPage.new(%{
-             entries: entries,
-             total_count: fetch_value(bridge_result, :total_count) || length(entries),
-             next_cursor: fetch_value(bridge_result, :next_cursor),
-             has_more?: fetch_value(bridge_result, :has_more?) || false,
-             metadata:
-               (fetch_value(bridge_result, :metadata) || %{})
-               |> Map.put_new("subject_id", subject_id)
-           }) do
-      {:ok, page}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    RuntimeAdapter.runtime_logs(context, request, opts)
   end
 
   @impl true
   def record_live_effect(%RequestContext{} = context, attrs, opts \\ [])
       when is_map(attrs) and is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         attrs <- attrs |> Map.new() |> Map.put_new(:tenant_ref, tenant_id),
-         {:ok, receipt} <- LiveEffectReceipt.new(attrs) do
-      {:ok, receipt}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    RuntimeAdapter.record_live_effect(context, attrs, opts)
   end
 
   def collect_evidence(%RequestContext{} = context, evidence_role_ref, request, opts)
       when (is_atom(evidence_role_ref) or is_binary(evidence_role_ref)) and is_map(request) and
              is_list(opts) do
-    service = runtime_gateway_service(opts)
-
-    if service_exports?(service, :collect_evidence, 4) do
-      case service.collect_evidence(context, evidence_role_ref, request, opts) do
-        {:ok, result} -> {:ok, result}
-        {:error, reason} -> normalize_surface_error(reason)
-      end
-    else
-      normalize_surface_error(:evidence_collection_not_configured)
-    end
+    RuntimeAdapter.collect_evidence(context, evidence_role_ref, request, opts)
   end
 
   def invoke_resource_effect(%RequestContext{} = context, resource_effect_role_ref, request, opts)
       when (is_atom(resource_effect_role_ref) or is_binary(resource_effect_role_ref)) and
              is_map(request) and is_list(opts) do
-    service = runtime_gateway_service(opts)
-
-    if service_exports?(service, :invoke_resource_effect, 4) do
-      case service.invoke_resource_effect(context, resource_effect_role_ref, request, opts) do
-        {:ok, result} -> {:ok, result}
-        {:error, reason} -> normalize_surface_error(reason)
-      end
-    else
-      normalize_surface_error(:resource_effect_not_configured)
-    end
+    RuntimeAdapter.invoke_resource_effect(context, resource_effect_role_ref, request, opts)
   end
 
   @impl true
@@ -727,14 +604,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
     operator_action_service(opts).review_run(run_ref, evidence_attrs, opts)
   end
 
-  defp get_subject_projection(service, tenant_id, subject_id, opts) do
-    if function_exported?(service, :get_subject_projection, 3) do
-      service.get_subject_projection(tenant_id, subject_id, opts)
-    else
-      service.get_subject_projection(tenant_id, subject_id)
-    end
-  end
-
   defp execution_trace_lineage(%RequestContext{} = context, %ExecutionRef{} = execution_ref, opts) do
     with {:ok, installation_id} <- installation_or_tenant_id(context),
          {:ok, lineage} <- operator_query_service(opts).execution_trace_lineage(execution_ref.id),
@@ -1135,17 +1004,8 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   defp command_installation_id(_context, _subject_ref), do: nil
 
-  defp work_query_service(opts),
-    do: Keyword.get(opts, :work_query_service, Mezzanine.AppKitBridge.WorkQueryService)
-
-  defp runtime_profile_service(opts),
-    do: Keyword.get(opts, :runtime_profile_service, Mezzanine.AppKitBridge.RuntimeProfileService)
-
   defp lease_service(opts),
     do: Keyword.get(opts, :lease_service, Mezzanine.AppKitBridge.LeaseService)
-
-  defp program_context_service(opts),
-    do: Keyword.get(opts, :program_context_service, Mezzanine.AppKitBridge.ProgramContextService)
 
   defp operator_query_service(opts),
     do: Keyword.get(opts, :operator_query_service, Mezzanine.AppKitBridge.OperatorQueryService)
@@ -1156,66 +1016,10 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp memory_control_service(opts),
     do: Keyword.get(opts, :memory_control_service, Mezzanine.AppKitBridge.MemoryControlService)
 
-  defp runtime_gateway_service(opts),
-    do:
-      Keyword.get(
-        opts,
-        :runtime_gateway_service,
-        Mezzanine.AppKitBridge.RuntimeGatewayService
-      )
-
-  defp service_exports?(service, function_name, arity)
-       when is_atom(service) and is_atom(function_name) and is_integer(arity) do
-    match?({:module, ^service}, Code.ensure_loaded(service)) and
-      function_exported?(service, function_name, arity)
-  end
-
   defp tenant_id(%RequestContext{tenant_ref: %{id: tenant_id}}) when is_binary(tenant_id),
     do: {:ok, tenant_id}
 
   defp tenant_id(_context), do: {:error, :missing_tenant_id}
-
-  defp apply_runtime_profile_via_service(service, tenant_id, runtime_profile) do
-    cond do
-      service_exports?(service, :apply, 2) ->
-        service.apply(tenant_id, runtime_profile)
-
-      service_exports?(service, :ensure, 2) ->
-        with {:ok, status} <- service.ensure(tenant_id, runtime_profile) do
-          {:ok, %{status: status}}
-        end
-
-      true ->
-        {:error, :runtime_profile_service_not_configured}
-    end
-  end
-
-  defp runtime_profile_apply_result_from_bridge(bridge_result, tenant_id)
-       when is_map(bridge_result) do
-    bridge_result
-    |> Map.new()
-    |> Map.put_new(:tenant_ref, tenant_id)
-    |> RuntimeProfileApplyResult.new()
-  end
-
-  defp runtime_profile_apply_result_from_bridge(_bridge_result, _tenant_id),
-    do: {:error, :invalid_runtime_profile_apply_result}
-
-  defp system_health_via_service(service, tenant_id, program_id) do
-    if service_exports?(service, :system_health, 2) do
-      service.system_health(tenant_id, program_id)
-    else
-      {:error, :runtime_status_service_not_configured}
-    end
-  end
-
-  defp timeline_via_service(service, tenant_id, subject_id) do
-    if service_exports?(service, :timeline, 2) do
-      service.timeline(tenant_id, subject_id)
-    else
-      {:error, :runtime_logs_service_not_configured}
-    end
-  end
 
   defp ensure_subject_not_archived(%RequestContext{} = context, %SubjectRef{} = subject_ref) do
     case archival_installation_id(context, subject_ref) do
@@ -1246,29 +1050,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
        do: {:ok, installation_id}
 
   defp archival_installation_id(_context, _subject_ref), do: :error
-
-  defp program_id(%RequestContext{} = context, opts) do
-    case explicit_program_id(context, opts) do
-      {:ok, program_id} ->
-        {:ok, program_id}
-
-      :missing ->
-        with {:ok, tenant_id} <- tenant_id(context),
-             {:ok, program_slug} <- program_slug(context, opts),
-             {:ok, resolution} <-
-               program_context_service(opts).resolve(
-                 tenant_id,
-                 %{program_slug: program_slug},
-                 opts
-               ),
-             {:ok, program_id} <- resolved_id(resolution, :program_id, :missing_program_id) do
-          {:ok, program_id}
-        else
-          {:error, :missing_program_slug} -> {:error, :missing_program_id}
-          {:error, reason} -> {:error, reason}
-        end
-    end
-  end
 
   defp context_metadata(%RequestContext{metadata: metadata}, key) do
     Map.get(metadata, key) || Map.get(metadata, Atom.to_string(key))
@@ -1307,54 +1088,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp missing_revision_epoch_reason(:installation_revision), do: :missing_installation_revision
   defp missing_revision_epoch_reason(:activation_epoch), do: :missing_activation_epoch
   defp missing_revision_epoch_reason(:lease_epoch), do: :missing_lease_epoch
-
-  defp explicit_program_id(%RequestContext{} = context, opts) do
-    case Keyword.get(opts, :program_id) || context_metadata(context, :program_id) do
-      value when is_binary(value) and value != "" -> {:ok, value}
-      _ -> :missing
-    end
-  end
-
-  defp runtime_program_id(%RequestContext{} = context, request, opts) do
-    case fetch_value(request, :program_id) || fetch_value(request, :program_ref) ||
-           Keyword.get(opts, :program_id) || Keyword.get(opts, :program_ref) ||
-           context_metadata(context, :program_id) || context_metadata(context, :program_ref) do
-      value when is_binary(value) and value != "" -> {:ok, value}
-      _ -> {:error, :missing_program_id}
-    end
-  end
-
-  defp runtime_subject_id(request) do
-    case fetch_value(request, :subject_id) ||
-           subject_id_from_runtime_ref(fetch_value(request, :subject_ref)) ||
-           fetch_value(request, :work_object_id) do
-      value when is_binary(value) and value != "" -> {:ok, value}
-      _ -> {:error, :missing_subject_id}
-    end
-  end
-
-  defp subject_id_from_runtime_ref(%SubjectRef{id: subject_id}), do: subject_id
-  defp subject_id_from_runtime_ref(%{id: subject_id}) when is_binary(subject_id), do: subject_id
-
-  defp subject_id_from_runtime_ref(%{"id" => subject_id}) when is_binary(subject_id),
-    do: subject_id
-
-  defp subject_id_from_runtime_ref(subject_id) when is_binary(subject_id), do: subject_id
-  defp subject_id_from_runtime_ref(_subject_ref), do: nil
-
-  defp program_slug(%RequestContext{} = context, opts) do
-    case Keyword.get(opts, :program_slug) || context_metadata(context, :program_slug) do
-      value when is_binary(value) and value != "" -> {:ok, value}
-      _ -> {:error, :missing_program_slug}
-    end
-  end
-
-  defp resolved_id(resolution, key, error) when is_map(resolution) do
-    case fetch_value(resolution, key) do
-      value when is_binary(value) and value != "" -> {:ok, value}
-      _ -> {:error, error}
-    end
-  end
 
   defp map_each(entries, mapper) do
     Enum.reduce_while(entries, {:ok, []}, fn entry, {:ok, acc} ->
@@ -1495,1048 +1228,51 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   @impl AppKit.Core.Backends.HeadlessBackend
   def state_snapshot(%RequestContext{} = context, request, opts) when is_list(opts) do
-    now = DateTime.utc_now()
-    query_service = work_query_service(opts)
-
-    with {:ok, tenant_ref} <- tenant_id(context),
-         {:ok, program_id} <- program_id(context, opts),
-         installation_ref <- readback_installation_ref(context),
-         {:ok, rows} <- query_service.list_subjects(tenant_ref, program_id, %{}),
-         runtime_sources <-
-           Enum.map(rows, &state_snapshot_source(query_service, tenant_ref, &1, opts)),
-         {:ok, runtime_rows} <- map_each(runtime_sources, &runtime_row_from_map(&1, now)),
-         {:ok, retry_rows} <- state_snapshot_retry_rows(runtime_sources),
-         {:ok, rate_limits} <- state_snapshot_rate_limits(runtime_sources),
-         {:ok, diagnostics} <- state_snapshot_diagnostics(runtime_sources) do
-      RuntimeStateSnapshot.new(%{
-        tenant_ref: tenant_ref,
-        installation_ref: installation_ref,
-        generated_at: now,
-        rows: runtime_rows,
-        retry_rows: retry_rows,
-        token_totals: state_snapshot_token_totals(runtime_sources),
-        rate_limits: rate_limits,
-        diagnostics: diagnostics,
-        polling_state: %{
-          checking?: false,
-          poll_interval_ms: fetch_readback_page_size(request, 5_000),
-          staleness_ms: 0
-        },
-        page: %{
-          page_size: fetch_readback_page_size(request, 25),
-          cursor: fetch_value(request || %{}, :cursor),
-          total_entries: length(runtime_rows)
-        }
-      })
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    HeadlessAdapter.state_snapshot(context, request, opts)
   end
 
   @impl AppKit.Core.Backends.HeadlessBackend
-  def runtime_subject_detail(%RequestContext{} = context, subject_ref, _request, opts)
+  def runtime_subject_detail(%RequestContext{} = context, subject_ref, request, opts)
       when is_list(opts) do
-    subject_id = readback_ref_id(subject_ref)
-    now = DateTime.utc_now()
-
-    with {:ok, tenant_ref} <- tenant_id(context),
-         {:ok, projection} <-
-           get_subject_projection(
-             work_query_service(opts),
-             tenant_ref,
-             subject_id,
-             Keyword.put(opts, :runtime_projection?, true)
-           ),
-         {:ok, runtime_row} <-
-           runtime_row_from_map(
-             Map.merge(
-               %{subject_ref: subject_id, run_ref: "run://#{subject_id}", updated_at: now},
-               projection
-             ),
-             now
-           ) do
-      RuntimeSubjectDetail.new(%{
-        subject_ref: subject_id,
-        summary:
-          compact_map(%{
-            title: fetch_value(projection, :title),
-            state: fetch_value(projection, :state),
-            projection_ref: fetch_value(projection, :projection_ref)
-          }),
-        runtime_row: runtime_row,
-        events: readback_events(projection, now)
-      })
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    HeadlessAdapter.runtime_subject_detail(context, subject_ref, request, opts)
   end
 
   @impl AppKit.Core.Backends.HeadlessBackend
-  def runtime_run_detail(%RequestContext{} = _context, run_ref, request, opts) do
-    now = DateTime.utc_now()
-    run_id = readback_ref_id(run_ref)
-
-    case agent_loop_projection(run_id, request, opts) do
-      nil ->
-        default_runtime_run_detail(run_id, request, now)
-
-      projection ->
-        runtime_run_detail_from_agent_loop_projection(projection, now)
-    end
+  def runtime_run_detail(%RequestContext{} = context, run_ref, request, opts) do
+    HeadlessAdapter.runtime_run_detail(context, run_ref, request, opts)
   end
 
   @impl AppKit.Core.Backends.HeadlessBackend
-  def request_runtime_refresh(%RequestContext{} = _context, request, _opts) do
-    CommandResult.new(%{
-      command_ref: "command://#{request.idempotency_key}",
-      command_kind: :refresh,
-      accepted?: true,
-      coalesced?: false,
-      status: :accepted,
-      authority_state: :local_policy,
-      authority_refs: [],
-      workflow_effect_state: "pending_signal",
-      projection_state: :pending,
-      idempotency_key: request.idempotency_key,
-      message: "Refresh command accepted with database_first acknowledgement"
-    })
+  def request_runtime_refresh(%RequestContext{} = context, request, opts) do
+    HeadlessAdapter.request_runtime_refresh(context, request, opts)
   end
 
   @impl AppKit.Core.Backends.HeadlessBackend
-  def request_runtime_control(%RequestContext{} = _context, request, _opts) do
-    command_kind = request.action
-
-    workflow_effect_state =
-      if to_string(command_kind) == "inspect_memory_proof",
-        do: "not_available",
-        else: "pending_signal"
-
-    diagnostics =
-      if to_string(command_kind) == "inspect_memory_proof" do
-        [
-          %{
-            severity: :info,
-            code: "memory_proof_not_available",
-            message: "Memory proof readback is not available until Phase 7"
-          }
-        ]
-      else
-        []
-      end
-
-    CommandResult.new(%{
-      command_ref: "command://#{request.idempotency_key}",
-      command_kind: command_kind,
-      accepted?: true,
-      coalesced?: false,
-      status: :accepted,
-      authority_state: :local_policy,
-      authority_refs: [],
-      workflow_effect_state: workflow_effect_state,
-      projection_state: :pending,
-      idempotency_key: request.idempotency_key,
-      message: "Control command accepted with database_first acknowledgement",
-      diagnostics: diagnostics
-    })
+  def request_runtime_control(%RequestContext{} = context, request, opts) do
+    HeadlessAdapter.request_runtime_control(context, request, opts)
   end
 
   @impl AppKit.Core.Backends.AgentIntakeBackend
   def start_agent_run(%RequestContext{} = context, request, opts) do
-    invoke_runtime_operation(
-      context,
-      runtime_role_ref(request, opts),
-      operation_role_ref(request, opts),
-      request,
-      opts
-    )
+    AgentIntakeAdapter.start_agent_run(context, request, opts)
   end
 
   @impl AppKit.Core.Backends.AgentIntakeBackend
-  def submit_agent_turn(%RequestContext{}, turn_submission, opts) do
-    if runtime_available?(agent_runtime(opts)) do
-      CommandResult.new(%{
-        command_ref: "command://#{turn_submission.idempotency_key}",
-        command_kind: :submit_turn,
-        accepted?: true,
-        coalesced?: false,
-        status: :accepted,
-        authority_state: :local_policy,
-        authority_refs: [],
-        workflow_effect_state: "pending_signal",
-        projection_state: :pending,
-        trace_id: nil,
-        correlation_id: turn_submission.run_ref,
-        idempotency_key: turn_submission.idempotency_key,
-        message: "Agent turn submission accepted through AppKit"
-      })
-    else
-      {:error, :agent_turn_runtime_not_available}
-    end
+  def submit_agent_turn(%RequestContext{} = context, turn_submission, opts) do
+    AgentIntakeAdapter.submit_agent_turn(context, turn_submission, opts)
   end
 
   @impl AppKit.Core.Backends.AgentIntakeBackend
-  def cancel_agent_run(%RequestContext{}, run_ref, opts) do
-    if runtime_available?(agent_runtime(opts)) do
-      run_id = readback_ref_id(run_ref)
-
-      CommandResult.new(%{
-        command_ref: "command://cancel/#{run_id}",
-        command_kind: :cancel,
-        accepted?: true,
-        coalesced?: false,
-        status: :accepted,
-        authority_state: :local_policy,
-        authority_refs: [],
-        workflow_effect_state: "pending_signal",
-        projection_state: :pending,
-        correlation_id: run_id,
-        idempotency_key: "agent-run:cancel:#{run_id}",
-        message: "Agent run cancellation accepted through AppKit"
-      })
-    else
-      {:error, :agent_turn_runtime_not_available}
-    end
+  def cancel_agent_run(%RequestContext{} = context, run_ref, opts) do
+    AgentIntakeAdapter.cancel_agent_run(context, run_ref, opts)
   end
 
   @impl AppKit.Core.Backends.AgentIntakeBackend
-  def await_agent_outcome(%RequestContext{}, run_ref, request, opts) do
-    if runtime_available?(agent_runtime(opts)) do
-      run_id = readback_ref_id(run_ref)
-
-      RunOutcomeFuture.new(%{
-        run_ref: run_id,
-        workflow_ref: fetch_value(request || %{}, :workflow_ref),
-        accepted?: true,
-        command_ref: "command://await/#{run_id}",
-        correlation_id: fetch_value(request || %{}, :correlation_id) || run_id,
-        polling_hint: %{checking?: false, poll_interval_ms: 1_000, staleness_ms: 0}
-      })
-    else
-      {:error, :agent_turn_runtime_not_available}
-    end
+  def await_agent_outcome(%RequestContext{} = context, run_ref, request, opts) do
+    AgentIntakeAdapter.await_agent_outcome(context, run_ref, request, opts)
   end
 
-  defp agent_run_spec_attrs(%RequestContext{} = context, request) do
-    params = request.params || %{}
-    profile_bundle = request.profile_bundle
-    initial_input = initial_input_params(params)
-    continuation_policy = continuation_policy_params(params)
-    continuation_input = continuation_input_params(params)
-
-    run_ref =
-      param(params, :run_ref, "run://agent-loop/#{ref_suffix(request.submission_dedupe_key)}")
-
-    {:ok,
-     %{
-       tenant_ref: request.tenant_ref,
-       installation_ref: request.installation_ref,
-       profile_ref: param(params, :profile_ref, "profile://app-kit/agent-loop"),
-       subject_ref: request.subject_ref,
-       run_ref: run_ref,
-       session_ref: param(params, :session_ref, "session://agent-loop/#{ref_suffix(run_ref)}"),
-       workspace_ref:
-         param(params, :workspace_ref, "workspace://agent-loop/#{ref_suffix(run_ref)}"),
-       worker_ref:
-         param(params, :worker_ref, "worker://agent-loop/#{ref_suffix(run_ref)}/fixture"),
-       trace_id: request.trace_id,
-       idempotency_key: request.idempotency_key,
-       objective: request.initial_input_ref,
-       initial_input_body: fetch_value(initial_input, :body),
-       initial_input_ref: fetch_value(initial_input, :input_ref) || request.initial_input_ref,
-       initial_input_hash: fetch_value(initial_input, :content_hash),
-       initial_input_source_ref: fetch_value(initial_input, :source_ref),
-       initial_input_rendered?: fetch_value(initial_input, :rendered?),
-       initial_input_body_redacted?: fetch_value(initial_input, :body_redacted?),
-       continuation_policy: continuation_policy,
-       continuation_input_body: fetch_value(continuation_input, :body),
-       continuation_input_ref: fetch_value(continuation_input, :input_ref),
-       continuation_input_hash: fetch_value(continuation_input, :content_hash),
-       continuation_input_source_ref: fetch_value(continuation_input, :source_ref),
-       continuation_input_rendered?: fetch_value(continuation_input, :rendered?),
-       continuation_input_body_redacted?: fetch_value(continuation_input, :body_redacted?),
-       runtime_profile_ref: profile_bundle.runtime_profile_ref,
-       tool_catalog_ref: request.tool_catalog_ref,
-       authority_context_ref:
-         param(
-           params,
-           :authority_context_ref,
-           "authority-context://agent-loop/#{ref_suffix(run_ref)}"
-         ),
-       memory_profile_ref: profile_bundle.memory_profile_ref,
-       artifact_policy_ref:
-         param(params, :artifact_policy_ref, "artifact-policy://app-kit/agent-loop"),
-       max_turns: param(params, :max_turns, 1),
-       timeout_policy: timeout_policy(params),
-       profile_bundle: Map.from_struct(profile_bundle),
-       fixture_script: param(params, :fixture_script, "success_first_try"),
-       continue_as_new_turn_threshold: param(params, :continue_as_new_turn_threshold, 50),
-       source_ref: "actor://#{context.actor_ref.id}"
-     }}
-  end
-
-  defp initial_input_params(params) do
-    map_param(params, :initial_input)
-  end
-
-  defp continuation_policy_params(params), do: map_param(params, :continuation_policy)
-  defp continuation_input_params(params), do: map_param(params, :continuation_input)
-
-  defp map_param(params, key) do
-    case fetch_value(params, key) do
-      %{} = value -> value
-      _missing -> %{}
-    end
-  end
-
-  defp agent_loop_projection(run_ref, request, opts),
-    do:
-      Keyword.get(opts, :agent_loop_projection) ||
-        fetch_value(request || %{}, :agent_loop_projection) ||
-        fetch_agent_loop_projection(run_ref)
-
-  defp default_runtime_run_detail(run_id, request, now) do
-    request = request || %{}
-    subject_id = fetch_value(request, :subject_ref) || "subject://unknown"
-
-    with {:ok, runtime_row} <-
-           RuntimeRow.new(%{
-             subject_ref: subject_id,
-             run_ref: run_id,
-             state: fetch_value(request, :state) || "unknown",
-             updated_at: now,
-             polling_state: %{checking?: false, poll_interval_ms: 5_000, staleness_ms: 0}
-           }) do
-      RuntimeRunDetail.new(%{
-        run_ref: run_id,
-        runtime_row: runtime_row,
-        events: readback_events(request, now),
-        turns: [],
-        budget_state: nil,
-        candidate_fact_refs: [],
-        memory_proof_refs: [],
-        agent_loop_diagnostics: []
-      })
-    end
-  end
-
-  defp timeout_policy(params),
-    do:
-      param(params, :timeout_policy, %{turn_timeout_ms: param(params, :turn_timeout_ms, 30_000)})
-
-  defp param(params, key, default) do
-    case fetch_value(params, key) do
-      nil -> default
-      value -> value
-    end
-  end
-
-  defp runtime_run_detail_from_agent_loop_projection(projection, now) do
-    stall_decision = runtime_stall_decision_from_projection(projection)
-    runtime_events = fetch_value(projection, :runtime_events) || []
-
-    with {:ok, runtime_row} <-
-           RuntimeRow.new(%{
-             subject_ref: fetch_value(projection, :subject_ref),
-             run_ref: fetch_value(projection, :run_ref),
-             workflow_ref: fetch_value(projection, :workflow_ref),
-             state: stalled_runtime_state(stall_decision) || fetch_value(projection, :status),
-             status_reason: stalled_runtime_status_reason(stall_decision),
-             updated_at: now,
-             polling_state: %{checking?: false, poll_interval_ms: 1_000, staleness_ms: 0},
-             token_totals: readback_token_totals(projection),
-             extensions:
-               runtime_stall_extensions(fetch_value(projection, :extensions), stall_decision)
-           }),
-         {:ok, events} <-
-           map_each(
-             runtime_events ++
-               stalled_runtime_events(projection, runtime_events, stall_decision, now),
-             fn event ->
-               event |> public_readback_map() |> RuntimeEventRow.new()
-             end
-           ) do
-      RuntimeRunDetail.new(%{
-        run_ref: fetch_value(projection, :run_ref),
-        runtime_row: runtime_row,
-        events: events,
-        retries: stalled_runtime_retries(stall_decision),
-        turns: Enum.map(fetch_value(projection, :turn_states) || [], &public_readback_map/1),
-        budget_state: fetch_value(projection, :budget_state),
-        candidate_fact_refs: fetch_value(projection, :candidate_fact_refs) || [],
-        memory_proof_refs: fetch_value(projection, :memory_proof_refs) || [],
-        agent_loop_diagnostics: [],
-        diagnostics:
-          action_receipt_diagnostics(projection) ++ stalled_runtime_diagnostics(stall_decision)
-      })
-    end
-  end
-
-  defp runtime_stall_decision_from_projection(projection) do
-    case fetch_value(projection, :stall_decision) ||
-           fetch_value(projection, :runtime_stall_decision) do
-      %{} = decision -> decision
-      _other -> nil
-    end
-  end
-
-  defp stalled_runtime_state(nil), do: nil
-
-  defp stalled_runtime_state(stall_decision),
-    do: fetch_value(stall_decision, :runtime_state) || fetch_value(stall_decision, :state)
-
-  defp stalled_runtime_status_reason(nil), do: nil
-
-  defp stalled_runtime_status_reason(stall_decision) do
-    fetch_value(stall_decision, :status_reason) ||
-      normalize_string(fetch_value(stall_decision, :reason))
-  end
-
-  defp runtime_stall_extensions(existing_extensions, nil),
-    do: public_readback_map(existing_extensions || %{})
-
-  defp runtime_stall_extensions(existing_extensions, stall_decision) do
-    existing_extensions
-    |> public_readback_map()
-    |> case do
-      %{} = extensions -> extensions
-      _other -> %{}
-    end
-    |> Map.put("stall", stalled_runtime_extension(stall_decision))
-  end
-
-  defp stalled_runtime_extension(stall_decision) do
-    %{
-      "elapsed_ms" => fetch_value(stall_decision, :elapsed_ms),
-      "stall_timeout_ms" => fetch_value(stall_decision, :stall_timeout_ms),
-      "last_activity_at" => fetch_value(stall_decision, :last_activity_at),
-      "activity_source" => fetch_value(stall_decision, :activity_source),
-      "safe_action" => normalize_string(fetch_value(stall_decision, :safe_action)),
-      "workflow_signal" => fetch_value(stall_decision, :workflow_signal),
-      "cancel_lower_run?" => fetch_value(stall_decision, :cancel_lower_run?),
-      "cleanup_workspace?" => fetch_value(stall_decision, :cleanup_workspace?)
-    }
-    |> compact_map()
-  end
-
-  defp stalled_runtime_events(_projection, _events, nil, _now), do: []
-
-  defp stalled_runtime_events(projection, events, stall_decision, now) do
-    [
-      %{
-        event_ref:
-          fetch_value(stall_decision, :event_ref) ||
-            "event://#{ref_suffix(fetch_value(projection, :run_ref) || "runtime")}/runtime-stalled",
-        event_seq: stalled_runtime_event_seq(events),
-        event_kind: "runtime.stalled",
-        observed_at: fetch_value(stall_decision, :observed_at) || now,
-        subject_ref: fetch_value(projection, :subject_ref),
-        run_ref: fetch_value(projection, :run_ref),
-        workflow_ref: fetch_value(projection, :workflow_ref),
-        attempt_ref: fetch_value(stall_decision, :attempt_ref),
-        session_ref: fetch_value(stall_decision, :session_ref),
-        level: :warning,
-        message_summary: "Runtime activity exceeded stall timeout",
-        extensions: stalled_runtime_extension(stall_decision)
-      }
-    ]
-  end
-
-  defp stalled_runtime_event_seq(events) do
-    events
-    |> Enum.map(&fetch_value(&1, :event_seq))
-    |> Enum.filter(&is_integer/1)
-    |> Enum.max(fn -> 0 end)
-    |> Kernel.+(1)
-  end
-
-  defp stalled_runtime_retries(nil), do: []
-
-  defp stalled_runtime_retries(stall_decision) do
-    case fetch_value(stall_decision, :retry) do
-      %{} = retry -> [public_readback_map(retry)]
-      _other -> []
-    end
-  end
-
-  defp stalled_runtime_diagnostics(nil), do: []
-
-  defp stalled_runtime_diagnostics(stall_decision) do
-    case fetch_value(stall_decision, :diagnostic) do
-      %{} = diagnostic -> [diagnostic]
-      _other -> []
-    end
-  end
-
-  defp action_receipt_diagnostics(projection) do
-    (fetch_value(projection, :action_receipts) || [])
-    |> Enum.reject(&(fetch_value(&1, :status) in [:succeeded, "succeeded"]))
-    |> Enum.map(fn receipt ->
-      status = fetch_value(receipt, :status)
-
-      %{
-        severity: :info,
-        code: "agent_loop_action_#{status}",
-        message: "Agent loop action receipt recorded as #{status}"
-      }
-    end)
-  end
-
-  defp runtime_available?(runtime) when is_atom(runtime),
-    do: Code.ensure_loaded?(runtime) and function_exported?(runtime, :run, 1)
-
-  defp runtime_available?(_runtime), do: false
-
-  defp agent_runtime(opts),
-    do:
-      BackendConfig.resolve_optional(opts, :agent_loop_runtime, :agent_runtime) ||
-        Keyword.get(opts, :runtime_adapter)
-
-  defp runtime_binding(request, opts) do
-    params = fetch_value(request, :params) || %{}
-
-    Keyword.get(opts, :runtime_binding) ||
-      fetch_value(params, :runtime_binding) ||
-      fetch_value(params, "runtime_binding")
-  end
-
-  defp runtime_role_ref(request, opts) do
-    params = fetch_value(request, :params) || %{}
-
-    Keyword.get(opts, :runtime_role_ref) ||
-      fetch_value(params, :runtime_role_ref) ||
-      :coding_agent_runtime
-  end
-
-  defp operation_role_ref(request, opts) do
-    params = fetch_value(request, :params) || %{}
-
-    Keyword.get(opts, :operation_role_ref) ||
-      fetch_value(params, :operation_role_ref) ||
-      :session_turn
-  end
-
-  defp store_agent_loop_projection(run_ref, projection) when is_binary(run_ref) do
-    table = ensure_agent_projection_table()
-    true = :ets.insert(table, {run_ref, projection})
-    :ok
-  end
-
-  defp fetch_agent_loop_projection(run_ref) when is_binary(run_ref) do
-    table = ensure_agent_projection_table()
-
-    case :ets.lookup(table, run_ref) do
-      [{^run_ref, projection}] -> projection
-      [] -> nil
-    end
-  end
-
-  defp fetch_agent_loop_projection(_run_ref), do: nil
-
-  defp ensure_agent_projection_table do
-    case :ets.whereis(@agent_projection_table) do
-      :undefined ->
-        try do
-          :ets.new(@agent_projection_table, [
-            :named_table,
-            :public,
-            {:read_concurrency, true},
-            {:write_concurrency, true}
-          ])
-        rescue
-          ArgumentError -> @agent_projection_table
-        end
-
-      _table ->
-        @agent_projection_table
-    end
-  end
-
-  defp public_readback_map(%DateTime{} = value), do: value
-
-  defp public_readback_map(%_{} = value) do
-    value
-    |> Map.from_struct()
-    |> public_readback_map()
-  end
-
-  defp public_readback_map(%{} = value) do
-    Map.new(value, fn {key, val} -> {key, public_readback_map(val)} end)
-  end
-
-  defp public_readback_map(values) when is_list(values),
-    do: Enum.map(values, &public_readback_map/1)
-
-  defp public_readback_map(value), do: value
-
-  defp ref_suffix(ref) when is_binary(ref) do
-    ref
-    |> ascii_alnum_dash()
-    |> String.trim("-")
-  end
-
-  defp ref_suffix(ref), do: ref |> to_string() |> ref_suffix()
-
-  defp ascii_alnum_dash(value) do
-    value
-    |> :binary.bin_to_list()
-    |> Enum.reduce({[], false}, &ascii_alnum_dash_byte/2)
-    |> elem(0)
-    |> Enum.reverse()
-    |> List.to_string()
-  end
-
-  defp ascii_alnum_dash_byte(byte, {chars, _previous_dash?}) when byte in ?A..?Z,
-    do: {[byte | chars], false}
-
-  defp ascii_alnum_dash_byte(byte, {chars, _previous_dash?}) when byte in ?a..?z,
-    do: {[byte | chars], false}
-
-  defp ascii_alnum_dash_byte(byte, {chars, _previous_dash?}) when byte in ?0..?9,
-    do: {[byte | chars], false}
-
-  defp ascii_alnum_dash_byte(_byte, {chars, true}), do: {chars, true}
-  defp ascii_alnum_dash_byte(_byte, {chars, false}), do: {[?- | chars], true}
-
-  defp runtime_row_from_map(row, now) do
-    RuntimeRow.new(readback_row_attrs(row, now))
-  end
-
-  defp state_snapshot_source(query_service, tenant_ref, row, opts) do
-    subject_id = row |> first_value([:subject_id, :subject_ref, :id]) |> readback_ref_id()
-
-    with subject_id when is_binary(subject_id) <- subject_id,
-         {:ok, projection} <-
-           state_snapshot_runtime_projection(
-             query_service,
-             tenant_ref,
-             subject_id,
-             Keyword.put(opts, :runtime_projection?, true)
-           ),
-         true <- runtime_projection_row?(projection) do
-      Map.merge(row, projection)
-    else
-      _reason -> row
-    end
-  end
-
-  defp runtime_projection_row?(projection) do
-    fetch_value(projection, :projection_name) == "operator_subject_runtime" and
-      not is_nil(fetch_value(projection, :computed_at) || fetch_value(projection, :updated_at)) and
-      is_map(fetch_value(projection, :execution)) and
-      is_map(fetch_value(projection, :lower_receipt)) and
-      runtime_source_binding_rows(projection) != []
-  end
-
-  defp runtime_source_binding_rows(projection) do
-    cond do
-      is_list(fetch_value(projection, :source_bindings)) ->
-        fetch_value(projection, :source_bindings)
-
-      is_map(fetch_value(projection, :source_binding)) ->
-        [fetch_value(projection, :source_binding)]
-
-      true ->
-        []
-    end
-  end
-
-  defp state_snapshot_runtime_projection(query_service, tenant_ref, subject_id, opts) do
-    cond do
-      service_exports?(query_service, :get_subject_projection, 3) ->
-        query_service.get_subject_projection(tenant_ref, subject_id, opts)
-
-      service_exports?(query_service, :get_subject_projection, 2) ->
-        query_service.get_subject_projection(tenant_ref, subject_id)
-
-      true ->
-        {:error, :runtime_projection_not_available}
-    end
-  end
-
-  defp readback_row_attrs(row, now) do
-    subject_ref = subject_ref_for_row(row)
-
-    %{
-      subject_ref: subject_ref,
-      run_ref: run_ref_for_row(row, subject_ref),
-      execution_ref:
-        normalize_optional_readback_ref(
-          first_value(row, [:execution_ref, :execution_id]) ||
-            nested_value(row, [:execution, :execution_id]),
-          "execution"
-        ),
-      workflow_ref:
-        normalize_optional_readback_ref(
-          fetch_value(row, :workflow_ref) ||
-            nested_value(row, [:execution, :metadata, :workflow_ref]),
-          "workflow"
-        ),
-      state:
-        first_value(row, [:state, :lifecycle_state, :status, :work_status]) ||
-          nested_value(row, [:execution, :dispatch_state]) ||
-          "unknown",
-      status_reason: fetch_value(row, :status_reason),
-      updated_at:
-        first_value(row, [:updated_at, :computed_at]) ||
-          nested_value(row, [:execution, :updated_at]) ||
-          now,
-      session_ref: readback_session_ref(row),
-      workspace_ref: readback_workspace_ref(row),
-      polling_state: %{checking?: false, poll_interval_ms: 5_000, staleness_ms: 0},
-      token_totals: readback_token_totals(row),
-      provider_refs: fetch_value(row, :provider_refs) || %{},
-      extensions: readback_row_extensions(row)
-    }
-  end
-
-  defp state_snapshot_token_totals(rows) do
-    rows
-    |> Enum.flat_map(fn row ->
-      case readback_token_totals(row) do
-        nil -> []
-        totals -> [totals]
-      end
-    end)
-    |> case do
-      [] ->
-        nil
-
-      totals ->
-        %{
-          total_input_tokens: Enum.sum(Enum.map(totals, & &1.total_input_tokens)),
-          total_output_tokens: Enum.sum(Enum.map(totals, & &1.total_output_tokens)),
-          total_tokens: Enum.sum(Enum.map(totals, & &1.total_tokens)),
-          cached_input_tokens: Enum.sum(Enum.map(totals, & &1.cached_input_tokens)),
-          source: "runtime:projection"
-        }
-    end
-  end
-
-  defp state_snapshot_retry_rows(rows) do
-    rows
-    |> Enum.flat_map(&readback_retry_rows/1)
-    |> map_each(&retry_row_from_map/1)
-  end
-
-  defp state_snapshot_rate_limits(rows) do
-    rows
-    |> Enum.flat_map(&readback_rate_limit_rows/1)
-    |> map_each(&RateLimitSnapshot.new/1)
-  end
-
-  defp state_snapshot_diagnostics(rows) do
-    rows
-    |> Enum.flat_map(&readback_diagnostic_rows/1)
-    |> map_each(&Diagnostic.new/1)
-  end
-
-  defp readback_token_totals(row) do
-    totals = fetch_value(row, :token_totals) || nested_value(row, [:runtime, :token_totals])
-
-    if is_map(totals) and map_size(totals) > 0 do
-      input = integer_first(totals, [:total_input_tokens, :input_tokens, :input])
-      output = integer_first(totals, [:total_output_tokens, :output_tokens, :output])
-
-      attrs = %{
-        total_input_tokens: input,
-        total_output_tokens: output,
-        total_tokens: integer_first(totals, [:total_tokens, :total], input + output),
-        cached_input_tokens: integer_first(totals, [:cached_input_tokens, :cached_input], 0),
-        source: fetch_value(totals, :source)
-      }
-
-      case TokenTotals.new(attrs) do
-        {:ok, token_totals} -> token_totals
-        {:error, _reason} -> nil
-      end
-    end
-  end
-
-  defp readback_retry_rows(row) do
-    row
-    |> nested_value([:runtime, :retry_queue])
-    |> List.wrap()
-    |> Enum.with_index()
-    |> Enum.flat_map(fn
-      {%{} = retry, index} -> [retry_row_attrs(row, retry, index)]
-      {_retry, _index} -> []
-    end)
-  end
-
-  defp retry_row_attrs(row, retry, index) do
-    subject_id = row |> first_value([:subject_id, :subject_ref, :id]) |> readback_ref_id()
-    retry_ref = fetch_value(retry, :retry_ref)
-
-    attempt_ref =
-      fetch_value(retry, :attempt_ref) || retry_ref || "attempt://#{subject_id}/#{index + 1}"
-
-    %{
-      retry_ref: retry_ref,
-      attempt_ref: attempt_ref,
-      status: fetch_value(retry, :status) || "scheduled",
-      reason: fetch_value(retry, :reason) || fetch_value(retry, :error),
-      scheduled_at: fetch_value(retry, :scheduled_at),
-      due_at: fetch_value(retry, :due_at),
-      delay_ms: fetch_value(retry, :delay_ms),
-      delay_type: fetch_value(retry, :delay_type),
-      continuation?: fetch_value(retry, :continuation?),
-      worker_ref: fetch_value(retry, :worker_ref),
-      workspace_ref: fetch_value(retry, :workspace_ref),
-      last_error_ref: fetch_value(retry, :last_error_ref),
-      metadata: fetch_value(retry, :metadata) || %{}
-    }
-    |> compact_map()
-  end
-
-  defp retry_row_from_map(attrs) do
-    RetryRow.new(attrs)
-  end
-
-  defp readback_rate_limit_rows(row) do
-    row
-    |> nested_value([:runtime, :rate_limit])
-    |> case do
-      values when is_list(values) -> values
-      %{} = value when map_size(value) > 0 -> [value]
-      _value -> []
-    end
-    |> Enum.flat_map(&rate_limit_row_attrs(row, &1))
-  end
-
-  defp rate_limit_row_attrs(row, rate_limit) when is_map(rate_limit) do
-    remaining = fetch_value(rate_limit, :remaining)
-
-    if is_integer(remaining) and remaining >= 0 do
-      subject_id = row |> first_value([:subject_id, :subject_ref, :id]) |> readback_ref_id()
-
-      [
-        %{
-          limit_id:
-            fetch_value(rate_limit, :limit_id) || "rate-limit://subject/#{subject_id}/runtime",
-          name: fetch_value(rate_limit, :name),
-          remaining: remaining,
-          reset_at: fetch_value(rate_limit, :reset_at),
-          window: fetch_value(rate_limit, :window),
-          source_event_ref: fetch_value(rate_limit, :source_event_ref) || subject_ref_for_row(row)
-        }
-        |> compact_map()
-      ]
-    else
-      []
-    end
-  end
-
-  defp rate_limit_row_attrs(_row, _rate_limit), do: []
-
-  defp readback_diagnostic_rows(row) do
-    row
-    |> first_value([:diagnostics])
-    |> List.wrap()
-    |> Enum.filter(&is_map/1)
-  end
-
-  defp readback_row_extensions(row) do
-    existing = fetch_value(row, :extensions) || %{}
-    runtime = fetch_value(row, :runtime) || %{}
-
-    runtime_extension =
-      %{
-        "event_counts" => readback_event_count_rows(fetch_value(runtime, :event_counts)),
-        "token_dedupe" => fetch_value(runtime, :token_dedupe),
-        "metadata" => runtime_readback_metadata(fetch_value(runtime, :metadata) || %{})
-      }
-      |> compact_map()
-
-    extension =
-      %{
-        "runtime" => runtime_extension,
-        "profile_refs" => runtime_profile_refs(row),
-        "source_sync" => fetch_value(row, :source_sync),
-        "reconciliation_warnings" => fetch_value(row, :reconciliation_warnings)
-      }
-      |> Enum.reject(fn {_key, value} -> value in [nil, %{}, []] end)
-      |> Map.new()
-
-    Map.merge(existing, extension)
-  end
-
-  defp runtime_readback_metadata(metadata) when is_map(metadata) do
-    metadata
-    |> Map.take([
-      "scheduler_state",
-      :scheduler_state,
-      "claim_state",
-      :claim_state,
-      "running_state",
-      :running_state,
-      "retry_state",
-      :retry_state,
-      "completion_state",
-      :completion_state,
-      "projection_source",
-      :projection_source,
-      "projection_mode",
-      :projection_mode
-    ])
-    |> Map.new(fn {key, value} -> {to_string(key), value} end)
-  end
-
-  defp runtime_readback_metadata(_metadata), do: %{}
-
-  defp readback_event_count_rows(event_counts) when is_map(event_counts) do
-    Enum.map(event_counts, fn {event_kind, count} ->
-      %{"event_kind" => to_string(event_kind), "count" => count}
-    end)
-  end
-
-  defp readback_event_count_rows(_event_counts), do: nil
-
-  defp runtime_profile_refs(row) do
-    run = fetch_value(row, :run) || %{}
-    governance = fetch_value(row, :governance) || %{}
-
-    %{
-      "runtime_profile_ref" =>
-        fetch_value(run, :runtime_profile_ref) || fetch_value(governance, :runtime_profile_ref),
-      "runtime_profile_kind" =>
-        fetch_value(run, :runtime_profile_kind) || fetch_value(governance, :runtime_profile_kind)
-    }
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-    |> Map.new()
-  end
-
-  defp readback_events(source, now) do
-    source
-    |> event_values()
-    |> Enum.with_index()
-    |> Enum.flat_map(&readback_event_row(&1, now))
-  end
-
-  defp readback_event_row({event, index}, now) do
-    case RuntimeEventRow.new(readback_event_attrs(event, index, now)) do
-      {:ok, event_row} -> [event_row]
-      {:error, _reason} -> []
-    end
-  end
-
-  defp readback_event_attrs(event, index, now) do
-    %{
-      event_ref:
-        normalize_readback_ref(fetch_value(event, :event_ref) || "event-#{index}", "event"),
-      event_seq: fetch_value(event, :event_seq) || index,
-      event_kind: first_value(event, [:event_kind, :kind]) || "unknown",
-      observed_at: fetch_value(event, :observed_at) || now,
-      subject_ref: normalize_optional_readback_ref(fetch_value(event, :subject_ref), "subject"),
-      run_ref: normalize_optional_readback_ref(fetch_value(event, :run_ref), "run"),
-      level: fetch_value(event, :level) || :info,
-      message_summary: first_value(event, [:message_summary, :summary]),
-      payload_ref: normalize_optional_readback_ref(fetch_value(event, :payload_ref), "payload"),
-      extensions: fetch_value(event, :extensions) || %{}
-    }
-  end
-
-  defp event_values(source) do
-    case fetch_value(source, :events) do
-      events when is_list(events) -> events
-      _other -> []
-    end
-  end
-
-  defp subject_ref_for_row(row),
-    do: row |> first_value([:subject_ref, :subject_id, :id]) |> normalize_readback_ref("subject")
-
-  defp run_ref_for_row(row, subject_ref) do
-    cond do
-      value = first_value(row, [:run_ref, :run_id]) ->
-        normalize_readback_ref(value, "run")
-
-      value = nested_value(row, [:run, :run_ref]) ->
-        normalize_readback_ref(value, "lower-run")
-
-      value = nested_value(row, [:lower_receipt, :run_id]) ->
-        normalize_readback_ref(value, "lower-run")
-
-      true ->
-        subject_ref
-    end
-  end
-
-  defp first_value(source, keys), do: Enum.find_value(keys, &fetch_value(source, &1))
-
-  defp readback_session_ref(row) do
-    direct = fetch_value(row, :session_ref) || fetch_value(row, :session_id)
-
-    case direct || nested_value(row, [:run, :attempt_ref]) ||
-           nested_value(row, [:lower_receipt, :attempt_id]) do
-      nil -> nil
-      ^direct when not is_nil(direct) -> %{id: normalize_readback_ref(direct, "session")}
-      value -> %{id: normalize_readback_ref(value, "lower-attempt")}
-    end
-  end
-
-  defp readback_workspace_ref(row) do
-    case fetch_value(row, :workspace_ref) || fetch_value(row, :workspace_id) do
-      nil ->
-        nil
-
-      value ->
-        %{
-          id: normalize_readback_ref(value, "workspace"),
-          display_label: fetch_value(row, :workspace_label),
-          path_redacted?: true
-        }
-    end
-  end
-
-  defp readback_installation_ref(context) do
-    context
-    |> fetch_value(:installation_ref)
-    |> readback_ref_id()
-    |> case do
-      nil -> "installation://unknown"
-      value -> normalize_readback_ref(value, "installation")
-    end
-  end
-
-  defp readback_ref_id(%{id: id}), do: id
-  defp readback_ref_id(value) when is_binary(value), do: value
-  defp readback_ref_id(value) when is_atom(value), do: Atom.to_string(value)
-  defp readback_ref_id(nil), do: nil
-  defp readback_ref_id(value), do: to_string(value)
-
-  defp normalize_optional_readback_ref(nil, _scheme), do: nil
-  defp normalize_optional_readback_ref(value, scheme), do: normalize_readback_ref(value, scheme)
-
-  defp normalize_readback_ref(value, scheme) do
-    value = readback_ref_id(value) || "unknown"
-
-    if String.contains?(value, "://"), do: value, else: "#{scheme}://#{value}"
-  end
-
-  defp fetch_readback_page_size(request, default) do
-    case fetch_value(request || %{}, :page_size) do
-      value when is_integer(value) and value > 0 -> value
-      _other -> default
-    end
-  end
-
-  defp nested_value(source, keys) do
-    Enum.reduce_while(keys, source, fn key, acc ->
-      case fetch_value(acc, key) do
-        nil -> {:halt, nil}
-        value -> {:cont, value}
-      end
-    end)
-  end
-
-  defp integer_first(map, keys, default \\ 0) do
-    Enum.find_value(keys, fn key ->
-      value = fetch_value(map, key)
-      if is_integer(value), do: value
-    end) || default
-  end
-
-  defp fetch_value(map_or_struct, key) when is_map(map_or_struct) do
+  defp fetch_value(map_or_struct, key) when is_map(map_or_struct) and is_atom(key) do
     map = if is_struct(map_or_struct), do: Map.from_struct(map_or_struct), else: map_or_struct
     Map.get(map, key) || Map.get(map, alternate_key(map, key))
   end
@@ -2544,15 +1280,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp fetch_value(_map_or_struct, _key), do: nil
 
   defp alternate_key(_map, key) when is_atom(key), do: Atom.to_string(key)
-
-  defp alternate_key(map, key) when is_binary(key) do
-    Enum.find(Map.keys(map), fn
-      existing_key when is_atom(existing_key) -> Atom.to_string(existing_key) == key
-      _existing_key -> false
-    end)
-  end
-
-  defp alternate_key(_map, _key), do: nil
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)

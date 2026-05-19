@@ -19,6 +19,12 @@ defmodule AppKit.Bridges.MezzanineBridge.Services do
   def installation(opts),
     do: Keyword.get(opts, :installation_service, Mezzanine.AppKitBridge.InstallationService)
 
+  def runtime_profile(opts),
+    do: Keyword.get(opts, :runtime_profile_service, Mezzanine.AppKitBridge.RuntimeProfileService)
+
+  def runtime_gateway(opts),
+    do: Keyword.get(opts, :runtime_gateway_service, Mezzanine.AppKitBridge.RuntimeGatewayService)
+
   def program_context(opts),
     do: Keyword.get(opts, :program_context_service, Mezzanine.AppKitBridge.ProgramContextService)
 
