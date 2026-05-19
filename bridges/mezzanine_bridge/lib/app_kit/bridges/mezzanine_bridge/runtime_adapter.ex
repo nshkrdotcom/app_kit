@@ -38,7 +38,7 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeAdapter do
              opts
            ),
          run_ref when is_binary(run_ref) <- Common.fetch_value(projection, :run_ref),
-         :ok <- RuntimeProjectionStore.put(run_ref, projection),
+         :ok <- RuntimeProjectionStore.put(context, run_ref, projection, opts),
          {:ok, future} <-
            RunOutcomeFuture.new(%{
              run_ref: run_ref,

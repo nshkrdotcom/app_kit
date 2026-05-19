@@ -53,9 +53,9 @@ defmodule AppKit.Bridges.MezzanineBridge.HeadlessAdapter do
   end
 
   @impl true
-  def runtime_run_detail(%RequestContext{} = _context, run_ref, request, opts) do
+  def runtime_run_detail(%RequestContext{} = context, run_ref, request, opts) do
     run_id = RuntimeReadbackMapping.readback_ref_id(run_ref)
-    RuntimeReadbackMapping.runtime_run_detail(run_id, request, opts, DateTime.utc_now())
+    RuntimeReadbackMapping.runtime_run_detail(context, run_id, request, opts, DateTime.utc_now())
   end
 
   @impl true

@@ -23,7 +23,10 @@ defmodule AppKitMezzanineBridge.MixProject do
   end
 
   def application do
-    [extra_applications: [:logger]]
+    [
+      extra_applications: [:logger],
+      mod: {AppKit.Bridges.MezzanineBridge.Application, []}
+    ]
   end
 
   def cli do

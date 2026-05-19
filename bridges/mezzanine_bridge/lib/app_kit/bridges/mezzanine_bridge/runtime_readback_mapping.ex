@@ -87,8 +87,8 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeReadbackMapping do
     end
   end
 
-  def runtime_run_detail(run_id, request, opts, now) do
-    case agent_loop_projection(run_id, request, opts) do
+  def runtime_run_detail(%RequestContext{} = context, run_id, request, opts, now) do
+    case agent_loop_projection(context, run_id, request, opts) do
       nil -> default_runtime_run_detail(run_id, request, now)
       projection -> runtime_run_detail_from_agent_loop_projection(projection, now)
     end
@@ -177,11 +177,11 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeReadbackMapping do
 
   def public_readback_map(value), do: value
 
-  defp agent_loop_projection(run_ref, request, opts),
+  defp agent_loop_projection(context, run_ref, request, opts),
     do:
       Keyword.get(opts, :agent_loop_projection) ||
         Common.fetch_value(request || %{}, :agent_loop_projection) ||
-        RuntimeProjectionStore.get(run_ref)
+        RuntimeProjectionStore.get(context, run_ref, opts)
 
   defp default_runtime_run_detail(run_id, request, now) do
     request = request || %{}
