@@ -7,6 +7,7 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
     AgentIntakeAdapter,
     HeadlessAdapter,
     InstallationAdapter,
+    OperatorAdapter,
     ReviewAdapter,
     RuntimeAdapter,
     SourceAdapter,
@@ -20,16 +21,30 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
   alias AppKit.Core.{
     ActionResult,
     DecisionRef,
+    ExecutionRef,
     InstallationBinding,
     InstallationRef,
     InstallTemplate,
+    MemoryFragmentListRequest,
+    MemoryFragmentProjection,
+    MemoryFragmentProvenance,
+    MemoryInvalidationRequest,
+    MemoryPromotionRequest,
+    MemoryProofTokenLookup,
+    MemoryShareUpRequest,
+    OperatorAction,
+    OperatorActionRef,
+    OperatorActionRequest,
     PageRequest,
+    ReadLease,
     RequestContext,
     Result,
     RunRef,
     RunRequest,
+    StreamAttachLease,
     SubjectRef,
-    SurfaceError
+    SurfaceError,
+    UnifiedTrace
   }
 
   @adapter_contract [
@@ -403,6 +418,26 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
   end
 
   defmodule OperatorQueryService do
+    @trace_id "11111111111111111111111111111111"
+
+    def subject_status(tenant_id, subject_id) do
+      send(self(), {:operator_query_service_called, :subject_status, tenant_id, subject_id})
+
+      {:ok,
+       %{
+         subject_ref: %{id: subject_id, subject_kind: "work_object"},
+         lifecycle_state: "running",
+         current_execution_ref: %{id: "execution-1"},
+         pending_decision_refs: [],
+         available_actions: [operator_action(subject_id)],
+         pending_obligations: [],
+         blocking_conditions: [],
+         timeline: [timeline_event()],
+         updated_at: DateTime.utc_now(),
+         payload: %{}
+       }}
+    end
+
     def system_health(tenant_id, program_id) do
       send(self(), {:operator_query_service_called, :system_health, tenant_id, program_id})
       {:ok, %{status: "ok", preflight: %{checks: []}}}
@@ -410,7 +445,227 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
 
     def timeline(tenant_id, subject_id) do
       send(self(), {:operator_query_service_called, :timeline, tenant_id, subject_id})
-      {:ok, %{entries: [%{message: "started"}], total_count: 1}}
+      {:ok, %{entries: [timeline_event()], total_count: 1}}
+    end
+
+    def available_actions(tenant_id, subject_id) do
+      send(self(), {:operator_query_service_called, :available_actions, tenant_id, subject_id})
+      {:ok, [operator_action(subject_id)]}
+    end
+
+    def execution_trace_lineage(execution_id) do
+      send(self(), {:operator_query_service_called, :execution_trace_lineage, execution_id})
+      {:ok, %{installation_id: "installation-1", trace_id: @trace_id}}
+    end
+
+    def get_unified_trace(attrs, opts) do
+      send(self(), {:operator_query_service_called, :get_unified_trace, attrs, opts})
+
+      {:ok,
+       %{
+         trace_id: attrs.trace_id,
+         installation_id: attrs.installation_id,
+         join_keys: %{"subject" => "subject-1"},
+         steps: [
+           %{
+             ref: "trace-step-1",
+             source: "operator",
+             occurred_at: DateTime.utc_now(),
+             trace_id: attrs.trace_id,
+             causation_id: "cause-1",
+             staleness_class: "fresh",
+             operator_actionable?: true,
+             diagnostic?: false,
+             payload: %{"summary" => "trace step"}
+           }
+         ],
+         metadata: %{}
+       }}
+    end
+
+    def run_status(run_ref, attrs, opts) do
+      send(self(), {:operator_query_service_called, :run_status, run_ref, attrs, opts})
+      {:ok, %{status: :running, run_ref: run_ref}}
+    end
+
+    defp operator_action(subject_id) do
+      %{
+        action_ref: %{
+          id: "approve-action",
+          action_kind: "approve",
+          subject_ref: %{id: subject_id, subject_kind: "work_object"}
+        },
+        label: "Approve",
+        requires_confirmation?: false,
+        metadata: %{}
+      }
+    end
+
+    defp timeline_event do
+      %{
+        ref: "event-1",
+        event_kind: "started",
+        occurred_at: DateTime.utc_now(),
+        summary: "started",
+        actor_ref: "operator",
+        payload: %{}
+      }
+    end
+  end
+
+  defmodule OperatorActionService do
+    def apply_action(tenant_id, subject_id, action_kind, action_params, actor) do
+      send(
+        self(),
+        {:operator_action_service_called, :apply_action, tenant_id, subject_id, action_kind,
+         action_params, actor}
+      )
+
+      {:ok,
+       %{
+         status: :accepted,
+         action_ref: %{
+           id: "approve-action",
+           action_kind: action_kind,
+           subject_ref: %{id: subject_id, subject_kind: "work_object"}
+         },
+         execution_ref: %{id: "execution-1"},
+         message: "operator action accepted",
+         metadata: %{}
+       }}
+    end
+
+    def review_run(run_ref, evidence_attrs, opts) do
+      send(self(), {:operator_action_service_called, :review_run, run_ref, evidence_attrs, opts})
+      {:ok, %{status: :reviewed, run_ref: run_ref}}
+    end
+  end
+
+  defmodule LeaseService do
+    @trace_id "11111111111111111111111111111111"
+
+    def issue_read_lease(attrs, opts) do
+      send(self(), {:lease_service_called, :issue_read_lease, attrs, opts})
+
+      {:ok,
+       %{
+         lease_ref: %{
+           id: "read-lease-1",
+           allowed_family: attrs.allowed_family,
+           execution_ref: %{id: attrs.execution_id}
+         },
+         trace_id: @trace_id,
+         expires_at: DateTime.add(DateTime.utc_now(), 60, :second),
+         lease_token: "read-token",
+         allowed_operations: attrs.allowed_operations,
+         authorization_scope: %{},
+         scope: attrs.scope,
+         lineage_anchor: %{},
+         invalidation_cursor: 0
+       }}
+    end
+
+    def issue_stream_attach_lease(attrs, opts) do
+      send(self(), {:lease_service_called, :issue_stream_attach_lease, attrs, opts})
+
+      {:ok,
+       %{
+         lease_ref: %{
+           id: "stream-lease-1",
+           allowed_family: attrs.allowed_family,
+           execution_ref: %{id: attrs.execution_id}
+         },
+         trace_id: @trace_id,
+         expires_at: DateTime.add(DateTime.utc_now(), 60, :second),
+         attach_token: "stream-token",
+         authorization_scope: %{},
+         scope: attrs.scope,
+         lineage_anchor: %{},
+         reconnect_cursor: 0,
+         poll_interval_ms: 1_000
+       }}
+    end
+  end
+
+  defmodule MemoryControlService do
+    def list_fragments_by_proof_token(attrs, opts) do
+      send(self(), {:memory_control_service_called, :list_fragments_by_proof_token, attrs, opts})
+      {:ok, [fragment_row()]}
+    end
+
+    def lookup_fragment_by_proof_token(attrs, opts) do
+      send(self(), {:memory_control_service_called, :lookup_fragment_by_proof_token, attrs, opts})
+      {:ok, fragment_row()}
+    end
+
+    def fragment_provenance(attrs, opts) do
+      send(self(), {:memory_control_service_called, :fragment_provenance, attrs, opts})
+      {:ok, provenance_row()}
+    end
+
+    def request_share_up(attrs, opts) do
+      memory_action(:request_share_up, attrs, opts)
+    end
+
+    def request_promotion(attrs, opts) do
+      memory_action(:request_promotion, attrs, opts)
+    end
+
+    def request_invalidation(attrs, opts) do
+      memory_action(:request_invalidation, attrs, opts)
+    end
+
+    defp memory_action(action_kind, attrs, opts) do
+      send(self(), {:memory_control_service_called, action_kind, attrs, opts})
+
+      {:ok,
+       %{
+         status: :accepted,
+         action_ref: %{id: "memory-action", action_kind: Atom.to_string(action_kind)},
+         message: "memory #{action_kind} accepted",
+         metadata: %{}
+       }}
+    end
+
+    defp fragment_row do
+      %{
+        fragment_ref: "memory://fragment-1",
+        tenant_ref: "tenant-1",
+        installation_ref: "installation-1",
+        tier: "private",
+        proof_token_ref: "proof-token://memory-1",
+        proof_hash: "sha256:" <> String.duplicate("a", 64),
+        source_node_ref: "node://outer-brain-1",
+        snapshot_epoch: 1,
+        commit_lsn: "lsn-1",
+        commit_hlc: %{"wall_time" => 1},
+        provenance_refs: ["provenance://memory-1"],
+        evidence_refs: ["evidence://memory-1"],
+        governance_refs: ["governance://memory-1"],
+        cluster_invalidation_status: "none",
+        staleness_class: "fresh",
+        redaction_posture: "operator_safe",
+        metadata: %{},
+        payload: %{"raw" => "removed"}
+      }
+    end
+
+    defp provenance_row do
+      %{
+        fragment_ref: "memory://fragment-1",
+        proof_token_ref: "proof-token://memory-1",
+        proof_hash: "sha256:" <> String.duplicate("b", 64),
+        source_contract_name: "OuterBrain.MemoryContextProvenance.v2",
+        snapshot_epoch: 1,
+        source_node_ref: "node://outer-brain-1",
+        commit_lsn: "lsn-1",
+        commit_hlc: %{"wall_time" => 1},
+        provenance_refs: ["provenance://memory-1"],
+        evidence_refs: ["evidence://memory-1"],
+        governance_refs: ["governance://memory-1"],
+        metadata: %{},
+        raw_payload: %{"raw" => "removed"}
+      }
     end
   end
 
@@ -728,6 +983,165 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
              MezzanineBridge.runtime_status(context, %{}, opts)
 
     assert_received {:operator_query_service_called, :system_health, "tenant-1", "program-1"}
+  end
+
+  test "operator adapter owns operator, lease, trace, and memory service delegation behind the facade" do
+    context = request_context()
+
+    {:ok, subject_ref} =
+      SubjectRef.new(%{
+        id: "subject-1",
+        subject_kind: "work_object",
+        installation_ref: %{id: "installation-1", pack_slug: "sample-host"}
+      })
+
+    {:ok, execution_ref} = ExecutionRef.new(%{id: "execution-1"})
+    {:ok, run_ref} = RunRef.new(%{run_id: "run-1", scope_id: "scope-1"})
+
+    {:ok, action_ref} =
+      OperatorActionRef.new(%{
+        id: "approve-action",
+        action_kind: "approve",
+        subject_ref: subject_ref
+      })
+
+    {:ok, action_request} =
+      OperatorActionRequest.new(%{
+        action_ref: action_ref,
+        params: %{"comment" => "approved"},
+        reason: "looks good"
+      })
+
+    opts = [
+      operator_query_service: OperatorQueryService,
+      operator_action_service: OperatorActionService,
+      lease_service: LeaseService,
+      memory_control_service: MemoryControlService,
+      installation_revision: 1,
+      activation_epoch: 2,
+      lease_epoch: 3
+    ]
+
+    assert {:ok, %{subject_ref: %SubjectRef{id: "subject-1"}}} =
+             OperatorAdapter.subject_status(context, subject_ref, opts)
+
+    assert_received {:operator_query_service_called, :subject_status, "tenant-1", "subject-1"}
+
+    assert {:ok, [%OperatorAction{action_ref: %OperatorActionRef{id: "approve-action"}}]} =
+             MezzanineBridge.available_actions(context, subject_ref, opts)
+
+    assert_received {:operator_query_service_called, :available_actions, "tenant-1", "subject-1"}
+
+    assert {:ok, %ActionResult{status: :accepted, message: "operator action accepted"}} =
+             OperatorAdapter.apply_action(context, subject_ref, action_request, opts)
+
+    assert_received {:operator_action_service_called, :apply_action, "tenant-1", "subject-1",
+                     "approve", action_params, %{actor_ref: "operator"}}
+
+    assert action_params["comment"] == "approved"
+    assert action_params["operator_context"]["tenant_id"] == "tenant-1"
+
+    assert {:ok, %UnifiedTrace{trace_id: "11111111111111111111111111111111"}} =
+             OperatorAdapter.get_unified_trace(context, execution_ref, opts)
+
+    assert_received {:operator_query_service_called, :execution_trace_lineage, "execution-1"}
+    assert_received {:operator_query_service_called, :get_unified_trace, trace_attrs, ^opts}
+    assert trace_attrs.installation_revision == 1
+    assert trace_attrs.activation_epoch == 2
+    assert trace_attrs.lease_epoch == 3
+
+    assert {:ok, %ReadLease{lease_token: "read-token"}} =
+             OperatorAdapter.issue_read_lease(context, execution_ref, opts)
+
+    assert_received {:lease_service_called, :issue_read_lease, read_lease_attrs, ^opts}
+    assert read_lease_attrs.execution_id == "execution-1"
+
+    assert {:ok, %StreamAttachLease{attach_token: "stream-token"}} =
+             MezzanineBridge.issue_stream_attach_lease(context, execution_ref, opts)
+
+    assert_received {:lease_service_called, :issue_stream_attach_lease, stream_lease_attrs, ^opts}
+    assert stream_lease_attrs.execution_id == "execution-1"
+
+    {:ok, fragment_list_request} =
+      MemoryFragmentListRequest.new(%{proof_token_ref: "proof-token://memory-1"})
+
+    assert {:ok, [%MemoryFragmentProjection{fragment_ref: "memory://fragment-1"}]} =
+             OperatorAdapter.list_memory_fragments(context, fragment_list_request, opts)
+
+    assert_received {:memory_control_service_called, :list_fragments_by_proof_token,
+                     fragment_list_attrs, ^opts}
+
+    assert fragment_list_attrs.actor_ref == "operator"
+
+    {:ok, proof_lookup} =
+      MemoryProofTokenLookup.new(%{proof_token_ref: "proof-token://memory-1"})
+
+    assert {:ok, %MemoryFragmentProjection{fragment_ref: "memory://fragment-1"}} =
+             MezzanineBridge.memory_fragment_by_proof_token(context, proof_lookup, opts)
+
+    assert_received {:memory_control_service_called, :lookup_fragment_by_proof_token,
+                     _lookup_attrs, ^opts}
+
+    assert {:ok, %MemoryFragmentProvenance{fragment_ref: "memory://fragment-1"}} =
+             OperatorAdapter.memory_fragment_provenance(context, "memory://fragment-1", opts)
+
+    assert_received {:memory_control_service_called, :fragment_provenance, _provenance_attrs,
+                     ^opts}
+
+    {:ok, share_request} =
+      MemoryShareUpRequest.new(%{
+        fragment_ref: "memory://fragment-1",
+        target_scope_ref: "scope://team",
+        share_up_policy_ref: "policy://share-up",
+        transform_ref: "redacted_summary",
+        reason: "operator review",
+        evidence_refs: ["evidence://memory-1"]
+      })
+
+    assert {:ok, %ActionResult{message: "memory request_share_up accepted"}} =
+             OperatorAdapter.request_memory_share_up(context, share_request, opts)
+
+    assert_received {:memory_control_service_called, :request_share_up, _share_attrs, ^opts}
+
+    {:ok, promotion_request} =
+      MemoryPromotionRequest.new(%{
+        shared_fragment_ref: "shared-memory://fragment-1",
+        promotion_policy_ref: "policy://promotion",
+        reason: "operator promotion",
+        evidence_refs: ["evidence://memory-1"]
+      })
+
+    assert {:ok, %ActionResult{message: "memory request_promotion accepted"}} =
+             OperatorAdapter.request_memory_promotion(context, promotion_request, opts)
+
+    assert_received {:memory_control_service_called, :request_promotion, _promotion_attrs, ^opts}
+
+    {:ok, invalidation_request} =
+      MemoryInvalidationRequest.new(%{
+        root_fragment_ref: "memory://fragment-1",
+        reason: :source_correction,
+        invalidate_policy_ref: "policy://invalidate",
+        authority_ref: %{"decision" => "approved"},
+        evidence_refs: ["evidence://memory-1"]
+      })
+
+    assert {:ok, %ActionResult{message: "memory request_invalidation accepted"}} =
+             OperatorAdapter.request_memory_invalidation(context, invalidation_request, opts)
+
+    assert_received {:memory_control_service_called, :request_invalidation, _invalidation_attrs,
+                     ^opts}
+
+    assert {:ok, %{status: :running, run_ref: ^run_ref}} =
+             OperatorAdapter.run_status(run_ref, %{detail: true}, opts)
+
+    assert_received {:operator_query_service_called, :run_status, ^run_ref, %{detail: true},
+                     ^opts}
+
+    assert {:ok, %{status: :reviewed, run_ref: ^run_ref}} =
+             MezzanineBridge.review_run(run_ref, %{decision: "approve"}, opts)
+
+    assert_received {:operator_action_service_called, :review_run, ^run_ref,
+                     %{decision: "approve"}, ^opts}
   end
 
   test "headless adapter owns runtime readback delegation behind the facade" do
