@@ -1,7 +1,7 @@
 defmodule AppKit.Bridges.MezzanineBridge.WorkMapping do
   @moduledoc false
 
-  alias AppKit.Bridges.MezzanineBridge.{Common, WorkContext}
+  alias AppKit.Bridges.MezzanineBridge.{ActionMapping, Common, WorkContext}
 
   alias AppKit.Core.{
     ActionResult,
@@ -191,18 +191,7 @@ defmodule AppKit.Bridges.MezzanineBridge.WorkMapping do
     do: {:error, :invalid_runtime_projection}
 
   def action_result_from_bridge(bridge_result) do
-    with {:ok, action_ref} <-
-           operator_action_ref_from_map(Common.fetch_value(bridge_result, :action_ref)),
-         {:ok, execution_ref} <-
-           execution_ref_from_bridge(Common.fetch_value(bridge_result, :execution_ref)) do
-      ActionResult.new(%{
-        status: Common.fetch_value(bridge_result, :status),
-        action_ref: action_ref,
-        execution_ref: execution_ref,
-        message: Common.fetch_value(bridge_result, :message),
-        metadata: Common.fetch_value(bridge_result, :metadata) || %{}
-      })
-    end
+    ActionMapping.action_result_from_bridge(bridge_result)
   end
 
   def operator_projection_from_row(row, %RequestContext{} = context) do

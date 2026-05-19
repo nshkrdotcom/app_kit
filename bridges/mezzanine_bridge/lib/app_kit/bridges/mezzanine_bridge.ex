@@ -8,7 +8,14 @@ defmodule AppKit.Bridges.MezzanineBridge do
   """
 
   alias AppKit.BackendConfig
-  alias AppKit.Bridges.MezzanineBridge.{SourceAdapter, WorkAdapter, WorkQueryAdapter}
+
+  alias AppKit.Bridges.MezzanineBridge.{
+    InstallationAdapter,
+    ReviewAdapter,
+    SourceAdapter,
+    WorkAdapter,
+    WorkQueryAdapter
+  }
 
   @behaviour AppKit.Core.Backends.InstallationBackend
   @behaviour AppKit.Core.Backends.OperatorBackend
@@ -33,18 +40,11 @@ defmodule AppKit.Bridges.MezzanineBridge do
     ActionResult,
     ActorRef,
     AuthoringBundleImport,
-    BindingDescriptor,
-    BindingEnvelope,
-    BindingFailurePosture,
-    BindingOwnership,
     BlockingCondition,
     DecisionRef,
-    DecisionSummary,
     ExecutionRef,
     FilterSet,
-    InstallationBinding,
     InstallationRef,
-    InstallResult,
     InstallTemplate,
     MemoryFragmentListRequest,
     MemoryFragmentProjection,
@@ -59,7 +59,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
     OperatorActionRequest,
     OperatorProjection,
     PageRequest,
-    PageResult,
     PendingObligation,
     ProjectionRef,
     ReadLease,
@@ -352,93 +351,31 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @impl true
   def list_pending(%RequestContext{} = context, %PageRequest{} = page_request, opts)
       when is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         {:ok, program_id} <- program_id(context, opts),
-         {:ok, rows} <- review_query_service(opts).list_pending_reviews(tenant_id, program_id),
-         {:ok, entries} <- map_each(rows, &decision_summary_from_row(&1, context)),
-         {:ok, page_result} <- page_result(entries, page_request) do
-      {:ok, page_result}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    ReviewAdapter.list_pending(context, page_request, opts)
   end
 
   @impl true
   def get_review(%RequestContext{} = context, %DecisionRef{} = decision_ref, opts)
       when is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         {:ok, review_detail} <-
-           review_query_service(opts).get_review_detail(tenant_id, decision_ref.id) do
-      {:ok, review_detail}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    ReviewAdapter.get_review(context, decision_ref, opts)
   end
 
   @impl true
   def record_decision(%RequestContext{} = context, %DecisionRef{} = decision_ref, attrs, opts)
       when is_map(attrs) and is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         {:ok, program_id} <- program_id(context, opts),
-         merged_attrs <-
-           attrs
-           |> Map.new()
-           |> Map.put_new(:program_id, program_id)
-           |> Map.put_new(:actor_ref, context.actor_ref.id),
-         {:ok, bridge_result} <-
-           review_action_service(opts).record_decision(
-             tenant_id,
-             decision_ref.id,
-             merged_attrs,
-             opts
-           ),
-         {:ok, action_result} <- action_result_from_bridge(bridge_result) do
-      {:ok, action_result}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    ReviewAdapter.record_decision(context, decision_ref, attrs, opts)
   end
 
   @impl true
   def record_decision_by_id(%RequestContext{} = context, decision_id, attrs, opts)
       when is_binary(decision_id) and is_map(attrs) and is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         {:ok, program_id} <- program_id(context, opts),
-         merged_attrs <-
-           attrs
-           |> Map.new()
-           |> Map.put_new(:program_id, program_id)
-           |> Map.put_new(:actor_ref, context.actor_ref.id),
-         {:ok, bridge_result} <-
-           review_action_service(opts).record_decision(
-             tenant_id,
-             decision_id,
-             merged_attrs,
-             opts
-           ),
-         {:ok, action_result} <- action_result_from_bridge(bridge_result) do
-      {:ok, action_result}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    ReviewAdapter.record_decision_by_id(context, decision_id, attrs, opts)
   end
 
   @impl true
   def create_installation(%RequestContext{} = context, %InstallTemplate{} = template, opts)
       when is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         attrs <-
-           template
-           |> Map.from_struct()
-           |> Map.put(:tenant_id, tenant_id)
-           |> maybe_put_runtime_profile(context)
-           |> Map.put_new(:metadata, %{}),
-         {:ok, bridge_result} <- installation_service(opts).create_installation(attrs, opts),
-         {:ok, install_result} <- install_result_from_bridge(bridge_result) do
-      {:ok, install_result}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    InstallationAdapter.create_installation(context, template, opts)
   end
 
   @impl true
@@ -448,99 +385,50 @@ defmodule AppKit.Bridges.MezzanineBridge do
         opts
       )
       when is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         attrs <-
-           bundle_import
-           |> Map.from_struct()
-           |> Map.put(:tenant_id, tenant_id),
-         {:ok, bridge_result} <- installation_service(opts).import_authoring_bundle(attrs, opts),
-         {:ok, install_result} <- install_result_from_bridge(bridge_result) do
-      {:ok, install_result}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    InstallationAdapter.import_authoring_bundle(context, bundle_import, opts)
   end
 
   @impl true
-  def get_installation(%RequestContext{} = _context, %InstallationRef{} = installation_ref, opts)
+  def get_installation(%RequestContext{} = context, %InstallationRef{} = installation_ref, opts)
       when is_list(opts) do
-    with {:ok, detail} <- installation_service(opts).get_installation(installation_ref.id, opts),
-         {:ok, normalized_ref} <- installation_ref_from_detail(detail) do
-      {:ok, normalized_ref}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    InstallationAdapter.get_installation(context, installation_ref, opts)
   end
 
   @impl true
   def update_bindings(
-        %RequestContext{} = _context,
+        %RequestContext{} = context,
         %InstallationRef{} = installation_ref,
         bindings,
         opts
       )
       when is_list(bindings) and is_list(opts) do
-    with {:ok, bridge_result} <-
-           installation_service(opts).update_bindings(
-             installation_ref.id,
-             binding_config(bindings),
-             opts
-           ),
-         {:ok, action_result} <- action_result_from_bridge(bridge_result) do
-      {:ok, action_result}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    InstallationAdapter.update_bindings(context, installation_ref, bindings, opts)
   end
 
   @impl true
   def list_installations(%RequestContext{} = context, %PageRequest{} = page_request, opts)
       when is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         {:ok, rows} <-
-           installation_service(opts).list_installations(
-             tenant_id,
-             installation_filters(page_request.filters),
-             opts
-           ),
-         {:ok, entries} <- map_each(rows, &installation_ref_from_detail/1),
-         {:ok, page_result} <- page_result(entries, page_request) do
-      {:ok, page_result}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    InstallationAdapter.list_installations(context, page_request, opts)
   end
 
   @impl true
   def suspend_installation(
-        %RequestContext{} = _context,
+        %RequestContext{} = context,
         %InstallationRef{} = installation_ref,
         opts
       )
       when is_list(opts) do
-    with {:ok, bridge_result} <-
-           installation_service(opts).suspend_installation(installation_ref.id, opts),
-         {:ok, action_result} <- action_result_from_bridge(bridge_result) do
-      {:ok, action_result}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    InstallationAdapter.suspend_installation(context, installation_ref, opts)
   end
 
   @impl true
   def reactivate_installation(
-        %RequestContext{} = _context,
+        %RequestContext{} = context,
         %InstallationRef{} = installation_ref,
         opts
       )
       when is_list(opts) do
-    with {:ok, bridge_result} <-
-           installation_service(opts).reactivate_installation(installation_ref.id, opts),
-         {:ok, action_result} <- action_result_from_bridge(bridge_result) do
-      {:ok, action_result}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    InstallationAdapter.reactivate_installation(context, installation_ref, opts)
   end
 
   @impl true
@@ -1250,15 +1138,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp work_query_service(opts),
     do: Keyword.get(opts, :work_query_service, Mezzanine.AppKitBridge.WorkQueryService)
 
-  defp review_query_service(opts),
-    do: Keyword.get(opts, :review_query_service, Mezzanine.AppKitBridge.ReviewQueryService)
-
-  defp review_action_service(opts),
-    do: Keyword.get(opts, :review_action_service, Mezzanine.AppKitBridge.ReviewActionService)
-
-  defp installation_service(opts),
-    do: Keyword.get(opts, :installation_service, Mezzanine.AppKitBridge.InstallationService)
-
   defp runtime_profile_service(opts),
     do: Keyword.get(opts, :runtime_profile_service, Mezzanine.AppKitBridge.RuntimeProfileService)
 
@@ -1477,125 +1356,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
     end
   end
 
-  defp installation_filters(nil), do: %{}
-
-  defp installation_filters(%FilterSet{clauses: clauses}) do
-    Enum.reduce(clauses, %{}, fn clause, acc ->
-      field = fetch_value(clause, :field)
-      op = fetch_value(clause, :op)
-      value = fetch_value(clause, :value)
-
-      case {field, op, value} do
-        {"status", "eq", filter_value} ->
-          Map.put(acc, :status, normalize_atomish(filter_value))
-
-        {"environment", "eq", filter_value} when is_binary(filter_value) ->
-          Map.put(acc, :environment, filter_value)
-
-        {"pack_slug", "eq", filter_value} when is_binary(filter_value) ->
-          Map.put(acc, :pack_slug, filter_value)
-
-        _ ->
-          acc
-      end
-    end)
-  end
-
-  defp binding_config(bindings) do
-    Enum.reduce(bindings, %{}, fn %InstallationBinding{} = binding, acc ->
-      kind_key = "#{binding.binding_kind}_bindings"
-
-      config =
-        binding.config
-        |> Map.new()
-        |> maybe_put("credential_ref", binding.credential_ref)
-        |> maybe_put("descriptor", serialize_binding_descriptor(binding.descriptor))
-
-      Map.update(acc, kind_key, %{binding.binding_key => config}, fn grouped ->
-        Map.put(grouped, binding.binding_key, config)
-      end)
-    end)
-  end
-
-  defp serialize_binding_descriptor(nil), do: nil
-
-  defp serialize_binding_descriptor(%BindingDescriptor{} = descriptor) do
-    %{
-      "attachment" => descriptor.attachment,
-      "contract" => Atom.to_string(descriptor.contract),
-      "envelope" => serialize_binding_envelope(descriptor.envelope),
-      "failure" => serialize_binding_failure(descriptor.failure),
-      "ownership" => serialize_binding_ownership(descriptor.ownership)
-    }
-  end
-
-  defp serialize_binding_envelope(%BindingEnvelope{} = envelope) do
-    %{
-      "staleness_class" => Atom.to_string(envelope.staleness_class),
-      "trace_propagation" => Atom.to_string(envelope.trace_propagation),
-      "tenant_scope" => Atom.to_string(envelope.tenant_scope),
-      "blast_radius" => Atom.to_string(envelope.blast_radius),
-      "timeout_ms" => envelope.timeout_ms,
-      "runbook_ref" => envelope.runbook_ref
-    }
-  end
-
-  defp serialize_binding_failure(%BindingFailurePosture{} = failure) do
-    %{
-      "on_unavailable" => Atom.to_string(failure.on_unavailable),
-      "on_timeout" => Atom.to_string(failure.on_timeout)
-    }
-  end
-
-  defp serialize_binding_ownership(%BindingOwnership{} = ownership) do
-    %{
-      "external_system" => ownership.external_system,
-      "external_system_ref" => ownership.external_system_ref,
-      "operator_owner" => ownership.operator_owner
-    }
-  end
-
-  defp page_result(entries, %PageRequest{} = page_request) do
-    sorted_entries = sort_entries(entries, page_request.sort)
-    offset = decode_cursor(page_request.cursor)
-    page_entries = Enum.slice(sorted_entries, offset, page_request.limit)
-    has_more = offset + length(page_entries) < length(sorted_entries)
-    next_cursor = if has_more, do: Integer.to_string(offset + length(page_entries)), else: nil
-
-    PageResult.new(%{
-      entries: page_entries,
-      next_cursor: next_cursor,
-      total_count: length(sorted_entries),
-      has_more: has_more
-    })
-  end
-
-  defp sort_entries(entries, []), do: entries
-
-  defp sort_entries(entries, [sort_spec | _rest]) do
-    sorter = fn entry ->
-      value = fetch_value(entry, sort_spec.field)
-
-      case {value, sort_spec.nulls || :last} do
-        {nil, :first} -> {0, nil}
-        {nil, :last} -> {1, nil}
-        {other, _nulls} -> {1, other}
-      end
-    end
-
-    direction = if sort_spec.direction == :desc, do: :desc, else: :asc
-    Enum.sort_by(entries, sorter, direction)
-  end
-
-  defp decode_cursor(nil), do: 0
-
-  defp decode_cursor(cursor) when is_binary(cursor) do
-    case Integer.parse(cursor) do
-      {offset, ""} when offset >= 0 -> offset
-      _ -> 0
-    end
-  end
-
   defp map_each(entries, mapper) do
     Enum.reduce_while(entries, {:ok, []}, fn entry, {:ok, acc} ->
       case mapper.(entry) do
@@ -1609,37 +1369,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
     end
   end
 
-  defp decision_summary_from_row(row, %RequestContext{} = context) do
-    with {:ok, decision_ref} <- decision_ref_from_row(row, context) do
-      DecisionSummary.new(%{
-        decision_ref: decision_ref,
-        status: normalize_string(fetch_value(row, :status) || "pending"),
-        required_by: fetch_value(row, :required_by),
-        subject_ref: decision_ref.subject_ref,
-        summary: fetch_value(row, :summary),
-        schema_ref: "mezzanine/review_unit",
-        schema_version: 1,
-        payload: fetch_value(row, :payload) || %{}
-      })
-    end
-  end
-
-  defp decision_ref_from_row(row, %RequestContext{} = context) do
-    raw_ref = fetch_value(row, :decision_ref) || %{}
-    raw_subject_ref = fetch_value(raw_ref, :subject_ref) || fetch_value(row, :subject_ref)
-
-    with {:ok, subject_ref} <- subject_ref_from_any(raw_subject_ref, context) do
-      DecisionRef.new(%{
-        id: fetch_value(raw_ref, :id) || fetch_value(row, :review_unit_id),
-        decision_kind:
-          normalize_string(
-            fetch_value(raw_ref, :decision_kind) || fetch_value(row, :review_kind) || "review"
-          ),
-        subject_ref: subject_ref
-      })
-    end
-  end
-
   defp subject_ref_from_any(nil, _context), do: {:ok, nil}
 
   defp subject_ref_from_any(raw_subject_ref, %RequestContext{} = context)
@@ -1649,44 +1378,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
       subject_kind: normalize_string(fetch_value(raw_subject_ref, :subject_kind) || "subject"),
       installation_ref: context.installation_ref
     })
-  end
-
-  defp install_result_from_bridge(bridge_result) do
-    with {:ok, installation_ref} <-
-           installation_ref_from_map(fetch_value(bridge_result, :installation_ref)) do
-      InstallResult.new(%{
-        installation_ref: installation_ref,
-        status: fetch_value(bridge_result, :status),
-        message: fetch_value(bridge_result, :message),
-        metadata: fetch_value(bridge_result, :metadata) || %{}
-      })
-    end
-  end
-
-  defp installation_ref_from_detail(detail) do
-    installation_ref_from_map(fetch_value(detail, :installation_ref))
-  end
-
-  defp installation_ref_from_map(raw_installation_ref) when is_map(raw_installation_ref) do
-    InstallationRef.new(%{
-      id: fetch_value(raw_installation_ref, :id),
-      pack_slug: fetch_value(raw_installation_ref, :pack_slug),
-      pack_version: fetch_value(raw_installation_ref, :pack_version),
-      compiled_pack_revision: fetch_value(raw_installation_ref, :compiled_pack_revision),
-      status: normalize_atomish(fetch_value(raw_installation_ref, :status))
-    })
-  end
-
-  defp installation_ref_from_map(_raw_installation_ref), do: {:error, :invalid_installation_ref}
-
-  defp maybe_put_runtime_profile(attrs, %RequestContext{} = context) do
-    case context_metadata(context, :runtime_profile) do
-      runtime_profile when is_map(runtime_profile) ->
-        Map.put(attrs, :runtime_profile, runtime_profile)
-
-      _other ->
-        attrs
-    end
   end
 
   defp action_result_from_bridge(bridge_result) do
@@ -2870,32 +2561,11 @@ defmodule AppKit.Bridges.MezzanineBridge do
     Map.reject(map, fn {_key, value} -> is_nil(value) end)
   end
 
-  @normalized_atomish_values %{
-    "active" => :active,
-    "awaiting_review" => :awaiting_review,
-    "blocked" => :blocked,
-    "created" => :created,
-    "degraded" => :degraded,
-    "inactive" => :inactive,
-    "pending" => :pending,
-    "planned" => :planned,
-    "planning" => :planning,
-    "reused" => :reused,
-    "running" => :running,
-    "suspended" => :suspended,
-    "updated" => :updated
-  }
-
   @not_found_reasons [:bridge_not_found, :not_found, :pack_registration_not_found]
   @conflict_reasons [:installation_pack_conflict, :review_gate_not_satisfied]
   @transient_reasons [:timeout, :temporarily_unavailable]
   @validation_reasons [:stale_proof_token]
   @validation_reason_prefixes ["missing_", "invalid_", "unsupported_"]
-
-  defp normalize_atomish(value) when is_binary(value),
-    do: Map.get(@normalized_atomish_values, value, value)
-
-  defp normalize_atomish(value), do: value
 
   defp normalize_string(nil), do: nil
   defp normalize_string(value) when is_atom(value), do: Atom.to_string(value)

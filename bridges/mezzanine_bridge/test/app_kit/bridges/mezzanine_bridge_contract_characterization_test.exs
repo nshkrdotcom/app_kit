@@ -2,10 +2,21 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
   use ExUnit.Case, async: true
 
   alias AppKit.Bridges.MezzanineBridge
-  alias AppKit.Bridges.MezzanineBridge.{SourceAdapter, WorkAdapter, WorkQueryAdapter}
+
+  alias AppKit.Bridges.MezzanineBridge.{
+    InstallationAdapter,
+    ReviewAdapter,
+    SourceAdapter,
+    WorkAdapter,
+    WorkQueryAdapter
+  }
 
   alias AppKit.Core.{
     ActionResult,
+    DecisionRef,
+    InstallationBinding,
+    InstallationRef,
+    InstallTemplate,
     PageRequest,
     RequestContext,
     Result,
@@ -245,6 +256,104 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
     end
   end
 
+  defmodule ReviewQueryService do
+    def list_pending_reviews(tenant_id, program_id) do
+      send(self(), {:review_query_service_called, :list_pending_reviews, tenant_id, program_id})
+
+      {:ok,
+       [
+         %{
+           decision_ref: %{
+             id: "decision-1",
+             decision_kind: "approval",
+             subject_ref: %{id: "subject-1", subject_kind: "work_object"}
+           },
+           status: "pending",
+           summary: "Needs operator approval"
+         }
+       ]}
+    end
+
+    def get_review_detail(tenant_id, decision_id) do
+      send(self(), {:review_query_service_called, :get_review_detail, tenant_id, decision_id})
+      {:ok, %{decision_id: decision_id, detail: true}}
+    end
+  end
+
+  defmodule ReviewActionService do
+    def record_decision(tenant_id, decision_id, attrs, opts) do
+      send(
+        self(),
+        {:review_action_service_called, :record_decision, tenant_id, decision_id, attrs, opts}
+      )
+
+      {:ok, %{status: :accepted, message: "decision recorded"}}
+    end
+  end
+
+  defmodule InstallationService do
+    def create_installation(attrs, opts) do
+      send(self(), {:installation_service_called, :create_installation, attrs, opts})
+      {:ok, install_result("installation-1", :created, "created")}
+    end
+
+    def import_authoring_bundle(attrs, opts) do
+      send(self(), {:installation_service_called, :import_authoring_bundle, attrs, opts})
+      {:ok, install_result("installation-1", :updated, "imported")}
+    end
+
+    def get_installation(installation_id, opts) do
+      send(self(), {:installation_service_called, :get_installation, installation_id, opts})
+      {:ok, %{installation_ref: installation_ref(installation_id, :active)}}
+    end
+
+    def update_bindings(installation_id, binding_config, opts) do
+      send(
+        self(),
+        {:installation_service_called, :update_bindings, installation_id, binding_config, opts}
+      )
+
+      {:ok, %{status: :accepted, message: "bindings updated"}}
+    end
+
+    def list_installations(tenant_id, filters, opts) do
+      send(self(), {:installation_service_called, :list_installations, tenant_id, filters, opts})
+      {:ok, [%{installation_ref: installation_ref("installation-1", :active)}]}
+    end
+
+    def suspend_installation(installation_id, opts) do
+      send(self(), {:installation_service_called, :suspend_installation, installation_id, opts})
+      {:ok, %{status: :accepted, message: "suspended"}}
+    end
+
+    def reactivate_installation(installation_id, opts) do
+      send(
+        self(),
+        {:installation_service_called, :reactivate_installation, installation_id, opts}
+      )
+
+      {:ok, %{status: :accepted, message: "reactivated"}}
+    end
+
+    defp install_result(installation_id, status, message) do
+      %{
+        installation_ref: installation_ref(installation_id, :active),
+        status: status,
+        message: message
+      }
+    end
+
+    defp installation_ref(installation_id, status) do
+      %{
+        id: installation_id,
+        pack_slug: "sample-host",
+        pack_version: "1.0.0",
+        compiled_pack_revision: 1,
+        status: status
+      }
+    end
+  end
+
   test "documents the extraction contract for every current bridge behaviour" do
     declared_behaviours =
       MezzanineBridge.module_info(:attributes)
@@ -386,6 +495,87 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
              WorkAdapter.start_run(%{kind: "domain"}, opts)
 
     assert_received {:work_control_service_called, :domain_start_run, %{kind: "domain"}, ^opts}
+  end
+
+  test "review adapter owns review query and action service delegation behind the facade" do
+    context = request_context()
+    {:ok, page_request} = PageRequest.new(%{limit: 5})
+
+    {:ok, subject_ref} = SubjectRef.new(%{id: "subject-1", subject_kind: "work_object"})
+
+    {:ok, decision_ref} =
+      DecisionRef.new(%{id: "decision-1", decision_kind: "approval", subject_ref: subject_ref})
+
+    opts = [
+      review_query_service: ReviewQueryService,
+      review_action_service: ReviewActionService,
+      program_id: "program-1"
+    ]
+
+    assert {:ok, %{entries: [%{decision_ref: %DecisionRef{id: "decision-1"}}]}} =
+             ReviewAdapter.list_pending(context, page_request, opts)
+
+    assert_received {:review_query_service_called, :list_pending_reviews, "tenant-1", "program-1"}
+
+    assert {:ok, %{decision_id: "decision-1", detail: true}} =
+             MezzanineBridge.get_review(context, decision_ref, opts)
+
+    assert_received {:review_query_service_called, :get_review_detail, "tenant-1", "decision-1"}
+
+    assert {:ok, %ActionResult{status: :accepted, message: "decision recorded"}} =
+             MezzanineBridge.record_decision(context, decision_ref, %{decision: "approve"}, opts)
+
+    assert_received {:review_action_service_called, :record_decision, "tenant-1", "decision-1",
+                     attrs, ^opts}
+
+    assert attrs.program_id == "program-1"
+    assert attrs.actor_ref == "operator"
+    assert attrs.decision == "approve"
+  end
+
+  test "installation adapter owns installation service delegation behind the facade" do
+    context = request_context()
+    {:ok, page_request} = PageRequest.new(%{limit: 5})
+
+    {:ok, template} =
+      InstallTemplate.new(%{
+        template_key: "default",
+        pack_slug: "sample-host",
+        pack_version: "1.0.0"
+      })
+
+    {:ok, installation_ref} =
+      InstallationRef.new(%{id: "installation-1", pack_slug: "sample-host"})
+
+    {:ok, binding} =
+      InstallationBinding.new(%{
+        binding_key: "execution-default",
+        binding_kind: :execution,
+        config: %{recipe_ref: "recipe://default"}
+      })
+
+    opts = [installation_service: InstallationService]
+
+    assert {:ok, %{installation_ref: %InstallationRef{id: "installation-1"}, status: :created}} =
+             InstallationAdapter.create_installation(context, template, opts)
+
+    assert_received {:installation_service_called, :create_installation, attrs, ^opts}
+    assert attrs.tenant_id == "tenant-1"
+    assert attrs.template_key == "default"
+
+    assert {:ok, %ActionResult{status: :accepted, message: "bindings updated"}} =
+             MezzanineBridge.update_bindings(context, installation_ref, [binding], opts)
+
+    assert_received {:installation_service_called, :update_bindings, "installation-1",
+                     binding_config, ^opts}
+
+    assert binding_config["execution_bindings"]["execution-default"].recipe_ref ==
+             "recipe://default"
+
+    assert {:ok, %{entries: [%InstallationRef{id: "installation-1"}]}} =
+             MezzanineBridge.list_installations(context, page_request, opts)
+
+    assert_received {:installation_service_called, :list_installations, "tenant-1", %{}, ^opts}
   end
 
   defp request_context do
