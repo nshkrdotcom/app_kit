@@ -2,7 +2,8 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
   use ExUnit.Case, async: true
 
   alias AppKit.Bridges.MezzanineBridge
-  alias AppKit.Core.RequestContext
+  alias AppKit.Bridges.MezzanineBridge.SourceAdapter
+  alias AppKit.Core.{RequestContext, SurfaceError}
 
   @adapter_contract [
     %{
@@ -163,6 +164,11 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
     end
   end
 
+  defmodule PartialSourceService do
+    def sync_source(_context, source_role_ref, source_page, _opts),
+      do: {:ok, %{role_ref: source_role_ref, source_page: source_page}}
+  end
+
   test "documents the extraction contract for every current bridge behaviour" do
     declared_behaviours =
       MezzanineBridge.module_info(:attributes)
@@ -208,6 +214,50 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
       assert_received {:source_service_called, ^callback, "tenant-1", :source_role, ^request,
                        ^opts}
     end
+  end
+
+  test "source adapter owns source service delegation behind the facade" do
+    context = request_context()
+    request = %{marker: "source-adapter"}
+    opts = [source_service: SourceService, sentinel: :source_adapter]
+
+    assert {:ok, %{callback: :sync_source, role_ref: :source_role, request: ^request}} =
+             SourceAdapter.sync_source(context, :source_role, request, opts)
+
+    assert_received {:source_service_called, :sync_source, "tenant-1", :source_role, ^request,
+                     ^opts}
+
+    assert {:ok, %{callback: :publish_source, role_ref: :publication_role, request: ^request}} =
+             SourceAdapter.publish_source(context, :publication_role, request, opts)
+
+    assert_received {:source_service_called, :publish_source, "tenant-1", :publication_role,
+                     ^request, ^opts}
+  end
+
+  test "source adapter normalizes missing optional service callbacks" do
+    context = request_context()
+    opts = [source_service: PartialSourceService]
+
+    assert {:error,
+            %SurfaceError{
+              code: "source_current_state_not_configured",
+              kind: :boundary,
+              retryable: false
+            }} = SourceAdapter.current_states(context, :source_role, %{}, opts)
+
+    assert {:error,
+            %SurfaceError{
+              code: "source_candidate_fetch_not_configured",
+              kind: :boundary,
+              retryable: false
+            }} = SourceAdapter.fetch_candidates(context, :source_role, %{}, opts)
+
+    assert {:error,
+            %SurfaceError{
+              code: "source_publication_not_configured",
+              kind: :boundary,
+              retryable: false
+            }} = SourceAdapter.publish_source(context, :publication_role, %{}, opts)
   end
 
   defp request_context do

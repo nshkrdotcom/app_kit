@@ -8,6 +8,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   """
 
   alias AppKit.BackendConfig
+  alias AppKit.Bridges.MezzanineBridge.SourceAdapter
 
   @behaviour AppKit.Core.Backends.InstallationBackend
   @behaviour AppKit.Core.Backends.OperatorBackend
@@ -113,58 +114,48 @@ defmodule AppKit.Bridges.MezzanineBridge do
   def sync_source(%RequestContext{} = context, source_role_ref, source_page, opts)
       when (is_atom(source_role_ref) or is_binary(source_role_ref)) and is_map(source_page) and
              is_list(opts) do
-    case source_service(opts).sync_source(context, source_role_ref, source_page, opts) do
-      {:ok, result} -> {:ok, result}
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    SourceAdapter.sync_source(
+      context,
+      source_role_ref,
+      source_page,
+      opts
+    )
   end
 
   @impl true
   def current_states(%RequestContext{} = context, source_role_ref, request, opts)
       when (is_atom(source_role_ref) or is_binary(source_role_ref)) and is_map(request) and
              is_list(opts) do
-    service = source_service(opts)
-
-    if service_exports?(service, :current_states, 4) do
-      case service.current_states(context, source_role_ref, request, opts) do
-        {:ok, result} -> {:ok, result}
-        {:error, reason} -> normalize_surface_error(reason)
-      end
-    else
-      normalize_surface_error(:source_current_state_not_configured)
-    end
+    SourceAdapter.current_states(
+      context,
+      source_role_ref,
+      request,
+      opts
+    )
   end
 
   @impl true
   def fetch_candidates(%RequestContext{} = context, source_role_ref, request, opts)
       when (is_atom(source_role_ref) or is_binary(source_role_ref)) and is_map(request) and
              is_list(opts) do
-    service = source_service(opts)
-
-    if service_exports?(service, :fetch_candidates, 4) do
-      case service.fetch_candidates(context, source_role_ref, request, opts) do
-        {:ok, result} -> {:ok, result}
-        {:error, reason} -> normalize_surface_error(reason)
-      end
-    else
-      normalize_surface_error(:source_candidate_fetch_not_configured)
-    end
+    SourceAdapter.fetch_candidates(
+      context,
+      source_role_ref,
+      request,
+      opts
+    )
   end
 
   @impl true
   def publish_source(%RequestContext{} = context, publication_role_ref, request, opts)
       when (is_atom(publication_role_ref) or is_binary(publication_role_ref)) and
              is_map(request) and is_list(opts) do
-    service = source_service(opts)
-
-    if service_exports?(service, :publish_source, 4) do
-      case service.publish_source(context, publication_role_ref, request, opts) do
-        {:ok, result} -> {:ok, result}
-        {:error, reason} -> normalize_surface_error(reason)
-      end
-    else
-      normalize_surface_error(:source_publication_not_configured)
-    end
+    SourceAdapter.publish_source(
+      context,
+      publication_role_ref,
+      request,
+      opts
+    )
   end
 
   def invoke_runtime_operation(
@@ -1976,9 +1967,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   defp memory_control_service(opts),
     do: Keyword.get(opts, :memory_control_service, Mezzanine.AppKitBridge.MemoryControlService)
-
-  defp source_service(opts),
-    do: Keyword.get(opts, :source_service, Mezzanine.AppKitBridge.SourceService)
 
   defp runtime_gateway_service(opts),
     do:
