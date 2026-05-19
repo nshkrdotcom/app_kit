@@ -8,7 +8,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   """
 
   alias AppKit.BackendConfig
-  alias AppKit.Bridges.MezzanineBridge.SourceAdapter
+  alias AppKit.Bridges.MezzanineBridge.{SourceAdapter, WorkAdapter, WorkQueryAdapter}
 
   @behaviour AppKit.Core.Backends.InstallationBackend
   @behaviour AppKit.Core.Backends.OperatorBackend
@@ -40,15 +40,12 @@ defmodule AppKit.Bridges.MezzanineBridge do
     BlockingCondition,
     DecisionRef,
     DecisionSummary,
-    EvidenceProjection,
     ExecutionRef,
-    ExecutionStateProjection,
     FilterSet,
     InstallationBinding,
     InstallationRef,
     InstallResult,
     InstallTemplate,
-    LowerReceiptSummary,
     MemoryFragmentListRequest,
     MemoryFragmentProjection,
     MemoryFragmentProvenance,
@@ -60,7 +57,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
     OperatorAction,
     OperatorActionRef,
     OperatorActionRequest,
-    OperatorCommandProjection,
     OperatorProjection,
     PageRequest,
     PageResult,
@@ -68,24 +64,15 @@ defmodule AppKit.Bridges.MezzanineBridge do
     ProjectionRef,
     ReadLease,
     RequestContext,
-    Result,
-    ReviewProjection,
     RunRef,
     RunRequest,
-    RuntimeEventSummary,
-    RuntimeFactsProjection,
-    SourceBindingProjection,
     StreamAttachLease,
-    SubjectDetail,
     SubjectRef,
-    SubjectRuntimeProjection,
-    SubjectSummary,
     SurfaceError,
     Telemetry,
     TimelineEvent,
     UnifiedTrace,
-    UnifiedTraceStep,
-    WorkspaceRef
+    UnifiedTraceStep
   }
 
   alias AppKit.Core.RuntimeReadback.{
@@ -329,104 +316,37 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @impl true
   def ingest_subject(%RequestContext{} = context, attrs, opts)
       when is_map(attrs) and is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         {:ok, program_id} <- program_id(context, opts),
-         {:ok, work_class_id} <- work_class_id(context, attrs, opts),
-         merged_attrs <-
-           attrs
-           |> Map.new()
-           |> Map.put_new(:tenant_id, tenant_id)
-           |> Map.put_new(:program_id, program_id)
-           |> Map.put_new(:work_class_id, work_class_id),
-         {:ok, subject} <- work_query_service(opts).ingest_subject(merged_attrs, opts),
-         {:ok, subject_ref} <- subject_ref_from_summary(subject, context) do
-      {:ok, subject_ref}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    WorkQueryAdapter.ingest_subject(context, attrs, opts)
   end
 
   @impl true
   def list_subjects(%RequestContext{} = context, filters, %PageRequest{} = page_request, opts)
       when (is_nil(filters) or is_struct(filters, FilterSet)) and is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         {:ok, program_id} <- program_id(context, opts),
-         {:ok, rows} <-
-           work_query_service(opts).list_subjects(
-             tenant_id,
-             program_id,
-             work_filters(filters || page_request.filters)
-           ),
-         {:ok, entries} <- map_each(rows, &subject_summary_from_row(&1, context)),
-         {:ok, page_result} <- page_result(entries, page_request) do
-      {:ok, page_result}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    WorkQueryAdapter.list_subjects(context, filters, page_request, opts)
   end
 
   @impl true
   def get_subject(%RequestContext{} = context, %SubjectRef{} = subject_ref, opts)
       when is_list(opts) do
-    with :ok <- ensure_subject_not_archived(context, subject_ref),
-         {:ok, tenant_id} <- tenant_id(context),
-         {:ok, row} <- work_query_service(opts).get_subject_detail(tenant_id, subject_ref.id),
-         {:ok, detail} <- subject_detail_from_row(row, context) do
-      {:ok, detail}
-    else
-      {:error, :archived, manifest_ref} -> normalize_surface_error({:archived, manifest_ref})
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    WorkQueryAdapter.get_subject(context, subject_ref, opts)
   end
 
   @impl true
   def get_projection(%RequestContext{} = context, %ProjectionRef{} = projection_ref, opts)
       when is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         {:ok, subject_id} <- subject_id_from_projection(projection_ref),
-         {:ok, projection} <-
-           get_subject_projection(work_query_service(opts), tenant_id, subject_id, opts) do
-      {:ok, projection}
-    else
-      {:error, :archived, manifest_ref} -> normalize_surface_error({:archived, manifest_ref})
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    WorkQueryAdapter.get_projection(context, projection_ref, opts)
   end
 
   @impl true
   def get_runtime_projection(%RequestContext{} = context, %SubjectRef{} = subject_ref, opts)
       when is_list(opts) do
-    runtime_opts = Keyword.put(opts, :runtime_projection?, true)
-
-    with :ok <- ensure_subject_not_archived(context, subject_ref),
-         {:ok, tenant_id} <- tenant_id(context),
-         {:ok, projection} <-
-           get_subject_projection(
-             work_query_service(opts),
-             tenant_id,
-             subject_ref.id,
-             runtime_opts
-           ),
-         :ok <- ensure_runtime_projection_row(projection),
-         {:ok, runtime_projection} <-
-           subject_runtime_projection_from_map(projection, context, subject_ref) do
-      {:ok, runtime_projection}
-    else
-      {:error, :archived, manifest_ref} -> normalize_surface_error({:archived, manifest_ref})
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    WorkQueryAdapter.get_runtime_projection(context, subject_ref, opts)
   end
 
   @impl true
   def queue_stats(%RequestContext{} = context, filters, opts)
       when (is_nil(filters) or is_struct(filters, FilterSet)) and is_list(opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         {:ok, program_id} <- program_id(context, opts),
-         {:ok, stats} <- work_query_service(opts).queue_stats(tenant_id, program_id) do
-      {:ok, Map.merge(stats, %{filters: work_filters(filters)})}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
+    WorkQueryAdapter.queue_stats(context, filters, opts)
   end
 
   @impl true
@@ -626,52 +546,17 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @impl true
   def start_run(%RequestContext{} = context, %RunRequest{} = run_request, opts)
       when is_list(opts) do
-    service = work_control_service(opts)
-
-    if service_exports?(service, :start_run, 3) do
-      case service.start_run(context, run_request, opts) do
-        {:ok, result} -> {:ok, result}
-        {:error, reason} -> normalize_surface_error(reason)
-      end
-    else
-      with {:ok, bridge_result} <- start_run_via_operator_action(context, run_request, opts),
-           {:ok, action_result} <- action_result_from_bridge(bridge_result),
-           {:ok, projection} <- fetch_operator_projection(context, run_request.subject_ref, opts),
-           {:ok, run_ref} <- run_ref_from_projection(projection, context, run_request, opts),
-           {:ok, result} <- run_result_from_projection(projection, run_ref, action_result) do
-        {:ok, result}
-      else
-        {:error, reason} -> normalize_surface_error(reason)
-      end
-    end
+    WorkAdapter.start_run(context, run_request, opts)
   end
 
   @impl true
   def retry_run(%RequestContext{} = context, %RunRef{} = run_ref, opts) when is_list(opts) do
-    service = work_control_service(opts)
-
-    if service_exports?(service, :retry_run, 3) do
-      case service.retry_run(context, run_ref, opts) do
-        {:ok, result} -> {:ok, result}
-        {:error, reason} -> normalize_surface_error(reason)
-      end
-    else
-      work_control_action(context, run_ref, :replan, "retry", opts)
-    end
+    WorkAdapter.retry_run(context, run_ref, opts)
   end
 
   @impl true
   def cancel_run(%RequestContext{} = context, %RunRef{} = run_ref, opts) when is_list(opts) do
-    service = work_control_service(opts)
-
-    if service_exports?(service, :cancel_run, 3) do
-      case service.cancel_run(context, run_ref, opts) do
-        {:ok, result} -> {:ok, result}
-        {:error, reason} -> normalize_surface_error(reason)
-      end
-    else
-      work_control_action(context, run_ref, :cancel, "cancel", opts)
-    end
+    WorkAdapter.cancel_run(context, run_ref, opts)
   end
 
   @impl true
@@ -937,7 +822,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   @impl true
   def start_run(domain_call, opts) when is_map(domain_call) and is_list(opts) do
-    work_control_service(opts).start_run(domain_call, opts)
+    WorkAdapter.start_run(domain_call, opts)
   end
 
   @impl true
@@ -954,452 +839,12 @@ defmodule AppKit.Bridges.MezzanineBridge do
     operator_action_service(opts).review_run(run_ref, evidence_attrs, opts)
   end
 
-  defp start_run_via_operator_action(
-         %RequestContext{} = context,
-         %RunRequest{} = run_request,
-         opts
-       ) do
-    with {:ok, tenant_id} <- tenant_id(context) do
-      operator_action_service(opts).apply_action(
-        tenant_id,
-        run_request.subject_ref.id,
-        :replan,
-        run_request_action_params(run_request),
-        actor_payload(context)
-      )
-    end
-  end
-
-  defp fetch_operator_projection(%RequestContext{} = context, %SubjectRef{} = subject_ref, opts) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         {:ok, row} <- operator_query_service(opts).subject_status(tenant_id, subject_ref.id) do
-      operator_projection_from_row(row, context)
-    end
-  end
-
   defp get_subject_projection(service, tenant_id, subject_id, opts) do
     if function_exported?(service, :get_subject_projection, 3) do
       service.get_subject_projection(tenant_id, subject_id, opts)
     else
       service.get_subject_projection(tenant_id, subject_id)
     end
-  end
-
-  defp ensure_runtime_projection_row(projection) when is_map(projection) do
-    if runtime_projection_row?(projection) do
-      :ok
-    else
-      {:error, :runtime_projection_not_found}
-    end
-  end
-
-  defp ensure_runtime_projection_row(_projection), do: {:error, :invalid_runtime_projection}
-
-  defp runtime_projection_row?(projection) do
-    fetch_value(projection, :projection_name) == "operator_subject_runtime" and
-      not is_nil(fetch_value(projection, :computed_at) || fetch_value(projection, :updated_at)) and
-      is_map(fetch_value(projection, :execution)) and
-      is_map(fetch_value(projection, :lower_receipt)) and
-      runtime_source_binding_rows(projection) != []
-  end
-
-  defp subject_runtime_projection_from_map(
-         projection,
-         %RequestContext{} = context,
-         %SubjectRef{} = requested_subject_ref
-       )
-       when is_map(projection) do
-    subject = fetch_value(projection, :subject) || %{}
-    lifecycle_state = runtime_lifecycle_state(projection, subject)
-
-    with {:ok, subject_ref} <-
-           runtime_subject_ref(projection, subject, requested_subject_ref, context),
-         {:ok, source_bindings} <- source_binding_projections(projection),
-         {:ok, workspace_ref} <- runtime_workspace_ref(projection, context),
-         {:ok, execution_state} <-
-           execution_state_projection(projection, subject_ref, lifecycle_state),
-         {:ok, lower_receipts} <- lower_receipt_summaries(projection, execution_state),
-         {:ok, runtime} <- runtime_facts_projection(projection),
-         {:ok, evidence} <- evidence_projections(projection),
-         {:ok, review} <- review_projection(projection, subject_ref),
-         {:ok, operator_commands} <- operator_command_projections(projection) do
-      SubjectRuntimeProjection.new(%{
-        subject_ref: subject_ref,
-        lifecycle_state: lifecycle_state,
-        source_bindings: source_bindings,
-        workspace_ref: workspace_ref,
-        execution_state: execution_state,
-        lower_receipts: lower_receipts,
-        runtime: runtime,
-        evidence: evidence,
-        review: review,
-        operator_commands: operator_commands,
-        updated_at:
-          coerce_datetime(
-            fetch_value(projection, :computed_at) || fetch_value(projection, :updated_at)
-          ),
-        schema_ref: "app_kit/subject_runtime_projection",
-        schema_version: 1,
-        payload: runtime_projection_payload(projection)
-      })
-    end
-  end
-
-  defp subject_runtime_projection_from_map(_projection, _context, _subject_ref),
-    do: {:error, :invalid_runtime_projection}
-
-  defp runtime_lifecycle_state(projection, subject) do
-    normalize_string(
-      fetch_value(projection, :lifecycle_state) ||
-        fetch_value(projection, :work_status) ||
-        fetch_value(subject, :lifecycle_state) ||
-        fetch_value(subject, :status) ||
-        "unknown"
-    )
-  end
-
-  defp runtime_subject_ref(
-         projection,
-         subject,
-         requested_subject_ref,
-         %RequestContext{} = context
-       ) do
-    subject_id =
-      fetch_value(projection, :subject_id) ||
-        fetch_value(subject, :subject_id) ||
-        fetch_value(subject, :id) ||
-        requested_subject_ref.id
-
-    subject_kind =
-      normalize_string(
-        fetch_value(projection, :subject_kind) ||
-          fetch_value(subject, :subject_kind) ||
-          requested_subject_ref.subject_kind ||
-          "subject"
-      )
-
-    SubjectRef.new(%{
-      id: subject_id,
-      subject_kind: subject_kind,
-      installation_ref: requested_subject_ref.installation_ref || context.installation_ref
-    })
-  end
-
-  defp source_binding_projections(projection) do
-    projection
-    |> runtime_source_binding_rows()
-    |> map_each(&source_binding_projection/1)
-  end
-
-  defp runtime_source_binding_rows(projection) do
-    cond do
-      is_list(fetch_value(projection, :source_bindings)) ->
-        fetch_value(projection, :source_bindings)
-
-      is_map(fetch_value(projection, :source_binding)) ->
-        [fetch_value(projection, :source_binding)]
-
-      true ->
-        []
-    end
-  end
-
-  defp source_binding_projection(row) when is_map(row) do
-    SourceBindingProjection.new(%{
-      binding_ref: fetch_value(row, :binding_ref) || fetch_value(row, :source_binding_ref),
-      source_ref: fetch_value(row, :source_ref),
-      source_kind:
-        normalize_string(fetch_value(row, :source_kind) || fetch_value(row, :kind) || "source"),
-      external_system: fetch_value(row, :external_system),
-      source_state: normalize_string(fetch_value(row, :source_state) || fetch_value(row, :state)),
-      source_url: fetch_value(row, :source_url) || fetch_value(row, :url),
-      workpad_refs: fetch_value(row, :workpad_refs) || [],
-      metadata: fetch_value(row, :metadata) || %{}
-    })
-  end
-
-  defp source_binding_projection(_row), do: {:error, :invalid_source_binding_projection}
-
-  defp runtime_workspace_ref(projection, %RequestContext{} = context) do
-    case fetch_value(projection, :workspace_ref) || fetch_value(projection, :workspace) do
-      nil ->
-        {:ok, nil}
-
-      row when is_map(row) ->
-        WorkspaceRef.new(%{
-          id: fetch_value(row, :id) || fetch_value(row, :workspace_id),
-          tenant_id: fetch_value(row, :tenant_id) || context.tenant_ref.id,
-          revision: fetch_value(row, :revision),
-          display_label: fetch_value(row, :display_label) || fetch_value(row, :label)
-        })
-
-      _row ->
-        {:error, :invalid_workspace_ref}
-    end
-  end
-
-  defp execution_state_projection(projection, %SubjectRef{} = subject_ref, lifecycle_state) do
-    case fetch_value(projection, :execution) do
-      row when is_map(row) ->
-        runtime_execution_state(row, subject_ref, lifecycle_state)
-
-      _row ->
-        {:ok, nil}
-    end
-  end
-
-  defp runtime_execution_state(row, %SubjectRef{} = subject_ref, lifecycle_state) do
-    execution_id = fetch_value(row, :execution_id) || fetch_value(row, :id)
-    dispatch_state = normalize_string(fetch_value(row, :dispatch_state) || "unknown")
-
-    with {:ok, execution_ref} <-
-           ExecutionRef.new(%{
-             id: execution_id,
-             subject_ref: subject_ref,
-             dispatch_state: dispatch_state
-           }) do
-      ExecutionStateProjection.new(%{
-        execution_ref: execution_ref,
-        lifecycle_state: lifecycle_state,
-        dispatch_state: dispatch_state,
-        failure_kind: normalize_string(fetch_value(row, :failure_kind)),
-        updated_at: coerce_datetime(fetch_value(row, :updated_at)),
-        metadata: fetch_value(row, :metadata) || %{}
-      })
-    end
-  end
-
-  defp lower_receipt_summaries(projection, execution_state) do
-    projection
-    |> lower_receipt_rows()
-    |> map_each(&lower_receipt_summary(&1, execution_state))
-  end
-
-  defp lower_receipt_rows(projection) do
-    cond do
-      is_list(fetch_value(projection, :lower_receipts)) ->
-        fetch_value(projection, :lower_receipts)
-
-      is_map(fetch_value(projection, :lower_receipt)) ->
-        [fetch_value(projection, :lower_receipt)]
-
-      true ->
-        []
-    end
-  end
-
-  defp lower_receipt_summary(row, execution_state) when is_map(row) do
-    LowerReceiptSummary.new(%{
-      receipt_ref: fetch_value(row, :receipt_ref) || fetch_value(row, :receipt_id),
-      receipt_state:
-        normalize_string(fetch_value(row, :receipt_state) || fetch_value(row, :state)),
-      lower_receipt_ref: fetch_value(row, :lower_receipt_ref),
-      run_ref:
-        runtime_lower_ref("lower-run", fetch_value(row, :run_ref) || fetch_value(row, :run_id)),
-      attempt_ref:
-        runtime_lower_ref(
-          "lower-attempt",
-          fetch_value(row, :attempt_ref) || fetch_value(row, :attempt_id)
-        ),
-      execution_ref: execution_state && execution_state.execution_ref,
-      metadata: fetch_value(row, :metadata) || %{}
-    })
-  end
-
-  defp lower_receipt_summary(_row, _execution_state), do: {:error, :invalid_lower_receipt_summary}
-
-  defp runtime_lower_ref(_prefix, nil), do: nil
-
-  defp runtime_lower_ref(prefix, value) when is_binary(value) do
-    if String.contains?(value, "://"), do: value, else: "#{prefix}://#{value}"
-  end
-
-  defp runtime_lower_ref(_prefix, _value), do: nil
-
-  defp runtime_facts_projection(projection) do
-    runtime = fetch_value(projection, :runtime) || %{}
-
-    with {:ok, events} <- runtime_event_summaries(runtime_event_counts(runtime)) do
-      RuntimeFactsProjection.new(runtime_facts_attrs(projection, runtime, events))
-    end
-  end
-
-  defp runtime_facts_attrs(projection, runtime, events) do
-    %{
-      token_totals: fetch_value(runtime, :token_totals) || %{},
-      token_dedupe: fetch_value(runtime, :token_dedupe) || %{},
-      rate_limit: fetch_value(runtime, :rate_limit) || %{},
-      retry_queue: fetch_value(runtime, :retry_queue) || [],
-      aitrace: runtime_aitrace(projection, runtime),
-      prompt: projection_or_runtime(projection, runtime, :prompt),
-      semantic: projection_or_runtime(projection, runtime, :semantic),
-      authority: projection_or_runtime(projection, runtime, :authority),
-      events: events,
-      metadata: runtime_facts_metadata(projection, runtime)
-    }
-  end
-
-  defp runtime_event_counts(runtime), do: fetch_value(runtime, :event_counts) || %{}
-
-  defp runtime_aitrace(projection, runtime) do
-    evidence = fetch_value(projection, :evidence) || %{}
-
-    fetch_value(evidence, :aitrace) || fetch_value(runtime, :aitrace) || %{}
-  end
-
-  defp projection_or_runtime(projection, runtime, key) do
-    fetch_value(projection, key) || fetch_value(runtime, key) || %{}
-  end
-
-  defp runtime_facts_metadata(projection, runtime) do
-    runtime_metadata = fetch_value(runtime, :metadata) || %{}
-
-    projection_metadata =
-      %{
-        "run" => fetch_value(projection, :run),
-        "lower_envelope" => fetch_value(projection, :lower_envelope),
-        "governance" => fetch_value(projection, :governance),
-        "memory_context" => fetch_value(projection, :memory_context),
-        "incident_bundles" => fetch_value(projection, :incident_bundles),
-        "retry_receipts" => fetch_value(projection, :retry_receipts),
-        "acceptance" => fetch_value(projection, :acceptance),
-        "provider_evidence" => fetch_value(projection, :provider_evidence),
-        "source_publication" => fetch_value(projection, :source_publication),
-        "diagnostics" => fetch_value(projection, :diagnostics)
-      }
-      |> compact_projection_metadata()
-
-    Map.merge(runtime_metadata, projection_metadata)
-  end
-
-  defp compact_projection_metadata(map) do
-    Map.reject(map, fn {_key, value} -> value in [nil, %{}, []] end)
-  end
-
-  defp runtime_event_summaries(event_counts) when is_map(event_counts) do
-    event_counts
-    |> Enum.sort_by(fn {event_kind, _count} -> normalize_string(event_kind) end)
-    |> Enum.map(fn {event_kind, count} ->
-      RuntimeEventSummary.new(%{
-        event_kind: normalize_string(event_kind),
-        count: count
-      })
-    end)
-    |> collect()
-  end
-
-  defp runtime_event_summaries(_event_counts), do: {:error, :invalid_runtime_event_summary}
-
-  defp evidence_projections(projection) do
-    projection
-    |> evidence_projection_rows()
-    |> map_each(&evidence_projection/1)
-  end
-
-  defp evidence_projection_rows(projection) do
-    evidence = fetch_value(projection, :evidence)
-
-    cond do
-      is_list(fetch_value(evidence, :evidence_refs)) -> fetch_value(evidence, :evidence_refs)
-      is_list(evidence) -> evidence
-      true -> []
-    end
-  end
-
-  defp evidence_projection(row) when is_map(row) do
-    EvidenceProjection.new(%{
-      evidence_ref: fetch_value(row, :evidence_ref) || fetch_value(row, :evidence_id),
-      evidence_kind:
-        normalize_string(fetch_value(row, :evidence_kind) || fetch_value(row, :kind)),
-      content_ref: fetch_value(row, :content_ref),
-      status: normalize_string(fetch_value(row, :status) || "present"),
-      metadata: fetch_value(row, :metadata) || %{}
-    })
-  end
-
-  defp evidence_projection(_row), do: {:error, :invalid_evidence_projection}
-
-  defp review_projection(projection, %SubjectRef{} = subject_ref) do
-    review = fetch_value(projection, :review) || %{}
-    pending_decision_ids = fetch_value(review, :pending_decision_ids) || []
-    status = normalize_string(fetch_value(review, :status) || review_status(pending_decision_ids))
-
-    pending_decision_ids
-    |> Enum.map(fn decision_id ->
-      DecisionRef.new(%{
-        id: decision_id,
-        decision_kind: "operator_review",
-        subject_ref: subject_ref
-      })
-    end)
-    |> collect()
-    |> case do
-      {:ok, pending_decision_refs} ->
-        ReviewProjection.new(%{
-          status: status,
-          pending_decision_refs: pending_decision_refs,
-          metadata: fetch_value(review, :metadata) || %{}
-        })
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp review_status([_ | _]), do: "pending"
-  defp review_status(_pending_decision_ids), do: "none"
-
-  defp operator_command_projections(projection) do
-    projection
-    |> operator_command_rows()
-    |> map_each(&operator_command_projection/1)
-  end
-
-  defp operator_command_rows(projection), do: fetch_value(projection, :available_actions) || []
-
-  defp operator_command_projection(row) when is_map(row) do
-    raw_action_ref = fetch_value(row, :action_ref) || row
-
-    with {:ok, action_ref} <- operator_action_ref_from_map(raw_action_ref) do
-      OperatorCommandProjection.new(%{
-        command_ref: action_ref,
-        status: normalize_string(fetch_value(row, :status) || "available"),
-        enabled?: fetch_value(row, :enabled?) != false,
-        reason: fetch_value(row, :reason),
-        metadata: fetch_value(row, :metadata) || %{}
-      })
-    end
-  end
-
-  defp operator_command_projection(_row), do: {:error, :invalid_operator_command_projection}
-
-  defp runtime_projection_payload(projection) do
-    projection
-    |> Map.new()
-    |> Map.drop([
-      :source_bindings,
-      "source_bindings",
-      :source_binding,
-      "source_binding",
-      :workspace,
-      "workspace",
-      :workspace_ref,
-      "workspace_ref",
-      :execution,
-      "execution",
-      :lower_receipt,
-      "lower_receipt",
-      :lower_receipts,
-      "lower_receipts",
-      :runtime,
-      "runtime",
-      :evidence,
-      "evidence",
-      :review,
-      "review",
-      :available_actions,
-      "available_actions"
-    ])
   end
 
   defp execution_trace_lineage(%RequestContext{} = context, %ExecutionRef{} = execution_ref, opts) do
@@ -1412,132 +857,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
       {:error, reason} -> {:error, reason}
     end
   end
-
-  defp run_result_from_projection(
-         %OperatorProjection{} = projection,
-         %RunRef{} = run_ref,
-         action_result
-       ) do
-    Result.new(%{
-      surface: :work_control,
-      state: run_state(projection),
-      payload: %{
-        run_ref: run_ref,
-        work_object_id: projection.subject_ref.id,
-        subject_ref: projection.subject_ref,
-        action_result: action_result
-      }
-    })
-  end
-
-  defp run_state(%OperatorProjection{pending_decision_refs: [_ | _]}), do: :waiting_review
-  defp run_state(_projection), do: :scheduled
-
-  defp run_ref_from_projection(
-         %OperatorProjection{} = projection,
-         %RequestContext{} = context,
-         %RunRequest{} = run_request,
-         opts
-       ) do
-    scope_id = scope_id(context, opts, projection.subject_ref.id)
-    execution_id = projection.current_execution_ref && projection.current_execution_ref.id
-
-    RunRef.new(%{
-      run_id: execution_id || "subject/#{projection.subject_ref.id}",
-      scope_id: scope_id,
-      metadata: %{
-        tenant_id: context.tenant_ref.id,
-        work_object_id: projection.subject_ref.id,
-        recipe_ref: run_request.recipe_ref,
-        trace_id: context.trace_id
-      }
-    })
-  end
-
-  defp scope_id(%RequestContext{} = context, opts, subject_id) do
-    case Keyword.get(opts, :scope_id) || context_metadata(context, :scope_id) do
-      value when is_binary(value) and value != "" ->
-        value
-
-      _ ->
-        case program_id(context, opts) do
-          {:ok, value} -> "program/#{value}"
-          {:error, _reason} -> "subject/#{subject_id}"
-        end
-    end
-  end
-
-  defp work_control_action(
-         %RequestContext{} = context,
-         %RunRef{} = run_ref,
-         action,
-         public_kind,
-         opts
-       ) do
-    with {:ok, tenant_id} <- tenant_id(context),
-         {:ok, subject_ref} <- subject_ref_from_run_ref(run_ref),
-         {:ok, bridge_result} <-
-           operator_action_service(opts).apply_action(
-             tenant_id,
-             subject_ref.id,
-             action,
-             %{requested_by: public_kind},
-             actor_payload(context)
-           ),
-         {:ok, action_result} <- action_result_from_bridge(bridge_result),
-         {:ok, normalized_result} <- normalize_public_action_result(action_result, public_kind) do
-      {:ok, normalized_result}
-    else
-      {:error, reason} -> normalize_surface_error(reason)
-    end
-  end
-
-  defp subject_ref_from_run_ref(%RunRef{metadata: metadata}) when is_map(metadata) do
-    case Map.get(metadata, :work_object_id) || Map.get(metadata, "work_object_id") ||
-           Map.get(metadata, :subject_id) || Map.get(metadata, "subject_id") do
-      value when is_binary(value) ->
-        SubjectRef.new(%{id: value, subject_kind: "work_object"})
-
-      _ ->
-        {:error, :missing_subject_id}
-    end
-  end
-
-  defp subject_ref_from_run_ref(_run_ref), do: {:error, :missing_subject_id}
-
-  defp normalize_public_action_result(%ActionResult{} = action_result, public_kind) do
-    action_kind = normalize_string(public_kind)
-
-    with {:ok, normalized_action_ref} <- public_action_ref(action_result.action_ref, action_kind) do
-      ActionResult.new(%{
-        status: action_result.status,
-        action_ref: normalized_action_ref,
-        execution_ref: action_result.execution_ref,
-        message: public_action_message(action_result.message, action_kind),
-        metadata: action_result.metadata
-      })
-    end
-  end
-
-  defp public_action_ref(nil, _action_kind), do: {:ok, nil}
-
-  defp public_action_ref(%OperatorActionRef{} = action_ref, action_kind) do
-    rewritten_id =
-      case String.split(action_ref.id, ":", parts: 2) do
-        [subject_id, _legacy_kind] -> "#{subject_id}:#{action_kind}"
-        _other -> action_ref.id
-      end
-
-    OperatorActionRef.new(%{
-      id: rewritten_id,
-      action_kind: action_kind,
-      subject_ref: action_ref.subject_ref
-    })
-  end
-
-  defp public_action_message(nil, "retry"), do: "Retry queued"
-  defp public_action_message(nil, "cancel"), do: "Cancelled"
-  defp public_action_message(message, _action_kind), do: message
 
   defp operator_projection_from_row(row, %RequestContext{} = context) do
     payload = operator_projection_payload(row)
@@ -1898,13 +1217,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
     |> maybe_put("operator_context", operator_command_context(context, subject_ref))
   end
 
-  defp run_request_action_params(%RunRequest{} = run_request) do
-    run_request.params
-    |> Map.new()
-    |> maybe_put("recipe_ref", run_request.recipe_ref)
-    |> maybe_put("reason", run_request.reason)
-  end
-
   defp operator_command_context(%RequestContext{} = context, %SubjectRef{} = subject_ref) do
     %{
       "tenant_id" => context.tenant_ref.id,
@@ -1952,9 +1264,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   defp lease_service(opts),
     do: Keyword.get(opts, :lease_service, Mezzanine.AppKitBridge.LeaseService)
-
-  defp work_control_service(opts),
-    do: Keyword.get(opts, :work_control_service, Mezzanine.AppKitBridge.WorkControlService)
 
   defp program_context_service(opts),
     do: Keyword.get(opts, :program_context_service, Mezzanine.AppKitBridge.ProgramContextService)
@@ -2082,32 +1391,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
     end
   end
 
-  defp work_class_id(%RequestContext{} = context, attrs, opts) do
-    case explicit_work_class_id(context, attrs, opts) do
-      {:ok, work_class_id} ->
-        {:ok, work_class_id}
-
-      :missing ->
-        with {:ok, tenant_id} <- tenant_id(context),
-             {:ok, program_slug} <- program_slug(context, opts),
-             {:ok, work_class_name} <- work_class_name(context, attrs, opts),
-             {:ok, resolution} <-
-               program_context_service(opts).resolve(
-                 tenant_id,
-                 %{program_slug: program_slug, work_class_name: work_class_name},
-                 opts
-               ),
-             {:ok, work_class_id} <-
-               resolved_id(resolution, :work_class_id, :missing_work_class_id) do
-          {:ok, work_class_id}
-        else
-          {:error, :missing_program_slug} -> {:error, :missing_work_class_id}
-          {:error, :missing_work_class_name} -> {:error, :missing_work_class_id}
-          {:error, reason} -> {:error, reason}
-        end
-    end
-  end
-
   defp context_metadata(%RequestContext{metadata: metadata}, key) do
     Map.get(metadata, key) || Map.get(metadata, Atom.to_string(key))
   end
@@ -2180,26 +1463,10 @@ defmodule AppKit.Bridges.MezzanineBridge do
   defp subject_id_from_runtime_ref(subject_id) when is_binary(subject_id), do: subject_id
   defp subject_id_from_runtime_ref(_subject_ref), do: nil
 
-  defp explicit_work_class_id(%RequestContext{} = context, attrs, opts) do
-    case Keyword.get(opts, :work_class_id) || fetch_value(attrs, :work_class_id) ||
-           context_metadata(context, :work_class_id) do
-      value when is_binary(value) and value != "" -> {:ok, value}
-      _ -> :missing
-    end
-  end
-
   defp program_slug(%RequestContext{} = context, opts) do
     case Keyword.get(opts, :program_slug) || context_metadata(context, :program_slug) do
       value when is_binary(value) and value != "" -> {:ok, value}
       _ -> {:error, :missing_program_slug}
-    end
-  end
-
-  defp work_class_name(%RequestContext{} = context, attrs, opts) do
-    case Keyword.get(opts, :work_class_name) || fetch_value(attrs, :work_class_name) ||
-           context_metadata(context, :work_class_name) do
-      value when is_binary(value) and value != "" -> {:ok, value}
-      _ -> {:error, :missing_work_class_name}
     end
   end
 
@@ -2208,42 +1475,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
       value when is_binary(value) and value != "" -> {:ok, value}
       _ -> {:error, error}
     end
-  end
-
-  defp subject_id_from_projection(%ProjectionRef{subject_ref: %SubjectRef{id: subject_id}})
-       when is_binary(subject_id),
-       do: {:ok, subject_id}
-
-  defp subject_id_from_projection(_projection_ref), do: {:error, :missing_subject_id}
-
-  defp work_filters(nil), do: %{}
-
-  defp work_filters(%FilterSet{clauses: clauses}) do
-    Enum.reduce(clauses, %{}, fn clause, acc ->
-      field = fetch_value(clause, :field)
-      op = fetch_value(clause, :op)
-      value = fetch_value(clause, :value)
-
-      case {field, op, value} do
-        {"status", "eq", filter_value} ->
-          Map.put(acc, :statuses, [normalize_atomish(filter_value)])
-
-        {"status", "in", filter_value} when is_list(filter_value) ->
-          Map.put(acc, :statuses, Enum.map(filter_value, &normalize_atomish/1))
-
-        {"lifecycle_state", "eq", filter_value} ->
-          Map.put(acc, :statuses, [normalize_atomish(filter_value)])
-
-        {"source_kind", "eq", filter_value} when is_binary(filter_value) ->
-          Map.put(acc, :source_kind, filter_value)
-
-        {"work_class_id", "eq", filter_value} when is_binary(filter_value) ->
-          Map.put(acc, :work_class_id, filter_value)
-
-        _ ->
-          acc
-      end
-    end)
   end
 
   defp installation_filters(nil), do: %{}
@@ -2376,211 +1607,6 @@ defmodule AppKit.Bridges.MezzanineBridge do
       {:ok, mapped} -> {:ok, Enum.reverse(mapped)}
       {:error, reason} -> {:error, reason}
     end
-  end
-
-  defp subject_ref_from_summary(summary, %RequestContext{} = context) do
-    SubjectRef.new(%{
-      id: fetch_value(summary, :subject_id),
-      subject_kind: normalize_string(fetch_value(summary, :subject_kind) || "subject"),
-      installation_ref: context.installation_ref
-    })
-  end
-
-  defp subject_summary_from_row(row, %RequestContext{} = context) do
-    with {:ok, subject_ref} <- subject_ref_from_summary(row, context) do
-      SubjectSummary.new(%{
-        subject_ref: subject_ref,
-        lifecycle_state: normalize_string(fetch_value(row, :status) || "unknown"),
-        title: fetch_value(row, :title),
-        summary: fetch_value(row, :description),
-        opened_at: fetch_value(row, :inserted_at),
-        updated_at: fetch_value(row, :updated_at),
-        schema_ref: "mezzanine/work_object",
-        schema_version: 1,
-        payload:
-          subject_payload(row, %{
-            program_id: fetch_value(row, :program_id),
-            work_class_id: fetch_value(row, :work_class_id),
-            external_ref: fetch_value(row, :external_ref),
-            priority: fetch_value(row, :priority),
-            source_kind: fetch_value(row, :source_kind),
-            current_plan_id: fetch_value(row, :current_plan_id)
-          })
-      })
-    end
-  end
-
-  defp subject_detail_from_row(row, %RequestContext{} = context) do
-    with {:ok, subject_ref} <- subject_ref_from_summary(row, context),
-         {:ok, current_execution_ref} <- execution_ref_from_row(row, subject_ref),
-         {:ok, pending_decision_refs} <- pending_decision_refs_from_row(row, subject_ref),
-         {:ok, pending_obligations} <-
-           pending_obligations_from_maps(fetch_value(row, :pending_obligations) || []),
-         {:ok, blocking_conditions} <-
-           blocking_conditions_from_maps(fetch_value(row, :blocking_conditions) || []),
-         {:ok, next_step_preview} <-
-           next_step_preview_from_map(fetch_value(row, :next_step_preview)) do
-      SubjectDetail.new(%{
-        subject_ref: subject_ref,
-        lifecycle_state: normalize_string(fetch_value(row, :status) || "unknown"),
-        title: fetch_value(row, :title),
-        description: fetch_value(row, :description),
-        current_execution_ref: current_execution_ref,
-        pending_decision_refs: pending_decision_refs,
-        available_actions: [],
-        pending_obligations: pending_obligations,
-        blocking_conditions: blocking_conditions,
-        next_step_preview: next_step_preview,
-        schema_ref: "mezzanine/work_object",
-        schema_version: 1,
-        payload:
-          subject_payload(row, %{
-            program_id: fetch_value(row, :program_id),
-            work_class_id: fetch_value(row, :work_class_id),
-            external_ref: fetch_value(row, :external_ref),
-            priority: fetch_value(row, :priority),
-            source_kind: fetch_value(row, :source_kind),
-            current_plan_id: fetch_value(row, :current_plan_id),
-            current_plan_status: normalize_string(fetch_value(row, :current_plan_status)),
-            active_run_id: fetch_value(row, :active_run_id),
-            active_run_status: normalize_string(fetch_value(row, :active_run_status)),
-            active_execution_trace_id:
-              normalize_string(fetch_value(row, :active_execution_trace_id)),
-            latest_execution_id: fetch_value(row, :latest_execution_id),
-            latest_execution_dispatch_state:
-              normalize_string(fetch_value(row, :latest_execution_dispatch_state)),
-            latest_execution_trace_id:
-              normalize_string(fetch_value(row, :latest_execution_trace_id)),
-            gate_status: fetch_value(row, :gate_status),
-            timeline: fetch_value(row, :timeline),
-            audit_events: fetch_value(row, :audit_events),
-            run_series_ids: fetch_value(row, :run_series_ids),
-            obligation_ids: fetch_value(row, :obligation_ids),
-            pending_obligations: fetch_value(row, :pending_obligations),
-            blocking_conditions: fetch_value(row, :blocking_conditions),
-            next_step_preview: fetch_value(row, :next_step_preview),
-            evidence_bundle_id: fetch_value(row, :evidence_bundle_id),
-            control_session_id: fetch_value(row, :control_session_id),
-            control_mode: normalize_string(fetch_value(row, :control_mode)),
-            last_event_at: fetch_value(row, :last_event_at)
-          })
-      })
-    end
-  end
-
-  defp subject_payload(row, base_payload) do
-    source_payload = fetch_value(row, :source_payload) || %{}
-
-    issue_payload =
-      fetch_value(source_payload, :issue) || fetch_value(source_payload, :payload) || %{}
-
-    base_payload
-    |> Map.merge(source_payload_projection(source_payload, row, issue_payload))
-    |> compact_map()
-  end
-
-  defp source_payload_projection(source_payload, row, issue_payload) do
-    if source_payload_projection?(source_payload, issue_payload) do
-      %{
-        identifier: source_identifier(source_payload, issue_payload),
-        source_id: source_id(source_payload, issue_payload),
-        description: source_description(row, source_payload, issue_payload),
-        provider: fetch_value(source_payload, :provider),
-        provider_external_ref: fetch_value(source_payload, :provider_external_ref),
-        provider_revision: fetch_value(source_payload, :provider_revision),
-        source_binding_id: fetch_value(source_payload, :source_binding_id),
-        source_ref: fetch_value(source_payload, :source_ref),
-        source_state: fetch_value(source_payload, :source_state),
-        state_mapping: fetch_value(source_payload, :state_mapping),
-        priority: source_priority(row, source_payload),
-        branch_ref: fetch_value(source_payload, :branch_ref),
-        source_url: fetch_value(source_payload, :source_url),
-        labels: fetch_value(source_payload, :labels),
-        blocker_refs: fetch_value(source_payload, :blocker_refs),
-        pre_dispatch_revalidation: fetch_value(source_payload, :pre_dispatch_revalidation),
-        source_routing: fetch_value(source_payload, :source_routing),
-        opened_at: fetch_value(source_payload, :opened_at),
-        updated_at: source_updated_at(source_payload)
-      }
-      |> compact_map()
-      |> maybe_put(:issue, non_empty_map(issue_payload))
-    else
-      %{}
-    end
-  end
-
-  defp source_payload_projection?(source_payload, issue_payload) do
-    Enum.any?(
-      [
-        :provider,
-        :provider_external_ref,
-        :source_binding_id,
-        :source_ref,
-        :source_state,
-        :pre_dispatch_revalidation,
-        :branch_ref,
-        :source_url,
-        :source_routing
-      ],
-      &(not is_nil(fetch_value(source_payload, &1)))
-    ) || not is_nil(fetch_value(issue_payload, :identifier))
-  end
-
-  defp source_identifier(source_payload, issue_payload) do
-    fetch_value(source_payload, :identifier) ||
-      fetch_value(issue_payload, :identifier) ||
-      fetch_value(issue_payload, :source_id)
-  end
-
-  defp source_id(source_payload, issue_payload) do
-    fetch_value(source_payload, :source_id) ||
-      fetch_value(issue_payload, :identifier) ||
-      fetch_value(issue_payload, :source_id)
-  end
-
-  defp source_description(row, source_payload, issue_payload) do
-    fetch_value(row, :description) ||
-      fetch_value(source_payload, :description) ||
-      fetch_value(issue_payload, :description)
-  end
-
-  defp source_priority(row, source_payload) do
-    fetch_value(row, :priority) || fetch_value(source_payload, :priority)
-  end
-
-  defp source_updated_at(source_payload) do
-    fetch_value(source_payload, :updated_at) || fetch_value(source_payload, :provider_revision)
-  end
-
-  defp non_empty_map(value) when is_map(value) and map_size(value) > 0, do: value
-  defp non_empty_map(_value), do: nil
-
-  defp execution_ref_from_row(row, %SubjectRef{} = subject_ref) do
-    case fetch_value(row, :active_execution_id) do
-      execution_id when is_binary(execution_id) ->
-        ExecutionRef.new(%{
-          id: execution_id,
-          subject_ref: subject_ref,
-          dispatch_state: normalize_string(fetch_value(row, :active_execution_dispatch_state))
-        })
-
-      _ ->
-        {:ok, nil}
-    end
-  end
-
-  defp pending_decision_refs_from_row(row, %SubjectRef{} = subject_ref) do
-    pending_review_ids = fetch_value(row, :pending_review_ids) || []
-
-    pending_review_ids
-    |> Enum.map(fn review_id ->
-      DecisionRef.new(%{
-        id: review_id,
-        decision_kind: "review",
-        subject_ref: subject_ref
-      })
-    end)
-    |> collect()
   end
 
   defp decision_summary_from_row(row, %RequestContext{} = context) do
@@ -3399,6 +2425,27 @@ defmodule AppKit.Bridges.MezzanineBridge do
       Map.merge(row, projection)
     else
       _reason -> row
+    end
+  end
+
+  defp runtime_projection_row?(projection) do
+    fetch_value(projection, :projection_name) == "operator_subject_runtime" and
+      not is_nil(fetch_value(projection, :computed_at) || fetch_value(projection, :updated_at)) and
+      is_map(fetch_value(projection, :execution)) and
+      is_map(fetch_value(projection, :lower_receipt)) and
+      runtime_source_binding_rows(projection) != []
+  end
+
+  defp runtime_source_binding_rows(projection) do
+    cond do
+      is_list(fetch_value(projection, :source_bindings)) ->
+        fetch_value(projection, :source_bindings)
+
+      is_map(fetch_value(projection, :source_binding)) ->
+        [fetch_value(projection, :source_binding)]
+
+      true ->
+        []
     end
   end
 

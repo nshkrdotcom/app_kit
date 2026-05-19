@@ -2,8 +2,18 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
   use ExUnit.Case, async: true
 
   alias AppKit.Bridges.MezzanineBridge
-  alias AppKit.Bridges.MezzanineBridge.SourceAdapter
-  alias AppKit.Core.{RequestContext, SurfaceError}
+  alias AppKit.Bridges.MezzanineBridge.{SourceAdapter, WorkAdapter, WorkQueryAdapter}
+
+  alias AppKit.Core.{
+    ActionResult,
+    PageRequest,
+    RequestContext,
+    Result,
+    RunRef,
+    RunRequest,
+    SubjectRef,
+    SurfaceError
+  }
 
   @adapter_contract [
     %{
@@ -169,6 +179,72 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
       do: {:ok, %{role_ref: source_role_ref, source_page: source_page}}
   end
 
+  defmodule WorkQueryService do
+    def ingest_subject(attrs, opts) do
+      send(self(), {:work_query_service_called, :ingest_subject, attrs, opts})
+
+      {:ok, %{subject_id: "subject-1", subject_kind: "work_object"}}
+    end
+
+    def list_subjects(tenant_id, program_id, filters) do
+      send(self(), {:work_query_service_called, :list_subjects, tenant_id, program_id, filters})
+
+      {:ok,
+       [
+         %{
+           subject_id: "subject-1",
+           subject_kind: "work_object",
+           status: "planned",
+           title: "Subject one",
+           description: "A test subject"
+         }
+       ]}
+    end
+
+    def queue_stats(tenant_id, program_id) do
+      send(self(), {:work_query_service_called, :queue_stats, tenant_id, program_id})
+      {:ok, %{queued: 1}}
+    end
+  end
+
+  defmodule WorkControlService do
+    def start_run(context, run_request, opts) do
+      send(
+        self(),
+        {:work_control_service_called, :start_run, context.tenant_ref.id, run_request, opts}
+      )
+
+      Result.new(%{
+        surface: :work_control,
+        state: :scheduled,
+        payload: %{subject_ref: run_request.subject_ref}
+      })
+    end
+
+    def retry_run(context, run_ref, opts) do
+      send(
+        self(),
+        {:work_control_service_called, :retry_run, context.tenant_ref.id, run_ref, opts}
+      )
+
+      ActionResult.new(%{status: :accepted, message: "retry accepted"})
+    end
+
+    def cancel_run(context, run_ref, opts) do
+      send(
+        self(),
+        {:work_control_service_called, :cancel_run, context.tenant_ref.id, run_ref, opts}
+      )
+
+      ActionResult.new(%{status: :accepted, message: "cancel accepted"})
+    end
+
+    def start_run(domain_call, opts) do
+      send(self(), {:work_control_service_called, :domain_start_run, domain_call, opts})
+      {:ok, %{domain_call: domain_call, opts: opts}}
+    end
+  end
+
   test "documents the extraction contract for every current bridge behaviour" do
     declared_behaviours =
       MezzanineBridge.module_info(:attributes)
@@ -258,6 +334,58 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
               kind: :boundary,
               retryable: false
             }} = SourceAdapter.publish_source(context, :publication_role, %{}, opts)
+  end
+
+  test "work query adapter owns work query service delegation behind the facade" do
+    context = request_context()
+    {:ok, page_request} = PageRequest.new(%{limit: 5})
+
+    opts = [
+      work_query_service: WorkQueryService,
+      program_id: "program-1",
+      work_class_id: "work-class-1"
+    ]
+
+    assert {:ok, %SubjectRef{id: "subject-1", subject_kind: "work_object"}} =
+             WorkQueryAdapter.ingest_subject(context, %{title: "Subject one"}, opts)
+
+    assert_received {:work_query_service_called, :ingest_subject, attrs, ^opts}
+    assert attrs.tenant_id == "tenant-1"
+    assert attrs.program_id == "program-1"
+    assert attrs.work_class_id == "work-class-1"
+
+    assert {:ok, %{entries: [%{subject_ref: %SubjectRef{id: "subject-1"}}]}} =
+             MezzanineBridge.list_subjects(context, nil, page_request, opts)
+
+    assert_received {:work_query_service_called, :list_subjects, "tenant-1", "program-1", %{}}
+
+    assert {:ok, %{queued: 1, filters: %{}}} =
+             WorkQueryAdapter.queue_stats(context, nil, opts)
+
+    assert_received {:work_query_service_called, :queue_stats, "tenant-1", "program-1"}
+  end
+
+  test "work adapter owns work control service delegation behind the facade" do
+    context = request_context()
+    {:ok, subject_ref} = SubjectRef.new(%{id: "subject-1", subject_kind: "work_object"})
+    {:ok, run_request} = RunRequest.new(%{subject_ref: subject_ref, reason: "test"})
+    {:ok, run_ref} = RunRef.new(%{run_id: "run-1", scope_id: "scope-1"})
+    opts = [work_control_service: WorkControlService]
+
+    assert {:ok, %Result{surface: :work_control, state: :scheduled}} =
+             MezzanineBridge.start_run(context, run_request, opts)
+
+    assert_received {:work_control_service_called, :start_run, "tenant-1", ^run_request, ^opts}
+
+    assert {:ok, %ActionResult{status: :accepted, message: "retry accepted"}} =
+             WorkAdapter.retry_run(context, run_ref, opts)
+
+    assert_received {:work_control_service_called, :retry_run, "tenant-1", ^run_ref, ^opts}
+
+    assert {:ok, %{domain_call: %{kind: "domain"}, opts: ^opts}} =
+             WorkAdapter.start_run(%{kind: "domain"}, opts)
+
+    assert_received {:work_control_service_called, :domain_start_run, %{kind: "domain"}, ^opts}
   end
 
   defp request_context do
