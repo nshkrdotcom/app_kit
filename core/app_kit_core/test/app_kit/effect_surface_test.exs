@@ -2,6 +2,7 @@ defmodule AppKit.EffectSurfaceTest do
   use ExUnit.Case, async: true
 
   alias AppKit.Core.{EffectTimelineDTO, GovernedEffectDTO}
+  alias AppKit.BackendStack
 
   defmodule Backend do
     @behaviour AppKit.EffectSurface
@@ -58,6 +59,15 @@ defmodule AppKit.EffectSurfaceTest do
              AppKit.EffectSurface.get_effect_timeline(context, "effect://tenant-1/effects/1",
                effect_surface_adapter: Backend
              )
+  end
+
+  test "effect surface delegates through backend stack role" do
+    context = %{}
+    attrs = effect_attrs()
+    stack = BackendStack.new!(effect_surface_backend: Backend)
+
+    assert {:ok, %GovernedEffectDTO{effect_ref: "effect://tenant-1/effects/1"}} =
+             AppKit.EffectSurface.propose_effect(context, attrs, backend_stack: stack)
   end
 
   test "fixture backend returns product-safe fixture data" do
