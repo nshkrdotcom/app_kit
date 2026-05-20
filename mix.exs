@@ -148,6 +148,7 @@ defmodule AppKit.Workspace.MixProject do
         "docs/layout.md",
         "docs/surfaces.md",
         "docs/composition.md",
+        "guides/code_smell_remediation.md",
         "CHANGELOG.md",
         "LICENSE"
       ],
@@ -155,6 +156,7 @@ defmodule AppKit.Workspace.MixProject do
         Overview: ["README.md", "docs/overview.md"],
         Architecture: ["docs/layout.md", "docs/surfaces.md"],
         Composition: ["docs/composition.md"],
+        Guides: ["guides/code_smell_remediation.md"],
         Project: ["CHANGELOG.md", "LICENSE"]
       ]
     ]

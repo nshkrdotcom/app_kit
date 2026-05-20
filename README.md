@@ -59,6 +59,13 @@ for the canonical `sha256:` checksum used by that v1 posture.
 Active workspace buildout. The repo uses a non-umbrella workspace layout with
 core surface packages, bridge packages, and a proving example host.
 
+## Implementation Notes
+
+Maintainers should read
+[Code Smell Remediation](guides/code_smell_remediation.md) before changing
+bridge ownership, backend selection, DTO shape, build support, or generalized
+stack docs.
+
 ## Current Stack Role
 
 AppKit is the northbound contract layer for the active `gn-ten` stack. Product
