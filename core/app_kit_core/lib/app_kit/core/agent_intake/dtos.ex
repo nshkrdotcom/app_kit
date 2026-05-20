@@ -42,7 +42,18 @@ defmodule AppKit.Core.AgentIntake.AgentRunRequest do
     :submission_dedupe_key,
     :initial_input_ref
   ]
-  defstruct @enforce_keys ++ [params: %{}]
+  @effect_governance_modes [:fixture_backed, :staging_live, :disabled]
+  @effect_governance_mode_lookup Map.new(@effect_governance_modes, &{Atom.to_string(&1), &1})
+  @diagnostic_lanes [:echo, :probe]
+  @diagnostic_lane_lookup Map.new(@diagnostic_lanes, &{Atom.to_string(&1), &1})
+
+  defstruct @enforce_keys ++
+              [
+                :effect_governance_mode,
+                :diagnostic_lane,
+                governed_effect_refs: %{},
+                params: %{}
+              ]
 
   def new(%__MODULE__{} = value), do: {:ok, value}
 
@@ -78,6 +89,20 @@ defmodule AppKit.Core.AgentIntake.AgentRunRequest do
          initial_input_ref when is_binary(initial_input_ref) <-
            Support.required(attrs, :initial_input_ref),
          true <- Support.safe_ref?(initial_input_ref),
+         {:ok, effect_governance_mode} <-
+           optional_bounded_atom(
+             Support.optional(attrs, :effect_governance_mode),
+             @effect_governance_modes,
+             @effect_governance_mode_lookup
+           ),
+         {:ok, diagnostic_lane} <-
+           optional_bounded_atom(
+             Support.optional(attrs, :diagnostic_lane),
+             @diagnostic_lanes,
+             @diagnostic_lane_lookup
+           ),
+         governed_effect_refs <- Support.optional(attrs, :governed_effect_refs, %{}),
+         true <- serializable_map?(governed_effect_refs),
          params <- Support.optional(attrs, :params, %{}),
          true <- is_map(params) do
       {:ok,
@@ -95,6 +120,9 @@ defmodule AppKit.Core.AgentIntake.AgentRunRequest do
          correlation_id: correlation_id,
          submission_dedupe_key: submission_dedupe_key,
          initial_input_ref: initial_input_ref,
+         effect_governance_mode: effect_governance_mode,
+         diagnostic_lane: diagnostic_lane,
+         governed_effect_refs: governed_effect_refs,
          params: params
        }}
     else
@@ -106,6 +134,38 @@ defmodule AppKit.Core.AgentIntake.AgentRunRequest do
   def new!(attrs), do: new(attrs) |> bang()
   defp bang({:ok, value}), do: value
   defp bang({:error, reason}), do: raise(ArgumentError, Atom.to_string(reason))
+
+  defp optional_bounded_atom(nil, _allowed, _lookup), do: {:ok, nil}
+
+  defp optional_bounded_atom(value, allowed, _lookup) when is_atom(value) do
+    if value in allowed, do: {:ok, value}, else: :error
+  end
+
+  defp optional_bounded_atom(value, _allowed, lookup) when is_binary(value),
+    do: Map.fetch(lookup, value)
+
+  defp optional_bounded_atom(_value, _allowed, _lookup), do: :error
+
+  defp serializable_map?(value) when is_map(value) do
+    Enum.all?(value, fn
+      {key, nested} when is_atom(key) or is_binary(key) -> serializable_value?(nested)
+      _other -> false
+    end)
+  end
+
+  defp serializable_map?(_value), do: false
+
+  defp serializable_value?(value) when is_binary(value) or is_number(value) or is_boolean(value),
+    do: true
+
+  defp serializable_value?(nil), do: true
+  defp serializable_value?(value) when is_atom(value), do: true
+
+  defp serializable_value?(value) when is_list(value),
+    do: Enum.all?(value, &serializable_value?/1)
+
+  defp serializable_value?(value) when is_map(value), do: serializable_map?(value)
+  defp serializable_value?(_value), do: false
 end
 
 defmodule AppKit.Core.AgentIntake.TurnSubmission do
@@ -175,7 +235,15 @@ defmodule AppKit.Core.AgentIntake.RunOutcomeFuture do
   alias AppKit.Core.Substrate.Dump
 
   @enforce_keys [:run_ref, :accepted?, :command_ref, :correlation_id]
-  defstruct [:run_ref, :workflow_ref, :accepted?, :command_ref, :correlation_id, :polling_hint]
+  defstruct [
+    :run_ref,
+    :workflow_ref,
+    :accepted?,
+    :command_ref,
+    :correlation_id,
+    :polling_hint,
+    governed_effect_refs: %{}
+  ]
 
   def new(%__MODULE__{} = value), do: {:ok, value}
 
@@ -192,6 +260,8 @@ defmodule AppKit.Core.AgentIntake.RunOutcomeFuture do
          true <- Support.safe_ref?(command_ref),
          correlation_id when is_binary(correlation_id) <- Support.required(attrs, :correlation_id),
          true <- Support.safe_ref?(correlation_id),
+         governed_effect_refs <- Support.optional(attrs, :governed_effect_refs, %{}),
+         true <- is_map(governed_effect_refs),
          {:ok, polling_hint} <-
            AppKit.Core.RuntimeReadback.Support.nested(
              Support.optional(attrs, :polling_hint),
@@ -204,6 +274,7 @@ defmodule AppKit.Core.AgentIntake.RunOutcomeFuture do
          accepted?: accepted?,
          command_ref: command_ref,
          correlation_id: correlation_id,
+         governed_effect_refs: governed_effect_refs,
          polling_hint: polling_hint
        }}
     else

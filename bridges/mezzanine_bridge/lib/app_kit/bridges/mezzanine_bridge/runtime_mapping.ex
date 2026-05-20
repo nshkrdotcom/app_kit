@@ -61,6 +61,9 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeMapping do
        max_turns: param(params, :max_turns, 1),
        timeout_policy: timeout_policy(params),
        profile_bundle: Map.from_struct(profile_bundle),
+       effect_governance_mode: request.effect_governance_mode,
+       diagnostic_lane: request.diagnostic_lane,
+       governed_effect_refs: request.governed_effect_refs,
        fixture_script: param(params, :fixture_script, "success_first_try"),
        continue_as_new_turn_threshold: param(params, :continue_as_new_turn_threshold, 50),
        source_ref: "actor://#{context.actor_ref.id}"
@@ -118,6 +121,13 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeMapping do
     Keyword.get(opts, :operation_role_ref) ||
       Common.fetch_value(params, :operation_role_ref) ||
       :session_turn
+  end
+
+  def governed_effect_refs(projection, %AgentRunRequest{} = request) do
+    case Common.fetch_value(projection, :governed_effect_refs) do
+      refs when is_map(refs) and map_size(refs) > 0 -> refs
+      _missing -> request.governed_effect_refs || %{}
+    end
   end
 
   def runtime_available?(runtime) when is_atom(runtime),

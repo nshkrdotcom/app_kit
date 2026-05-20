@@ -11,6 +11,17 @@
       default_order: [:path, :github, :hex],
       publish_order: [:hex]
     },
+    mezzanine_governed_effects: %{
+      path: "../mezzanine/core/governed_effects",
+      hex: "~> 0.1.0",
+      github: %{
+        repo: "nshkrdotcom/mezzanine",
+        subdir: "core/governed_effects",
+        branch: "main"
+      },
+      default_order: [:path, :github, :hex],
+      publish_order: [:hex]
+    },
     mezzanine_projection_engine: %{
       path: "../mezzanine/core/projection_engine",
       hex: "~> 0.1.0",

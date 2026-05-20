@@ -261,6 +261,36 @@ defmodule AppKit.Workspace.SchemaRegistry do
       proof_artifact_path: "stack_lab/proofs/scenario_aoc_037_adaptive_control_surface.md",
       release_manifest_key: "contracts.AppKit.AdaptiveControlSurface.v1",
       replacement_version_policy: "big_bang_no_legacy"
+    },
+    %{
+      contract_name: "AppKit.EffectSurface.v1",
+      contract_version: "1.0.0",
+      owner_repo: "app_kit",
+      boundary_owner: "governed-effect product boundary",
+      producer_repos: ["app_kit", "mezzanine"],
+      consumer_repos: ["synapse", "extravaganza", "stack_lab", "jido_brainstorm"],
+      dto_packet_table_resource_names: [
+        "AppKit.Core.GovernedEffectDTO",
+        "AppKit.Core.EffectTimelineDTO",
+        "AppKit.Core.AuthorityDecisionDTO",
+        "AppKit.Core.EffectReceiptDTO",
+        "AppKit.Core.EffectEvidenceDTO"
+      ],
+      required_fields:
+        @enterprise_fields ++
+          [
+            "effect_ref",
+            "command_ref",
+            "authority_ref",
+            "receipt_ref",
+            "trace_summary_hash"
+          ],
+      optional_fields: ["dispatch_ref", "diagnostic_lane", "effect_governance_mode"],
+      generator_command: "manual AppKit effect surface DTO package",
+      runbook_path: "runbooks/appkit_effect_surface_contract_failure.md",
+      proof_artifact_path: "stack_lab/proofs/scenario_synapse_governed_effect_surface.md",
+      release_manifest_key: "contracts.AppKit.EffectSurface.v1",
+      replacement_version_policy: "big_bang_no_legacy"
     }
   ]
 
@@ -273,6 +303,7 @@ defmodule AppKit.Workspace.SchemaRegistry do
     "AppKit.Core.AttachGrantRef",
     "AppKit.Core.AuditHashChainProjection",
     "AppKit.Core.AuthorityContextExt",
+    "AppKit.Core.AuthorityDecisionDTO",
     "AppKit.Core.AuthoringBundleImport",
     "AppKit.Core.BindingDescriptor",
     "AppKit.Core.BindingEnvelope",
@@ -293,6 +324,9 @@ defmodule AppKit.Workspace.SchemaRegistry do
     "AppKit.Core.EvidenceCollectionRequest",
     "AppKit.Core.EvidenceAuditSupport",
     "AppKit.Core.EvidenceProjection",
+    "AppKit.Core.EffectEvidenceDTO",
+    "AppKit.Core.EffectReceiptDTO",
+    "AppKit.Core.EffectTimelineDTO",
     "AppKit.Core.ExecutionRef",
     "AppKit.Core.ExecutionStateProjection",
     "AppKit.Core.ExtensionPackBundleProjection",
@@ -302,6 +336,8 @@ defmodule AppKit.Workspace.SchemaRegistry do
     "AppKit.Core.FullProductFabricSmoke",
     "AppKit.Core.GenericBuilder",
     "AppKit.Core.GenericStruct",
+    "AppKit.Core.GovernedEffectDTO",
+    "AppKit.Core.GovernedEffectDTOSupport",
     "AppKit.Core.InstallResult",
     "AppKit.Core.InstallTemplate",
     "AppKit.Core.InstallationBinding",

@@ -9,6 +9,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
 
   alias AppKit.Bridges.MezzanineBridge.{
     AgentIntakeAdapter,
+    EffectAdapter,
     HeadlessAdapter,
     InstallationAdapter,
     OperatorAdapter,
@@ -28,6 +29,7 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @behaviour AppKit.Core.Backends.HeadlessBackend
   @behaviour AppKit.Core.Backends.AgentIntakeBackend
   @behaviour AppKit.Core.Backends.RuntimeBackend
+  @behaviour AppKit.EffectSurface
 
   alias AppKit.Core.{
     AuthoringBundleImport,
@@ -467,5 +469,25 @@ defmodule AppKit.Bridges.MezzanineBridge do
   @impl AppKit.Core.Backends.AgentIntakeBackend
   def await_agent_outcome(%RequestContext{} = context, run_ref, request, opts) do
     AgentIntakeAdapter.await_agent_outcome(context, run_ref, request, opts)
+  end
+
+  @impl AppKit.EffectSurface
+  def propose_effect(%RequestContext{} = context, effect_params, opts) do
+    EffectAdapter.propose_effect(context, effect_params, opts)
+  end
+
+  @impl AppKit.EffectSurface
+  def get_effect(%RequestContext{} = context, effect_ref, opts) do
+    EffectAdapter.get_effect(context, effect_ref, opts)
+  end
+
+  @impl AppKit.EffectSurface
+  def list_effects(%RequestContext{} = context, run_ref, opts) do
+    EffectAdapter.list_effects(context, run_ref, opts)
+  end
+
+  @impl AppKit.EffectSurface
+  def get_effect_timeline(%RequestContext{} = context, effect_ref, opts) do
+    EffectAdapter.get_effect_timeline(context, effect_ref, opts)
   end
 end

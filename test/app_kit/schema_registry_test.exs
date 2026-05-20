@@ -14,6 +14,7 @@ defmodule AppKit.SchemaRegistryTest do
     assert "AppKit.OptimizationSurface.v1" in contract_names
     assert "AppKit.CoordinationSurface.v1" in contract_names
     assert "AppKit.AdaptiveControlSurface.v1" in contract_names
+    assert "AppKit.EffectSurface.v1" in contract_names
 
     assert {:ok, entry} = SchemaRegistry.fetch("AppKit.ProductBootstrap.v1")
     assert entry.owner_repo == "app_kit"
@@ -37,6 +38,11 @@ defmodule AppKit.SchemaRegistryTest do
 
     assert "mezzanine" in adaptive_control_surface.producer_repos
     assert "ground_plane" in adaptive_control_surface.producer_repos
+
+    assert {:ok, effect_surface} = SchemaRegistry.fetch("AppKit.EffectSurface.v1")
+    assert "mezzanine" in effect_surface.producer_repos
+    assert "synapse" in effect_surface.consumer_repos
+    assert "AppKit.Core.GovernedEffectDTO" in effect_surface.dto_packet_table_resource_names
   end
 
   test "registry entries require the enterprise pre-cut fields" do

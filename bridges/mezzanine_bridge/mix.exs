@@ -70,6 +70,7 @@ defmodule AppKitMezzanineBridge.MixProject do
       DependencySources.dep(:mezzanine_projection_engine, @repo_root),
       DependencySources.dep(:mezzanine_source_engine, @repo_root),
       DependencySources.dep(:mezzanine_decision_engine, @repo_root),
+      DependencySources.dep(:mezzanine_governed_effects, @repo_root),
       DependencySources.dep(:mezzanine_evidence_engine, @repo_root),
       DependencySources.dep(:mezzanine_archival_engine, @repo_root),
       DependencySources.dep(:mezzanine_config_registry, @repo_root),

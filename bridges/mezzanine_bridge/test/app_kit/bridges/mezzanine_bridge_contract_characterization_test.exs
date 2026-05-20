@@ -176,6 +176,17 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
         cancel_agent_run: 3,
         await_agent_outcome: 4
       ]
+    },
+    %{
+      behaviour: AppKit.EffectSurface,
+      target_module: "AppKit.Bridges.MezzanineBridge.EffectAdapter",
+      service_options: [:effect_readback],
+      callbacks: [
+        propose_effect: 3,
+        get_effect: 3,
+        list_effects: 3,
+        get_effect_timeline: 3
+      ]
     }
   ]
 
@@ -740,7 +751,8 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
              "AppKit.Bridges.MezzanineBridge.OperatorAdapter",
              "AppKit.Bridges.MezzanineBridge.RuntimeAdapter",
              "AppKit.Bridges.MezzanineBridge.HeadlessAdapter",
-             "AppKit.Bridges.MezzanineBridge.AgentIntakeAdapter"
+             "AppKit.Bridges.MezzanineBridge.AgentIntakeAdapter",
+             "AppKit.Bridges.MezzanineBridge.EffectAdapter"
            ]
 
     for adapter <- @adapter_contract, {callback, arity} <- adapter.callbacks do

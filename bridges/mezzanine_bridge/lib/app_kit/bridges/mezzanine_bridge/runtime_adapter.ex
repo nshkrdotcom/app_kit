@@ -46,6 +46,7 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeAdapter do
              accepted?: true,
              command_ref: "command://#{agent_request.idempotency_key}",
              correlation_id: agent_request.correlation_id,
+             governed_effect_refs: RuntimeMapping.governed_effect_refs(projection, agent_request),
              polling_hint: %{checking?: false, poll_interval_ms: 1_000, staleness_ms: 0}
            }) do
       {:ok, future}
