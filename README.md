@@ -124,6 +124,23 @@ proposed-change cleanup. Product names such as Linear, GitHub, and Codex remain
 valid product data and lower adapter facts; AppKit public calls must stay
 role-ref and product-surface based.
 
+The Synapse governed-effect lift adds `AppKit.EffectSurface` as the
+product-facing surface for consequential effects that must be proposed, governed,
+dispatched, reduced, and projected before a product claims `staging_live`.
+`AppKit.Core.GovernedEffectDTO` and `AppKit.Core.EffectTimelineDTO` are the
+stable product DTOs. `AppKit.Bridges.MezzanineBridge.EffectAdapter` is the
+current lower bridge; it preserves product-safe command metadata, authority
+refs, dispatch refs, receipt refs, evidence refs, and trace summary hashes
+without exposing Mezzanine, Citadel, Jido Integration, Execution Plane, or
+AITrace internals to product code.
+
+The dedicated Synapse conformance command is owned by StackLab:
+
+```bash
+cd /home/home/p/g/n/stack_lab
+MIX_ENV=test mix stack_lab.synapse.staged_live.v1 --json
+```
+
 ## How To Use AppKit Correctly
 
 Product code should depend on AppKit surface modules and DTOs. It should not
