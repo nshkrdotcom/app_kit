@@ -95,10 +95,11 @@ redaction, and tenant-scoped checks.
 The workspace currently exposes these product-facing families:
 
 - **Work and runtime:** `AppKit.WorkControl`, `AppKit.WorkSurface`,
-  `AppKit.HeadlessSurface`, `AppKit.RuntimeSurface`, and
+  `AppKit.HeadlessSurface`, `AppKit.AgentIntake`, `AppKit.RuntimeSurface`, and
   `AppKit.RunGovernance` provide governed run start/control, runtime
-  projections, headless state/readback, live-effect receipts, and product-safe
-  runtime profile application.
+  projections, agent run start/turn/cancel/cursor catch-up/pending summaries,
+  headless state/readback, live-effect receipts, and product-safe runtime
+  profile application.
 - **Operator and review:** `AppKit.OperatorSurface` and
   `AppKit.ReviewSurface` provide queue/detail/review readbacks, review
   decisions, lower-read leases, stream-attach leases, and operator-visible
@@ -133,6 +134,15 @@ current lower bridge; it preserves product-safe command metadata, authority
 refs, dispatch refs, receipt refs, evidence refs, and trace summary hashes
 without exposing Mezzanine, Citadel, Jido Integration, Execution Plane, or
 AITrace internals to product code.
+
+The native agent foundation uses `AppKit.AgentIntake` as the product-safe
+surface for agent runs. Products may submit an `AgentRunRequest`, submit a
+`TurnSubmission`, cancel a run, catch up from an `AgentRunCursor`, and list
+`AgentPendingInteraction` summaries. Those DTOs carry refs, summaries, bounded
+kinds, and cursors only. Product code must not import AgentInterop contracts,
+runtime receipts, lower ledger truth, generated protocol modules, raw
+endpoints, provider payloads, credentials, raw prompts, AX runtime names, or
+A2A names.
 
 The dedicated Synapse conformance command is owned by StackLab:
 

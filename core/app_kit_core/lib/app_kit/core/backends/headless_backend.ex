@@ -54,4 +54,10 @@ defmodule AppKit.Core.Backends.AgentIntakeBackend do
               opts :: keyword()
             ) ::
               {:ok, struct()} | {:error, term()}
+
+  @callback catch_up_agent_events(context :: term(), cursor :: struct(), opts :: keyword()) ::
+              {:ok, struct()} | {:error, term()}
+
+  @callback list_pending_interactions(context :: term(), request :: struct(), opts :: keyword()) ::
+              {:ok, [struct()]} | {:error, term()}
 end

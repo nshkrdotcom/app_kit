@@ -2,8 +2,29 @@ defmodule AppKit.Core.Substrate.SelectorRejection do
   @moduledoc "Shared static-selector rejection for AppKit substrate DTOs."
 
   @forbidden_exact_keys MapSet.new(~w[
-    prompt raw_prompt raw_provider_body raw_provider_payload tool_call workspace_path
+    access_token api_key auth_token credential credential_material credential_ref endpoint
+    lower_selector prompt protocol_module provider_body provider_payload raw_endpoint raw_prompt
+    raw_provider_body raw_provider_payload runtime_endpoint runtime_module secret secret_key
+    secret_ref token tool_call transport_endpoint workspace_path
   ])
+
+  @forbidden_value_fragments [
+    "A2A.",
+    "A2ABridge",
+    "AXGrpc",
+    "AgentInterop",
+    "AxGrpc",
+    "AxRuntime",
+    "AxSidecar",
+    "ControllerService.Exec",
+    "Jido.Integration",
+    "System.cmd(\"ax\"",
+    "ax serve",
+    "generated A2A",
+    "generated AX proto"
+  ]
+
+  @raw_endpoint_prefixes ["http://", "https://", "ws://", "wss://", "grpc://"]
 
   def reject(attrs, error) when is_map(attrs) do
     if selector?(attrs), do: {:error, error}, else: :ok
@@ -12,6 +33,7 @@ defmodule AppKit.Core.Substrate.SelectorRejection do
   defp selector?(%DateTime{}), do: false
   defp selector?(%_{} = struct), do: struct |> Map.from_struct() |> selector?()
   defp selector?(values) when is_list(values), do: Enum.any?(values, &selector?/1)
+  defp selector?(value) when is_binary(value), do: forbidden_value?(value)
 
   defp selector?(%{} = map) do
     Enum.any?(map, fn {key, value} -> forbidden?(key) or selector?(value) end)
@@ -29,6 +51,13 @@ defmodule AppKit.Core.Substrate.SelectorRejection do
   end
 
   defp forbidden?(_key), do: false
+
+  defp forbidden_value?(value) do
+    trimmed = String.trim(value)
+
+    String.starts_with?(trimmed, @raw_endpoint_prefixes) or
+      String.contains?(trimmed, @forbidden_value_fragments)
+  end
 
   defp static_selector_parts?(parts) do
     ("pr" in parts and Enum.any?(parts, &(&1 in ["id", "number"]))) or

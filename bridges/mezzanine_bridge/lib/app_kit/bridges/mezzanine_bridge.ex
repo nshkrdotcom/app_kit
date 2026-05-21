@@ -471,6 +471,16 @@ defmodule AppKit.Bridges.MezzanineBridge do
     AgentIntakeAdapter.await_agent_outcome(context, run_ref, request, opts)
   end
 
+  @impl AppKit.Core.Backends.AgentIntakeBackend
+  def catch_up_agent_events(%RequestContext{} = context, cursor, opts) do
+    AgentIntakeAdapter.catch_up_agent_events(context, cursor, opts)
+  end
+
+  @impl AppKit.Core.Backends.AgentIntakeBackend
+  def list_pending_interactions(%RequestContext{} = context, request, opts) do
+    AgentIntakeAdapter.list_pending_interactions(context, request, opts)
+  end
+
   @impl AppKit.EffectSurface
   def propose_effect(%RequestContext{} = context, effect_params, opts) do
     EffectAdapter.propose_effect(context, effect_params, opts)

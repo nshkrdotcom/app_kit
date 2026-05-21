@@ -53,7 +53,13 @@ defmodule AppKit.AgentIntake do
   """
 
   alias AppKit.BackendConfig
-  alias AppKit.Core.AgentIntake.{AgentRunRequest, TurnSubmission}
+
+  alias AppKit.Core.AgentIntake.{
+    AgentRunCursor,
+    AgentRunRequest,
+    PendingInteractionQuery,
+    TurnSubmission
+  }
 
   @backend_key :agent_intake_backend
   @default_backend AppKit.Bridges.MezzanineBridge
@@ -76,6 +82,18 @@ defmodule AppKit.AgentIntake do
 
   def await_agent_outcome(context, run_ref, request \\ %{}, opts \\ []) when is_list(opts) do
     backend(opts).await_agent_outcome(context, run_ref, request || %{}, opts)
+  end
+
+  def catch_up_agent_events(context, cursor, opts \\ []) when is_list(opts) do
+    with {:ok, cursor} <- AgentRunCursor.new(cursor) do
+      backend(opts).catch_up_agent_events(context, cursor, opts)
+    end
+  end
+
+  def list_pending_interactions(context, request, opts \\ []) when is_list(opts) do
+    with {:ok, request} <- PendingInteractionQuery.new(request) do
+      backend(opts).list_pending_interactions(context, request, opts)
+    end
   end
 
   defp backend(opts) do

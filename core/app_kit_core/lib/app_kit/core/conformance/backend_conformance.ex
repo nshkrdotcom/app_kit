@@ -81,7 +81,16 @@ end
 defmodule AppKit.Core.Backends.AgentIntakeBackendConformance do
   @moduledoc "Reusable conformance checks for `AppKit.Core.Backends.AgentIntakeBackend`."
 
-  alias AppKit.Core.AgentIntake.{AgentRunRequest, RunOutcomeFuture, TurnSubmission}
+  alias AppKit.Core.AgentIntake.{
+    AgentPendingInteraction,
+    AgentRunCursor,
+    AgentRunEventPage,
+    AgentRunRequest,
+    PendingInteractionQuery,
+    RunOutcomeFuture,
+    TurnSubmission
+  }
+
   alias AppKit.Core.RuntimeReadback.CommandResult
 
   def assert_unavailable_conforms!(backend, fixtures) do
@@ -94,7 +103,11 @@ defmodule AppKit.Core.Backends.AgentIntakeBackendConformance do
          {:error, :agent_turn_runtime_not_available} <-
            backend.cancel_agent_run(context, Map.fetch!(fixtures, :run_ref), []),
          {:error, :agent_turn_runtime_not_available} <-
-           backend.await_agent_outcome(context, Map.fetch!(fixtures, :run_ref), %{}, []) do
+           backend.await_agent_outcome(context, Map.fetch!(fixtures, :run_ref), %{}, []),
+         {:error, :agent_turn_runtime_not_available} <-
+           backend.catch_up_agent_events(context, Map.fetch!(fixtures, :cursor), []),
+         {:error, :agent_turn_runtime_not_available} <-
+           backend.list_pending_interactions(context, Map.fetch!(fixtures, :pending_query), []) do
       :ok
     else
       other ->
@@ -112,7 +125,12 @@ defmodule AppKit.Core.Backends.AgentIntakeBackendConformance do
          {:ok, %CommandResult{}} <-
            backend.cancel_agent_run(context, Map.fetch!(fixtures, :run_ref), []),
          {:ok, %RunOutcomeFuture{}} <-
-           backend.await_agent_outcome(context, Map.fetch!(fixtures, :run_ref), %{}, []) do
+           backend.await_agent_outcome(context, Map.fetch!(fixtures, :run_ref), %{}, []),
+         {:ok, %AgentRunEventPage{}} <-
+           backend.catch_up_agent_events(context, Map.fetch!(fixtures, :cursor), []),
+         {:ok, pending_interactions} when is_list(pending_interactions) <-
+           backend.list_pending_interactions(context, Map.fetch!(fixtures, :pending_query), []),
+         true <- Enum.all?(pending_interactions, &match?(%AgentPendingInteraction{}, &1)) do
       :ok
     else
       other -> raise ArgumentError, "agent intake available conformance failed: #{inspect(other)}"
@@ -160,6 +178,35 @@ defmodule AppKit.Core.Backends.AgentIntakeBackendConformance do
           run_ref: "run://fixture",
           kind: :user_input,
           payload_ref: "payload://fixture"
+        },
+        attrs
+      )
+    )
+  end
+
+  def fixture_agent_run_cursor(attrs \\ %{}) do
+    AgentRunCursor.new!(
+      Map.merge(
+        %{
+          cursor_ref: "agent-cursor://fixture/runs/1/0",
+          ledger_ref: "agent-ledger://fixture/runs/1",
+          tenant_ref: "tenant://fixture",
+          actor_ref: "actor://fixture",
+          last_seq_seen: 0,
+          visibility: :product
+        },
+        attrs
+      )
+    )
+  end
+
+  def fixture_pending_interaction_query(attrs \\ %{}) do
+    PendingInteractionQuery.new!(
+      Map.merge(
+        %{
+          tenant_ref: "tenant://fixture",
+          actor_ref: "actor://fixture",
+          status: :open
         },
         attrs
       )

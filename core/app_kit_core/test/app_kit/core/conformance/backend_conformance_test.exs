@@ -1,7 +1,7 @@
 defmodule AppKit.Core.Conformance.BackendConformanceTest do
   use ExUnit.Case, async: true
 
-  alias AppKit.Core.AgentIntake.RunOutcomeFuture
+  alias AppKit.Core.AgentIntake.{AgentPendingInteraction, AgentRunEventPage, RunOutcomeFuture}
   alias AppKit.Core.Backends.{AgentIntakeBackendConformance, HeadlessBackendConformance}
 
   alias AppKit.Core.RuntimeReadback.{
@@ -91,6 +91,12 @@ defmodule AppKit.Core.Conformance.BackendConformanceTest do
 
     def await_agent_outcome(_context, _run_ref, _request, _opts),
       do: {:error, :agent_turn_runtime_not_available}
+
+    def catch_up_agent_events(_context, _cursor, _opts),
+      do: {:error, :agent_turn_runtime_not_available}
+
+    def list_pending_interactions(_context, _query, _opts),
+      do: {:error, :agent_turn_runtime_not_available}
   end
 
   defmodule AgentAvailableBackend do
@@ -118,6 +124,35 @@ defmodule AppKit.Core.Conformance.BackendConformanceTest do
         command_ref: "command://await",
         correlation_id: "corr://await"
       })
+    end
+
+    def catch_up_agent_events(_context, cursor, _opts) do
+      AgentRunEventPage.new(%{
+        cursor: cursor,
+        events: [],
+        has_more?: false
+      })
+    end
+
+    def list_pending_interactions(_context, query, _opts) do
+      AgentPendingInteraction.new(%{
+        pending_ref: "agent-pending://fixture/pending/1",
+        ledger_ref: "agent-ledger://fixture/runs/1",
+        decision_ref: "decision://fixture/decisions/1",
+        tenant_ref: query.tenant_ref,
+        actor_ref: query.actor_ref,
+        kind: :approval_required,
+        prompt_summary: "Approve fixture action?",
+        requested_action_ref: "action://fixture/actions/1",
+        authority_ref: "authority://fixture/authority/1",
+        opened_seq: 1,
+        status: :open,
+        expires_at: "2026-05-21T00:00:00Z"
+      })
+      |> case do
+        {:ok, pending} -> {:ok, [pending]}
+        other -> other
+      end
     end
 
     defp command(idempotency_key, kind) do
@@ -149,7 +184,9 @@ defmodule AppKit.Core.Conformance.BackendConformanceTest do
       context: %{},
       run_ref: "run://fixture",
       agent_run_request: AgentIntakeBackendConformance.fixture_agent_run_request(),
-      turn_submission: AgentIntakeBackendConformance.fixture_turn_submission()
+      turn_submission: AgentIntakeBackendConformance.fixture_turn_submission(),
+      cursor: AgentIntakeBackendConformance.fixture_agent_run_cursor(),
+      pending_query: AgentIntakeBackendConformance.fixture_pending_interaction_query()
     }
 
     assert :ok =

@@ -27,6 +27,8 @@ Current contract groups:
   suppression visibility projection
 - runtime projection DTOs for source binding, workspace, execution, lower
   receipt, evidence, review, operator-command, and runtime-event facts
+- native agent intake DTOs for agent run requests, turn submissions, cursor
+  catch-up, event pages, pending interaction summaries, and pending queries
 - extension supply-chain DTOs for pack integrity posture, pack bundle schema,
   and connector-admission projection
 - northbound backend behaviours for work queries, reviews, and installations
@@ -111,6 +113,15 @@ retention disabled without changing provider-effect or readback semantics.
 
 `AppKit.Core.Result` and `AppKit.Core.RunRef` remain part of the current
 northbound contract set and are not treated as temporary coexistence shims.
+
+`AppKit.AgentIntake` is the product-facing native agent boundary. Product code
+uses AppKit DTOs for run start, turn submission, cancellation, cursor catch-up,
+and pending interaction summaries. These DTOs expose opaque refs and bounded
+summary fields only. They reject lower selectors, raw transport endpoints,
+generated protocol module names, provider payloads, credential fields, raw
+prompt shortcut fields, AX runtime vocabulary, and A2A vocabulary. AgentInterop
+descriptors, runtime receipts, and ledger truth are lower-owner concepts and
+are not AppKit product APIs.
 
 Default runtime backend configuration for the surface packages belongs under
 the `:app_kit_core` OTP application. The workspace no longer uses a synthetic

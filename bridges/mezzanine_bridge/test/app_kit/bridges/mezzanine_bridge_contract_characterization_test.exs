@@ -174,7 +174,9 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
         start_agent_run: 3,
         submit_agent_turn: 3,
         cancel_agent_run: 3,
-        await_agent_outcome: 4
+        await_agent_outcome: 4,
+        catch_up_agent_events: 3,
+        list_pending_interactions: 3
       ]
     },
     %{

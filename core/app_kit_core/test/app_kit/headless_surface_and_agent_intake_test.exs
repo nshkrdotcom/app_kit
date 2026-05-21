@@ -1,7 +1,11 @@
 defmodule AppKit.HeadlessSurfaceAndAgentIntakeTest do
   use ExUnit.Case, async: true
 
-  alias AppKit.Core.AgentIntake.RunOutcomeFuture
+  alias AppKit.Core.AgentIntake.{
+    AgentPendingInteraction,
+    AgentRunEventPage,
+    RunOutcomeFuture
+  }
 
   alias AppKit.Core.RuntimeReadback.{
     CommandResult,
@@ -54,6 +58,35 @@ defmodule AppKit.HeadlessSurfaceAndAgentIntakeTest do
         command_ref: "command://await",
         correlation_id: "corr://await"
       })
+    end
+
+    def catch_up_agent_events(_context, cursor, _opts) do
+      AgentRunEventPage.new(%{
+        cursor: cursor,
+        events: [],
+        has_more?: false
+      })
+    end
+
+    def list_pending_interactions(_context, query, _opts) do
+      AgentPendingInteraction.new(%{
+        pending_ref: "agent-pending://surface/pending/1",
+        ledger_ref: "agent-ledger://surface/runs/1",
+        decision_ref: "decision://surface/decisions/1",
+        tenant_ref: query.tenant_ref,
+        actor_ref: query.actor_ref,
+        kind: :approval_required,
+        prompt_summary: "Approve fixture action?",
+        requested_action_ref: "action://surface/actions/1",
+        authority_ref: "authority://surface/authority/1",
+        opened_seq: 1,
+        status: :open,
+        expires_at: "2026-05-21T00:00:00Z"
+      })
+      |> case do
+        {:ok, pending} -> {:ok, [pending]}
+        other -> other
+      end
     end
 
     defp command(idempotency_key, kind) do
@@ -111,6 +144,44 @@ defmodule AppKit.HeadlessSurfaceAndAgentIntakeTest do
 
     assert {:error, :invalid_agent_run_request} =
              AppKit.AgentIntake.start_agent_run(%{}, Map.put(request, :prompt, "raw"),
+               backend: Backend
+             )
+  end
+
+  test "agent intake exposes cursor catch-up and pending summaries through configured backend" do
+    assert {:ok, %AgentRunEventPage{events: []}} =
+             AppKit.AgentIntake.catch_up_agent_events(
+               %{},
+               %{
+                 cursor_ref: "agent-cursor://surface/runs/1/0",
+                 ledger_ref: "agent-ledger://surface/runs/1",
+                 tenant_ref: "tenant://one",
+                 actor_ref: "actor://one",
+                 last_seq_seen: 0,
+                 visibility: :product
+               },
+               backend: Backend
+             )
+
+    assert {:ok, [%AgentPendingInteraction{status: :open}]} =
+             AppKit.AgentIntake.list_pending_interactions(
+               %{},
+               %{tenant_ref: "tenant://one", actor_ref: "actor://one", status: :open},
+               backend: Backend
+             )
+
+    assert {:error, :invalid_agent_run_cursor} =
+             AppKit.AgentIntake.catch_up_agent_events(
+               %{},
+               %{
+                 cursor_ref: "agent-cursor://surface/runs/1/0",
+                 ledger_ref: "agent-ledger://surface/runs/1",
+                 tenant_ref: "tenant://one",
+                 actor_ref: "actor://one",
+                 last_seq_seen: 0,
+                 visibility: :product,
+                 endpoint: "https://lower.internal"
+               },
                backend: Backend
              )
   end

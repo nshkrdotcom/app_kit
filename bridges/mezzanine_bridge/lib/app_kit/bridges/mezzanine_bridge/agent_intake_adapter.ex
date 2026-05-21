@@ -10,7 +10,7 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapter do
     RuntimeReadbackMapping
   }
 
-  alias AppKit.Core.AgentIntake.RunOutcomeFuture
+  alias AppKit.Core.AgentIntake.{AgentRunEventPage, RunOutcomeFuture}
   alias AppKit.Core.RequestContext
   alias AppKit.Core.RuntimeReadback.CommandResult
 
@@ -85,6 +85,28 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapter do
         correlation_id: Common.fetch_value(request || %{}, :correlation_id) || run_id,
         polling_hint: %{checking?: false, poll_interval_ms: 1_000, staleness_ms: 0}
       })
+    else
+      {:error, :agent_turn_runtime_not_available}
+    end
+  end
+
+  @impl true
+  def catch_up_agent_events(%RequestContext{}, cursor, opts) do
+    if RuntimeMapping.runtime_available?(RuntimeMapping.agent_runtime(opts)) do
+      AgentRunEventPage.new(%{
+        cursor: cursor,
+        events: [],
+        has_more?: false
+      })
+    else
+      {:error, :agent_turn_runtime_not_available}
+    end
+  end
+
+  @impl true
+  def list_pending_interactions(%RequestContext{}, _request, opts) do
+    if RuntimeMapping.runtime_available?(RuntimeMapping.agent_runtime(opts)) do
+      {:ok, []}
     else
       {:error, :agent_turn_runtime_not_available}
     end
