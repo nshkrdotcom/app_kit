@@ -58,7 +58,7 @@ defmodule AppKitMezzanineBridge.MixProject do
     [
       {:app_kit_core, path: "../../core/app_kit_core"},
       {:app_kit_run_governance, path: "../../core/run_governance"},
-      DependencySources.dep(:execution_plane, @repo_root, override: true),
+      execution_plane_dep(),
       DependencySources.dep(:ground_plane_contracts, @repo_root, override: true),
       DependencySources.dep(:ground_plane_persistence_policy, @repo_root, override: true),
       DependencySources.dep(:jido_integration_contracts, @repo_root, override: true),
@@ -78,10 +78,31 @@ defmodule AppKitMezzanineBridge.MixProject do
       DependencySources.dep(:mezzanine_pack_compiler, @repo_root),
       DependencySources.dep(:mezzanine_core, @repo_root),
       DependencySources.dep(:mezzanine_integration_bridge, @repo_root),
+      {:citadel_authority_contract,
+       path: Path.expand("../citadel/core/authority_contract", @repo_root),
+       only: :test,
+       runtime: false,
+       override: true},
+      {:jido_integration_v2_direct_runtime,
+       path: Path.expand("../jido_integration/core/direct_runtime", @repo_root),
+       only: :test,
+       runtime: false,
+       override: true},
+      {:aitrace,
+       path: Path.expand("../AITrace", @repo_root), only: :test, runtime: false, override: true},
       {:ash, "~> 3.24"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40.1", only: :dev, runtime: false}
     ]
+  end
+
+  defp execution_plane_dep do
+    if Mix.env() == :test do
+      {:execution_plane,
+       path: Path.expand("../execution_plane/core/execution_plane", @repo_root), override: true}
+    else
+      DependencySources.dep(:execution_plane, @repo_root, override: true)
+    end
   end
 end
