@@ -100,11 +100,27 @@ defmodule AppKit.Bridges.MezzanineBridge.EffectAdapter do
       receipt_ref: run.effect.receipt_ref,
       dispatch_ref: run.effect.dispatch_ref,
       expected_version: run.effect.expected_version,
-      metadata: %{
-        "trace_summary_hash" => Map.get(projection, "trace_summary_hash")
-      }
+      metadata: metadata_from_run(run, projection)
     })
   end
 
   defp command_value(command, key), do: Map.get(command, key, Map.get(command, to_string(key)))
+
+  defp metadata_from_run(%Run{} = run, projection) do
+    run.command
+    |> command_value(:metadata)
+    |> normalize_metadata()
+    |> put_optional("trace_summary_hash", Map.get(projection, "trace_summary_hash"))
+    |> put_optional("evidence_refs", Map.get(projection, "evidence_refs"))
+  end
+
+  defp normalize_metadata(%{} = metadata) do
+    Map.new(metadata, fn {key, value} -> {to_string(key), value} end)
+  end
+
+  defp normalize_metadata(_metadata), do: %{}
+
+  defp put_optional(metadata, _key, nil), do: metadata
+  defp put_optional(metadata, _key, []), do: metadata
+  defp put_optional(metadata, key, value), do: Map.put(metadata, key, value)
 end

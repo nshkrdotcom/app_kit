@@ -29,6 +29,8 @@ defmodule AppKit.Bridges.MezzanineBridgeGovernedEffectIntegrationTest do
 
     assert proposed.effect_ref == attrs.effect_ref
     assert proposed.status == "proposed"
+    assert proposed.metadata["diagnostic_lane"] == "echo"
+    assert proposed.metadata["product_slug"] == "app-kit"
 
     assert {:ok, %Run{} = run} = Coordinator.propose(command_attrs(attrs))
 
@@ -40,6 +42,9 @@ defmodule AppKit.Bridges.MezzanineBridgeGovernedEffectIntegrationTest do
 
     assert readback.effect_ref == proposed.effect_ref
     assert readback.status == "proposed"
+    assert readback.metadata["diagnostic_lane"] == "echo"
+    assert readback.metadata["product_slug"] == "app-kit"
+    assert readback.metadata["trace_summary_hash"]
 
     assert {:ok, %EffectTimelineDTO{} = timeline} =
              EffectSurface.get_effect_timeline(context(), attrs.effect_ref,
@@ -227,7 +232,8 @@ defmodule AppKit.Bridges.MezzanineBridgeGovernedEffectIntegrationTest do
       trace_ref: Map.fetch!(attrs, :trace_ref),
       expected_version: Map.fetch!(attrs, :expected_version),
       operation: Map.fetch!(attrs, :effect_type),
-      payload: diagnostic_payload(attrs)
+      payload: diagnostic_payload(attrs),
+      metadata: diagnostic_metadata(attrs)
     }
   end
 
@@ -282,6 +288,14 @@ defmodule AppKit.Bridges.MezzanineBridgeGovernedEffectIntegrationTest do
 
   defp diagnostic_payload(attrs), do: %{"message" => "AppKit #{attrs.token} integration"}
 
+  defp diagnostic_metadata(attrs) do
+    %{
+      "diagnostic_lane" => "echo",
+      "product_slug" => "app-kit",
+      "run_ref" => "run://app-kit/integration/#{attrs.token}"
+    }
+  end
+
   defp effect_attrs(token, opts \\ []) do
     effect_type = Keyword.get(opts, :effect_type, "diagnostic.echo")
 
@@ -295,7 +309,8 @@ defmodule AppKit.Bridges.MezzanineBridgeGovernedEffectIntegrationTest do
       installation_ref: "installation://app-kit/default",
       status: "proposed",
       trace_ref: "trace:app-kit-integration-#{token}",
-      expected_version: 1
+      expected_version: 1,
+      metadata: diagnostic_metadata(%{token: token})
     }
   end
 
