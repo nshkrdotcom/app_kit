@@ -68,7 +68,21 @@ defmodule AppKit.Boundary.NoBypass do
     "Oban",
     "Postgrex",
     "Repo",
-    "Temporalex"
+    "Temporalex",
+    "AgentInterop",
+    "AgentRuntimeReceipt",
+    "AgentTurnLedger",
+    "AxRuntime",
+    "AxSidecar",
+    "AxGrpc",
+    "AXGrpc",
+    "ControllerService.Exec",
+    "System.cmd(\"ax\"",
+    "ax serve",
+    "A2ABridge",
+    "A2A.",
+    "generated A2A",
+    "generated AX proto"
   ]
 
   @hazmat_forbidden [
@@ -318,6 +332,28 @@ defmodule AppKit.Boundary.NoBypass do
   defp forbidden_line?("Oban", line), do: String.contains?(line, "Oban.")
   defp forbidden_line?("Postgrex", line), do: String.contains?(line, "Postgrex")
   defp forbidden_line?("Temporalex", line), do: String.contains?(line, "Temporalex.")
+  defp forbidden_line?("AgentInterop", line), do: String.contains?(line, "AgentInterop.")
+
+  defp forbidden_line?("AgentRuntimeReceipt", line),
+    do: String.contains?(line, "AgentRuntimeReceipt")
+
+  defp forbidden_line?("AgentTurnLedger", line), do: String.contains?(line, "AgentTurnLedger")
+  defp forbidden_line?("AxRuntime", line), do: String.contains?(line, "AxRuntime.")
+  defp forbidden_line?("AxSidecar", line), do: String.contains?(line, "AxSidecar.")
+  defp forbidden_line?("AxGrpc", line), do: String.contains?(line, "AxGrpc.")
+  defp forbidden_line?("AXGrpc", line), do: String.contains?(line, "AXGrpc.")
+
+  defp forbidden_line?("ControllerService.Exec", line),
+    do: String.contains?(line, "ControllerService.Exec")
+
+  defp forbidden_line?("System.cmd(\"ax\"", line), do: String.contains?(line, "System.cmd(\"ax\"")
+  defp forbidden_line?("ax serve", line), do: String.contains?(line, "ax serve")
+  defp forbidden_line?("A2ABridge", line), do: String.contains?(line, "A2ABridge.")
+  defp forbidden_line?("A2A.", line), do: String.contains?(line, "A2A.")
+  defp forbidden_line?("generated A2A", line), do: String.contains?(line, "generated A2A")
+
+  defp forbidden_line?("generated AX proto", line),
+    do: String.contains?(line, "generated AX proto")
 
   defp forbidden_line?(_name, _line), do: false
 end

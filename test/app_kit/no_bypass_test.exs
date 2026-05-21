@@ -161,6 +161,50 @@ defmodule AppKit.NoBypassTest do
              report.violations
   end
 
+  test "product profile rejects AX and A2A runtime vocabulary" do
+    root =
+      write_product_file!("""
+      alias AxRuntime.Session
+      alias AxSidecar.Supervisor
+      alias AxGrpc.Controller
+      alias AXGrpc.Generated.ControllerService
+      alias A2ABridge.Server
+      alias A2A.Protocol.Message
+      ControllerService.Exec.call(%{})
+      System.cmd("ax", ["serve"])
+      "ax serve"
+      "generated A2A"
+      "generated AX proto"
+      alias AgentInterop.Descriptor
+      alias AgentRuntimeReceipt.Event
+      alias AgentTurnLedger.Row
+      """)
+
+    assert {:error, report} =
+             NoBypass.scan(
+               root: root,
+               profiles: [:product],
+               include: ["lib/**/*.ex"]
+             )
+
+    forbidden = Enum.map(report.violations, & &1.forbidden)
+
+    assert "AxRuntime" in forbidden
+    assert "AxSidecar" in forbidden
+    assert "AxGrpc" in forbidden
+    assert "AXGrpc" in forbidden
+    assert "ControllerService.Exec" in forbidden
+    assert "System.cmd(\"ax\"" in forbidden
+    assert "ax serve" in forbidden
+    assert "A2ABridge" in forbidden
+    assert "A2A." in forbidden
+    assert "generated A2A" in forbidden
+    assert "generated AX proto" in forbidden
+    assert "AgentInterop" in forbidden
+    assert "AgentRuntimeReceipt" in forbidden
+    assert "AgentTurnLedger" in forbidden
+  end
+
   test "defaults to the product profile" do
     root = write_product_file!("alias Jido.Integration.V2.BrainIngress\n")
 
