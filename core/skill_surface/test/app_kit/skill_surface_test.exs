@@ -11,10 +11,9 @@ defmodule AppKit.SkillSurfaceTest do
                manifest: valid_manifest()
              })
 
-    assert request.manifest.prompt_ref == "prompt://phase-g/app-kit"
-
-    assert request.manifest.capability_bindings |> hd() |> Map.fetch!(:capability_ref) ==
-             "capability://phase-g/app-kit"
+    assert request.manifest.package_name == "app-kit"
+    assert request.manifest.policy_refs == ["policy://phase-g/app-kit"]
+    assert request.manifest.manifest_hash == manifest_hash(valid_manifest())
   end
 
   test "invocation request validates all gate refs before provider readiness" do
@@ -25,7 +24,7 @@ defmodule AppKit.SkillSurfaceTest do
                intent: valid_intent()
              })
 
-    assert request.intent.lease_ref == "lease://phase-g"
+    assert request.intent.credential_lease_ref == "credential-lease://phase-g/app-kit"
     assert request.intent.target_ref == "target://phase-g"
   end
 
@@ -34,9 +33,17 @@ defmodule AppKit.SkillSurfaceTest do
     assert {:ok, trace_projection} = SkillSurface.trace_projection(valid_manifest())
 
     assert projection.redaction_posture == "refs_only"
-    assert trace_projection.redaction_posture == "private_state_redacted"
+    assert projection.admission_status == :admitted
+    assert projection.pending_approval_refs == []
+    assert trace_projection.redaction_posture == "refs_only"
     refute Map.has_key?(projection, :private_state)
     refute Map.has_key?(trace_projection, :provider_payload)
+  end
+
+  test "computes canonical manifest hashes without exposing lower contract modules" do
+    attrs = Map.delete(valid_manifest(), :manifest_hash)
+
+    assert SkillSurface.canonical_manifest_hash(attrs) == manifest_hash(attrs)
   end
 
   test "surface rejects raw prompt and private state fields" do
@@ -49,40 +56,33 @@ defmodule AppKit.SkillSurfaceTest do
   end
 
   defp valid_manifest do
-    %{
+    attrs = %{
       skill_ref: "skill://phase-g/app-kit",
-      version_ref: %{
-        skill_ref: "skill://phase-g/app-kit",
-        version_ref: "skill-version://phase-g/app-kit/1",
-        revision: 1,
-        release_manifest_ref: "release://phase-g"
-      },
-      tenant_ref: "tenant://phase-g",
-      authority_ref: "authority://phase-g",
-      installation_ref: "installation://phase-g",
-      idempotency_key: "idem-phase-g-app-kit",
-      trace_ref: "trace://phase-g/app-kit",
-      persistence_profile_ref: "persistence://memory/default",
-      release_manifest_ref: "release://phase-g",
-      prompt_ref: "prompt://phase-g/app-kit",
-      tool_refs: ["tool://phase-g/app-kit"],
-      memory_profile_ref: "memory://phase-g/default",
-      guard_policy_ref: "guard://phase-g/default",
-      eval_suite_ref: "eval://phase-g/default",
-      budget_profile_ref: "budget://phase-g/default",
-      conformance_ref: "conformance://phase-g/app-kit",
-      capability_bindings: [
+      package_name: "app-kit",
+      version: "1.0.0",
+      description: "AppKit skill fixture.",
+      entrypoints: [
         %{
-          binding_ref: "binding://phase-g/app-kit",
-          capability_ref: "capability://phase-g/app-kit",
-          connector_ref: "connector://phase-g/app-kit",
-          capability_id: "app-kit.invoke",
-          tenant_ref: "tenant://phase-g",
-          scope_ref: "scope://phase-g/app-kit",
-          contract_version: "connector-sdk.v1"
+          name: "invoke",
+          kind: :jido_action,
+          schema_ref: "schema://phase-g/app-kit/input",
+          capability_ref: "capability://phase-g/app-kit"
         }
-      ]
+      ],
+      allowed_artifact_posture: :claim_checked,
+      credential_posture: :lease_required,
+      allowed_runtime_families: [:direct, :process],
+      policy_refs: ["policy://phase-g/app-kit"],
+      docs_ref: "doc://phase-g/app-kit",
+      tenant_ref: "tenant://phase-g",
+      installation_ref: "installation://phase-g",
+      capability_refs: ["capability://phase-g/app-kit"],
+      trace_ref: "trace://phase-g/app-kit",
+      release_manifest_ref: "release://phase-g",
+      redaction_posture: :refs_only
     }
+
+    Map.put(attrs, :manifest_hash, manifest_hash(attrs))
   end
 
   defp valid_intent do
@@ -91,18 +91,14 @@ defmodule AppKit.SkillSurfaceTest do
       skill_ref: "skill://phase-g/app-kit",
       tenant_ref: "tenant://phase-g",
       authority_ref: "authority://phase-g",
-      installation_ref: "installation://phase-g",
-      lease_ref: "lease://phase-g",
+      credential_lease_ref: "credential-lease://phase-g/app-kit",
       target_ref: "target://phase-g",
-      prompt_ref: "prompt://phase-g/app-kit",
-      memory_profile_ref: "memory://phase-g/default",
-      guard_policy_ref: "guard://phase-g/default",
-      eval_suite_ref: "eval://phase-g/default",
-      budget_profile_ref: "budget://phase-g/default",
-      connector_capability_refs: ["capability://phase-g/app-kit"],
+      entrypoint_name: "invoke",
       trace_ref: "trace://phase-g/app-kit/invoke",
       idempotency_key: "idem-phase-g-app-kit-invoke",
-      release_manifest_ref: "release://phase-g"
+      input_ref: "payload://phase-g/app-kit/input"
     }
   end
+
+  defp manifest_hash(attrs), do: SkillSurface.canonical_manifest_hash(attrs)
 end

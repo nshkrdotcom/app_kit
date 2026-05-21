@@ -72,6 +72,10 @@ defmodule AppKit.Boundary.NoBypass do
     "AgentInterop",
     "AgentRuntimeReceipt",
     "AgentTurnLedger",
+    "System.cmd",
+    "Port.open",
+    "script_path",
+    "skill_path",
     "AxRuntime",
     "AxSidecar",
     "AxGrpc",
@@ -338,6 +342,10 @@ defmodule AppKit.Boundary.NoBypass do
     do: String.contains?(line, "AgentRuntimeReceipt")
 
   defp forbidden_line?("AgentTurnLedger", line), do: String.contains?(line, "AgentTurnLedger")
+  defp forbidden_line?("System.cmd", line), do: String.contains?(line, "System.cmd(")
+  defp forbidden_line?("Port.open", line), do: String.contains?(line, "Port.open(")
+  defp forbidden_line?("script_path", line), do: String.contains?(line, "script_path")
+  defp forbidden_line?("skill_path", line), do: String.contains?(line, "skill_path")
   defp forbidden_line?("AxRuntime", line), do: String.contains?(line, "AxRuntime.")
   defp forbidden_line?("AxSidecar", line), do: String.contains?(line, "AxSidecar.")
   defp forbidden_line?("AxGrpc", line), do: String.contains?(line, "AxGrpc.")

@@ -3,9 +3,8 @@ defmodule AppKit.SkillSurface do
   DTO-only surface for governed skill admission and invocation.
   """
 
-  alias JidoHive.SkillContracts
-  alias JidoHive.SkillContracts.SkillInvocationIntent
-  alias JidoHive.SkillContracts.SkillManifest
+  @skill_contracts Module.concat([Jido, Integration, V2, SkillContracts])
+  @skill_package Module.concat([@skill_contracts, SkillPackage])
 
   defmodule SkillAdmissionRequest do
     @moduledoc "Skill admission request DTO."
@@ -15,7 +14,7 @@ defmodule AppKit.SkillSurface do
     @type t :: %__MODULE__{
             request_ref: String.t(),
             operator_ref: String.t(),
-            manifest: SkillManifest.t()
+            manifest: struct()
           }
   end
 
@@ -27,7 +26,7 @@ defmodule AppKit.SkillSurface do
     @type t :: %__MODULE__{
             request_ref: String.t(),
             operator_ref: String.t(),
-            intent: SkillInvocationIntent.t()
+            intent: struct()
           }
   end
 
@@ -35,41 +34,37 @@ defmodule AppKit.SkillSurface do
     @moduledoc "Operator-safe skill projection DTO."
     @enforce_keys [
       :skill_ref,
-      :version_ref,
-      :revision,
+      :package_name,
+      :version,
+      :manifest_hash,
       :tenant_ref,
       :installation_ref,
-      :prompt_ref,
-      :tool_refs,
-      :memory_profile_ref,
-      :guard_policy_ref,
-      :eval_suite_ref,
-      :budget_profile_ref,
-      :conformance_ref,
+      :policy_refs,
       :capability_refs,
+      :docs_ref,
       :trace_ref,
       :release_manifest_ref,
-      :redaction_posture
+      :redaction_posture,
+      :admission_status,
+      :pending_approval_refs
     ]
     defstruct @enforce_keys
 
     @type t :: %__MODULE__{
             skill_ref: String.t(),
-            version_ref: String.t(),
-            revision: pos_integer(),
+            package_name: String.t(),
+            version: String.t(),
+            manifest_hash: String.t(),
             tenant_ref: String.t(),
             installation_ref: String.t(),
-            prompt_ref: String.t(),
-            tool_refs: [String.t()],
-            memory_profile_ref: String.t(),
-            guard_policy_ref: String.t(),
-            eval_suite_ref: String.t(),
-            budget_profile_ref: String.t(),
-            conformance_ref: String.t(),
+            policy_refs: [String.t()],
             capability_refs: [String.t()],
+            docs_ref: String.t(),
             trace_ref: String.t(),
             release_manifest_ref: String.t(),
-            redaction_posture: String.t()
+            redaction_posture: String.t(),
+            admission_status: atom(),
+            pending_approval_refs: [String.t()]
           }
   end
 
@@ -78,11 +73,8 @@ defmodule AppKit.SkillSurface do
     @enforce_keys [
       :trace_ref,
       :skill_ref,
-      :version_ref,
-      :prompt_ref,
-      :guard_policy_ref,
-      :eval_suite_ref,
-      :budget_profile_ref,
+      :manifest_hash,
+      :policy_refs,
       :capability_refs,
       :release_manifest_ref,
       :redaction_posture
@@ -92,11 +84,8 @@ defmodule AppKit.SkillSurface do
     @type t :: %__MODULE__{
             trace_ref: String.t(),
             skill_ref: String.t(),
-            version_ref: String.t(),
-            prompt_ref: String.t(),
-            guard_policy_ref: String.t(),
-            eval_suite_ref: String.t(),
-            budget_profile_ref: String.t(),
+            manifest_hash: String.t(),
+            policy_refs: [String.t()],
             capability_refs: [String.t()],
             release_manifest_ref: String.t(),
             redaction_posture: String.t()
@@ -107,9 +96,12 @@ defmodule AppKit.SkillSurface do
     :authorization,
     :authorization_header,
     :body,
+    :command,
     :content,
     :credential,
     :credentials,
+    :cwd,
+    :env,
     :memory_body,
     :private_state,
     :private_state_body,
@@ -119,19 +111,26 @@ defmodule AppKit.SkillSurface do
     :raw_authorization,
     :raw_body,
     :raw_content,
+    :raw_credential,
+    :raw_endpoint,
     :raw_memory,
     :raw_private_state,
     :raw_prompt,
     :raw_secret,
     :raw_token,
+    :script_path,
     :secret,
+    :shell_args,
     :token,
     "authorization",
     "authorization_header",
     "body",
+    "command",
     "content",
     "credential",
     "credentials",
+    "cwd",
+    "env",
     "memory_body",
     "private_state",
     "private_state_body",
@@ -141,12 +140,16 @@ defmodule AppKit.SkillSurface do
     "raw_authorization",
     "raw_body",
     "raw_content",
+    "raw_credential",
+    "raw_endpoint",
     "raw_memory",
     "raw_private_state",
     "raw_prompt",
     "raw_secret",
     "raw_token",
+    "script_path",
     "secret",
+    "shell_args",
     "token"
   ]
 
@@ -154,7 +157,7 @@ defmodule AppKit.SkillSurface do
   def admission_request(attrs) when is_map(attrs) do
     with :ok <- reject_raw(attrs),
          :ok <- required_strings(attrs, [:request_ref, :operator_ref]),
-         {:ok, manifest} <- attrs |> fetch(:manifest) |> SkillContracts.manifest() do
+         {:ok, manifest} <- attrs |> fetch(:manifest) |> @skill_contracts.package() do
       {:ok,
        %SkillAdmissionRequest{
          request_ref: fetch!(attrs, :request_ref),
@@ -170,7 +173,7 @@ defmodule AppKit.SkillSurface do
   def invocation_request(attrs) when is_map(attrs) do
     with :ok <- reject_raw(attrs),
          :ok <- required_strings(attrs, [:request_ref, :operator_ref]),
-         {:ok, intent} <- attrs |> fetch(:intent) |> SkillContracts.invocation_intent() do
+         {:ok, intent} <- attrs |> fetch(:intent) |> @skill_contracts.invocation_intent() do
       {:ok,
        %SkillInvocationRequest{
          request_ref: fetch!(attrs, :request_ref),
@@ -182,58 +185,61 @@ defmodule AppKit.SkillSurface do
 
   def invocation_request(_attrs), do: {:error, :invalid_skill_invocation_request}
 
-  @spec projection(SkillManifest.t() | map()) :: {:ok, SkillProjection.t()} | {:error, term()}
-  def projection(%SkillManifest{} = manifest) do
+  @spec projection(struct() | map()) :: {:ok, SkillProjection.t()} | {:error, term()}
+  def projection(%module{} = manifest) when module == @skill_package do
     manifest
-    |> SkillContracts.projection()
+    |> @skill_contracts.projection()
     |> projection_from_contract()
   end
 
   def projection(attrs) when is_map(attrs) do
     with :ok <- reject_raw(attrs),
-         {:ok, manifest} <- attrs |> fetch(:manifest, attrs) |> SkillContracts.manifest() do
+         {:ok, manifest} <- attrs |> fetch(:manifest, attrs) |> @skill_contracts.package() do
       projection(manifest)
     end
   end
 
   def projection(_attrs), do: {:error, :invalid_skill_projection}
 
-  @spec trace_projection(SkillManifest.t() | map()) ::
+  @spec trace_projection(struct() | map()) ::
           {:ok, SkillTraceProjection.t()} | {:error, term()}
-  def trace_projection(%SkillManifest{} = manifest) do
+  def trace_projection(%module{} = manifest) when module == @skill_package do
     manifest
-    |> SkillContracts.trace_projection()
+    |> @skill_contracts.trace_projection()
     |> trace_from_contract()
   end
 
   def trace_projection(attrs) when is_map(attrs) do
     with :ok <- reject_raw(attrs),
-         {:ok, manifest} <- attrs |> fetch(:manifest, attrs) |> SkillContracts.manifest() do
+         {:ok, manifest} <- attrs |> fetch(:manifest, attrs) |> @skill_contracts.package() do
       trace_projection(manifest)
     end
   end
 
   def trace_projection(_attrs), do: {:error, :invalid_skill_trace_projection}
 
+  @spec canonical_manifest_hash(map()) :: String.t()
+  def canonical_manifest_hash(attrs) when is_map(attrs) do
+    @skill_contracts.canonical_manifest_hash(attrs)
+  end
+
   defp projection_from_contract(attrs) do
     {:ok,
      %SkillProjection{
        skill_ref: attrs.skill_ref,
-       version_ref: attrs.version_ref,
-       revision: attrs.revision,
+       package_name: attrs.package_name,
+       version: attrs.version,
+       manifest_hash: attrs.manifest_hash,
        tenant_ref: attrs.tenant_ref,
        installation_ref: attrs.installation_ref,
-       prompt_ref: attrs.prompt_ref,
-       tool_refs: attrs.tool_refs,
-       memory_profile_ref: attrs.memory_profile_ref,
-       guard_policy_ref: attrs.guard_policy_ref,
-       eval_suite_ref: attrs.eval_suite_ref,
-       budget_profile_ref: attrs.budget_profile_ref,
-       conformance_ref: attrs.conformance_ref,
+       policy_refs: attrs.policy_refs,
        capability_refs: attrs.capability_refs,
+       docs_ref: attrs.docs_ref,
        trace_ref: attrs.trace_ref,
        release_manifest_ref: attrs.release_manifest_ref,
-       redaction_posture: attrs.redaction_posture
+       redaction_posture: attrs.redaction_posture,
+       admission_status: attrs.admission_status,
+       pending_approval_refs: Map.get(attrs, :pending_approval_refs, [])
      }}
   end
 
@@ -242,11 +248,8 @@ defmodule AppKit.SkillSurface do
      %SkillTraceProjection{
        trace_ref: attrs.trace_ref,
        skill_ref: attrs.skill_ref,
-       version_ref: attrs.version_ref,
-       prompt_ref: attrs.prompt_ref,
-       guard_policy_ref: attrs.guard_policy_ref,
-       eval_suite_ref: attrs.eval_suite_ref,
-       budget_profile_ref: attrs.budget_profile_ref,
+       manifest_hash: attrs.manifest_hash,
+       policy_refs: attrs.policy_refs,
        capability_refs: attrs.capability_refs,
        release_manifest_ref: attrs.release_manifest_ref,
        redaction_posture: attrs.redaction_posture

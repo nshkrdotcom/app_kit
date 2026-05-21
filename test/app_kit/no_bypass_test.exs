@@ -205,6 +205,30 @@ defmodule AppKit.NoBypassTest do
     assert "AgentTurnLedger" in forbidden
   end
 
+  test "product profile rejects direct script execution and arbitrary skill paths" do
+    root =
+      write_product_file!("""
+      System.cmd("bash", ["run-skill.sh"])
+      Port.open({:spawn_executable, "/bin/sh"}, [])
+      %{script_path: "/tmp/skill/run.sh"}
+      %{skill_path: "../skills/private"}
+      """)
+
+    assert {:error, report} =
+             NoBypass.scan(
+               root: root,
+               profiles: [:product],
+               include: ["lib/**/*.ex"]
+             )
+
+    forbidden = Enum.map(report.violations, & &1.forbidden)
+
+    assert "System.cmd" in forbidden
+    assert "Port.open" in forbidden
+    assert "script_path" in forbidden
+    assert "skill_path" in forbidden
+  end
+
   test "defaults to the product profile" do
     root = write_product_file!("alias Jido.Integration.V2.BrainIngress\n")
 

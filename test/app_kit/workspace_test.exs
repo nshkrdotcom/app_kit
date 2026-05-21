@@ -129,7 +129,7 @@ defmodule AppKit.WorkspaceTest do
 
     for app <- [
           :jido_integration_contracts,
-          :jido_hive_skill_contracts,
+          :jido_integration_v2_tool_contracts,
           :jido_hive_agent_coordinator,
           :jido_hive_inter_agent_messaging,
           :jido_hive_shared_memory_facade,

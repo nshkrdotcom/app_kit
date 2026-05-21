@@ -80,7 +80,6 @@ defmodule AppKitMezzanineBridge.MixProject do
       DependencySources.dep(:mezzanine_integration_bridge, @repo_root),
       {:citadel_authority_contract,
        path: Path.expand("../citadel/core/authority_contract", @repo_root),
-       only: :test,
        runtime: false,
        override: true},
       {:jido_integration_v2_direct_runtime,

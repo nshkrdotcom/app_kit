@@ -13,7 +13,7 @@ defmodule AppKit.Build.WeldContract do
 
   @manifest_dependencies [
     :jido_integration_contracts,
-    :jido_hive_skill_contracts,
+    :jido_integration_v2_tool_contracts,
     :jido_hive_agent_coordinator,
     :jido_hive_inter_agent_messaging,
     :jido_hive_shared_memory_facade,
@@ -32,7 +32,7 @@ defmodule AppKit.Build.WeldContract do
 
   @manifest_dependency_opts %{
     jido_integration_contracts: @runtime_false_override,
-    jido_hive_skill_contracts: @runtime_false_override,
+    jido_integration_v2_tool_contracts: @runtime_false_override,
     jido_hive_agent_coordinator: @runtime_false_override,
     jido_hive_inter_agent_messaging: @runtime_false_override,
     jido_hive_shared_memory_facade: @runtime_false_override,

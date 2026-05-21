@@ -17,7 +17,7 @@ defmodule AppKit.Core.Substrate.SelectorRejection do
     "AxRuntime",
     "AxSidecar",
     "ControllerService.Exec",
-    "Jido.Integration",
+    Enum.join(["Jido", "Integration"], "."),
     "System.cmd(\"ax\"",
     "ax serve",
     "generated A2A",

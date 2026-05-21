@@ -99,6 +99,17 @@
       default_order: [:path, :github, :hex],
       publish_order: [:hex]
     },
+    jido_integration_v2_tool_contracts: %{
+      path: "../jido_integration/core/tool_contracts",
+      hex: "~> 0.1.0",
+      github: %{
+        repo: "nshkrdotcom/jido_integration",
+        subdir: "core/tool_contracts",
+        branch: "main"
+      },
+      default_order: [:path, :github, :hex],
+      publish_order: [:hex]
+    },
     mezzanine_pack_compiler: %{
       path: "../mezzanine/core/pack_compiler",
       hex: "~> 0.1.0",
@@ -171,17 +182,6 @@
       github: %{
         repo: "nshkrdotcom/mezzanine",
         subdir: "core/operator_engine",
-        branch: "main"
-      },
-      default_order: [:path, :github, :hex],
-      publish_order: [:hex]
-    },
-    jido_hive_skill_contracts: %{
-      path: "../jido_hive/core/skill_contracts",
-      hex: "~> 0.1.0",
-      github: %{
-        repo: "nshkrdotcom/jido_hive",
-        subdir: "core/skill_contracts",
         branch: "main"
       },
       default_order: [:path, :github, :hex],
