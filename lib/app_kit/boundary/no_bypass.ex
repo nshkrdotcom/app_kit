@@ -40,6 +40,7 @@ defmodule AppKit.Boundary.NoBypass do
     "GepaBuildout",
     "TrinityFramework",
     "TrinityCoordinator",
+    "Trinity.Coordinator",
     "Pristine",
     "Prismatic",
     "GitHubEx",
@@ -55,6 +56,11 @@ defmodule AppKit.Boundary.NoBypass do
     "LlamaCpp",
     "Inference",
     "SelfHostedInferenceCore",
+    "SelfHostedInferenceBumblebee",
+    "CrucibleSafetensors",
+    "CrucibleFactorization",
+    "CrucibleTensorPatch",
+    "CrucibleModelRegistry",
     "Jido.Integration",
     "GroundPlane",
     "OuterBrain",
@@ -299,6 +305,9 @@ defmodule AppKit.Boundary.NoBypass do
   defp forbidden_line?("TrinityCoordinator", line),
     do: String.contains?(line, "TrinityCoordinator.")
 
+  defp forbidden_line?("Trinity.Coordinator", line),
+    do: String.contains?(line, "Trinity.Coordinator")
+
   defp forbidden_line?("Pristine", line), do: String.contains?(line, "Pristine.")
   defp forbidden_line?("Prismatic", line), do: String.contains?(line, "Prismatic.")
   defp forbidden_line?("GitHubEx", line), do: String.contains?(line, "GitHubEx.")
@@ -316,6 +325,21 @@ defmodule AppKit.Boundary.NoBypass do
 
   defp forbidden_line?("SelfHostedInferenceCore", line),
     do: String.contains?(line, "SelfHostedInferenceCore.")
+
+  defp forbidden_line?("SelfHostedInferenceBumblebee", line),
+    do: String.contains?(line, "SelfHostedInferenceBumblebee.")
+
+  defp forbidden_line?("CrucibleSafetensors", line),
+    do: String.contains?(line, ["CrucibleSafetensors.", "Crucible.Safetensors"])
+
+  defp forbidden_line?("CrucibleFactorization", line),
+    do: String.contains?(line, ["CrucibleFactorization.", "Crucible.Factorization"])
+
+  defp forbidden_line?("CrucibleTensorPatch", line),
+    do: String.contains?(line, ["CrucibleTensorPatch.", "Crucible.TensorPatch"])
+
+  defp forbidden_line?("CrucibleModelRegistry", line),
+    do: String.contains?(line, ["CrucibleModelRegistry.", "Crucible.ModelRegistry"])
 
   defp forbidden_line?("Jido.Integration", line), do: String.contains?(line, "Jido.Integration")
   defp forbidden_line?("GroundPlane", line), do: String.contains?(line, "GroundPlane.")

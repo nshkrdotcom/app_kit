@@ -120,6 +120,57 @@ defmodule AppKit.NoBypassTest do
            ]
   end
 
+  test "product profile rejects direct trinity runtime and model primitive imports" do
+    root =
+      write_product_file!("""
+      alias SelfHostedInferenceCore.InstanceSpec
+      alias SelfHostedInferenceBumblebee.Router
+      alias Crucible.Safetensors.Reader
+      alias Crucible.Factorization.SVD
+      alias Crucible.TensorPatch.Apply
+      alias Crucible.ModelRegistry.ArtifactPins
+      alias Trinity.Coordinator.RouteLogits
+      """)
+
+    assert {:error, report} =
+             NoBypass.scan(
+               root: root,
+               profiles: [:product],
+               include: ["lib/**/*.ex"]
+             )
+
+    assert Enum.map(report.violations, & &1.forbidden) == [
+             "SelfHostedInferenceCore",
+             "SelfHostedInferenceBumblebee",
+             "CrucibleSafetensors",
+             "CrucibleFactorization",
+             "CrucibleTensorPatch",
+             "CrucibleModelRegistry",
+             "Trinity.Coordinator"
+           ]
+  end
+
+  test "product profile allows public trinity and AppKit coordination surfaces" do
+    root =
+      write_product_file!("""
+      alias Trinity.Router
+      alias AppKit.CoordinationSurface.RouterDecisionProjection
+
+      defmodule ProductRouterSurface do
+        def project(decision), do: RouterDecisionProjection.from_router_decision(decision)
+      end
+      """)
+
+    assert {:ok, report} =
+             NoBypass.scan(
+               root: root,
+               profiles: [:product],
+               include: ["lib/**/*.ex"]
+             )
+
+    assert report.checked_files == 1
+  end
+
   test "product profile rejects direct lower persistence imports" do
     root =
       write_product_file!("""
