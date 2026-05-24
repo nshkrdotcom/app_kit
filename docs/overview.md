@@ -13,6 +13,8 @@ It owns the reusable app-facing seams that products should consume directly:
 - conversation bridges
 - scope and target helpers
 - normalized app config
+- context packet, route, model invocation, eval, promotion/rollback, and
+  operator review projection
 - model and endpoint inventory projection
 - optimization run, candidate, promotion, and rollback projection
 

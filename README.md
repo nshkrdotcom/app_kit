@@ -43,6 +43,8 @@ for the canonical `sha256:` checksum used by that v1 posture.
 ## Scope
 
 - chat-facing surfaces
+- context packet, route, model invocation, eval verdict, and operator review
+  projections
 - typed domain-facing surfaces
 - operator-facing surfaces
 - reusable work-control and governed-run surfaces
@@ -108,10 +110,10 @@ The workspace currently exposes these product-facing families:
   `AppKit.InstallationSurface` provide issue-tracker source intake,
   current-state lookup, source publication, dynamic source-tool execution,
   installation bootstrap, and authoring-bundle import.
-- **Semantic and app surfaces:** chat, conversation, domain, model, prompt,
-  guardrail, memory, budget, cost, eval, replay, coordination, optimization,
-  adaptive control, skill, hive, and scope/target helpers provide stable DTO
-  seams for richer product experiences.
+- **Semantic and app surfaces:** chat, conversation, domain, context, model,
+  prompt, guardrail, memory, budget, cost, eval, replay, coordination,
+  optimization, adaptive control, skill, hive, and scope/target helpers provide
+  stable DTO seams for richer product experiences.
 - **Web surfaces:** shared components, operator console, replay viewer, cost
   dashboard, eval studio, and policy authoring packages give product shells a
   reusable UI vocabulary without making AppKit a product.
@@ -308,6 +310,13 @@ products may use `AppKit.AdaptiveControlSurface` and the operator console
 `adaptive_controls` section, but product code must not import GEPA, TRINITY,
 provider SDKs, generated SDKs, lower runtimes, DB repos, or trace writers to
 review candidates, inspect shadow/canary state, promote, roll back, or audit.
+
+The Context surface is the product-safe readback for governed context-to-model
+runs. `AppKit.ContextSurface` carries context compile requests, context packet
+summaries, route decisions, rendered prompt/model invocation refs, eval
+verdicts, promotion/rollback refs, and operator review state without exposing
+raw prompts, memory bodies, provider payloads, credentials, lower selector
+modules, or Execution Plane lane details.
 
 Phase 7 persistence posture is carried as projection evidence only. Authority
 projections, headless DTOs, runtime readback/projection DTOs, evidence-audit

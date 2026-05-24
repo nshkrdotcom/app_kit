@@ -11,6 +11,7 @@ defmodule AppKit.SchemaRegistryTest do
     assert "AppKit.SchemaRegistryEntry.v1" in contract_names
     assert "Platform.GeneratedArtifactOwnership.v1" in contract_names
     assert "AppKit.ModelSurface.v1" in contract_names
+    assert "AppKit.ContextSurface.v1" in contract_names
     assert "AppKit.OptimizationSurface.v1" in contract_names
     assert "AppKit.CoordinationSurface.v1" in contract_names
     assert "AppKit.AdaptiveControlSurface.v1" in contract_names
@@ -25,6 +26,12 @@ defmodule AppKit.SchemaRegistryTest do
 
     assert {:ok, model_surface} = SchemaRegistry.fetch("AppKit.ModelSurface.v1")
     assert "jido_integration" in model_surface.producer_repos
+
+    assert {:ok, context_surface} = SchemaRegistry.fetch("AppKit.ContextSurface.v1")
+    assert "outer_brain" in context_surface.producer_repos
+    assert "mezzanine" in context_surface.producer_repos
+
+    assert "AppKit.ContextSurface.ContextPacketProjection" in context_surface.dto_packet_table_resource_names
 
     assert {:ok, optimization_surface} = SchemaRegistry.fetch("AppKit.OptimizationSurface.v1")
     assert "mezzanine" in optimization_surface.producer_repos

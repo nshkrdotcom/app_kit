@@ -231,6 +231,17 @@
       default_order: [:path, :github, :hex],
       publish_order: [:hex]
     },
+    outer_brain_context_abi: %{
+      path: "../outer_brain/core/context_abi",
+      hex: "~> 0.1.0",
+      github: %{
+        repo: "nshkrdotcom/outer_brain",
+        subdir: "core/context_abi",
+        branch: "main"
+      },
+      default_order: [:path, :github, :hex],
+      publish_order: [:hex]
+    },
     mezzanine_audit_engine: %{
       path: "../mezzanine/core/audit_engine",
       hex: "~> 0.1.0",

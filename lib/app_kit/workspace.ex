@@ -22,6 +22,7 @@ defmodule AppKit.Workspace do
     "core/memory_surface",
     "core/context_budget_surface",
     "core/prompt_surface",
+    "core/context_surface",
     "core/guardrail_surface",
     "core/eval_surface",
     "core/replay_surface",

@@ -21,6 +21,7 @@ defmodule AppKit.Build.WeldContract do
     :mezzanine_headless_coding_ops,
     :outer_brain_memory_contracts,
     :outer_brain_prompt_fabric,
+    :outer_brain_context_abi,
     :outer_brain_guardrail_contracts,
     :ai_trace_replay_contracts
   ]
@@ -64,6 +65,7 @@ defmodule AppKit.Build.WeldContract do
           "core/memory_surface",
           "core/context_budget_surface",
           "core/prompt_surface",
+          "core/context_surface",
           "core/guardrail_surface",
           "core/eval_surface",
           "core/replay_surface",

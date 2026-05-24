@@ -11,6 +11,7 @@ defmodule AppKit.WorkspaceTest do
   test "lists workspace packages" do
     assert "core/app_kit_core" in Workspace.package_paths()
     assert "core/authority_projections" in Workspace.package_paths()
+    assert "core/context_surface" in Workspace.package_paths()
     assert "core/model_surface" in Workspace.package_paths()
     assert "core/optimization_surface" in Workspace.package_paths()
     assert "core/coordination_surface" in Workspace.package_paths()
@@ -147,6 +148,7 @@ defmodule AppKit.WorkspaceTest do
           "bridges/domain_bridge/mix.exs",
           "bridges/outer_brain_bridge/mix.exs",
           "core/domain_surface/mix.exs",
+          "core/context_surface/mix.exs",
           "core/model_surface/mix.exs",
           "core/optimization_surface/mix.exs",
           "core/coordination_surface/mix.exs",

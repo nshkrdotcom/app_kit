@@ -161,6 +161,44 @@ defmodule AppKit.Workspace.SchemaRegistry do
       replacement_version_policy: "big_bang_no_legacy"
     },
     %{
+      contract_name: "AppKit.ContextSurface.v1",
+      contract_version: "1.0.0",
+      owner_repo: "app_kit",
+      boundary_owner: "governed context packet and AI execution projection boundary",
+      producer_repos: ["app_kit", "outer_brain", "mezzanine", "jido_integration"],
+      consumer_repos: ["extravaganza", "stack_lab", "jido_brainstorm"],
+      dto_packet_table_resource_names: [
+        "AppKit.ContextSurface.ContextCompileRequest",
+        "AppKit.ContextSurface.ContextPacketProjection",
+        "AppKit.ContextSurface.RouteDecisionProjection",
+        "AppKit.ContextSurface.ModelInvocationProjection",
+        "AppKit.ContextSurface.EvalVerdictProjection",
+        "AppKit.ContextSurface.OperatorReviewProjection"
+      ],
+      required_fields:
+        @enterprise_fields ++
+          [
+            "context_packet_ref",
+            "packet_hash",
+            "user_request_ref",
+            "system_instruction_ref",
+            "memory_refs",
+            "budget_ref",
+            "model_class_allowlist",
+            "route_policy_ref",
+            "route_decision_ref",
+            "model_invocation_ref",
+            "model_receipt_ref",
+            "eval_verdict_ref"
+          ],
+      optional_fields: ["promotion_refs", "rollback_refs", "operator_state"],
+      generator_command: "manual AppKit context surface DTO package",
+      runbook_path: "runbooks/appkit_context_surface_contract_failure.md",
+      proof_artifact_path: "stack_lab/proofs/scenario_context_abi_surface.md",
+      release_manifest_key: "contracts.AppKit.ContextSurface.v1",
+      replacement_version_policy: "big_bang_no_legacy"
+    },
+    %{
       contract_name: "AppKit.OptimizationSurface.v1",
       contract_version: "1.0.0",
       owner_repo: "app_kit",

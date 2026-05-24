@@ -9,6 +9,8 @@ AppKit exposes the main app-facing surface families:
 - `RunGovernance` for evidence and decision shaping
 - `RuntimeGateway` for app-facing runtime gateway descriptors
 - `ConversationBridge` for follow-up and live-update bridging
+- `ContextSurface` for governed context packet, route decision, model
+  invocation, eval verdict, promotion/rollback, and operator review projections
 - `ModelSurface` for governed model and endpoint inventory projection
 - `OptimizationSurface` for GEPA run, candidate, promotion, and rollback
   projection
@@ -22,6 +24,12 @@ AppKit exposes the main app-facing surface families:
 
 These surfaces are intentionally reusable and app-facing. They are not a second
 policy kernel and not a second lower control plane.
+
+`ContextSurface` is the product-safe readback for the Context ABI path. It
+depends on OuterBrain's Context ABI contracts for packet shape validation, then
+projects only refs, hashes, bounded statuses, and operator state. Raw prompts,
+memory bodies, provider request/response payloads, credentials, lower selector
+modules, and Execution Plane lane details are rejected at DTO construction.
 
 ## Product Boundary
 
