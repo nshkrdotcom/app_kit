@@ -79,6 +79,90 @@ defmodule AppKit.MemorySurface do
           }
   end
 
+  defmodule CandidateProjection do
+    @moduledoc "Product-safe memory candidate projection."
+    @enforce_keys [
+      :candidate_ref,
+      :tenant_ref,
+      :memory_ref,
+      :evidence_ref,
+      :eval_evidence_refs,
+      :authority_ref,
+      :trace_ref,
+      :redaction_policy_ref,
+      :status
+    ]
+    defstruct [:promotion_ref, :rollback_ref | @enforce_keys]
+
+    @type t :: %__MODULE__{
+            candidate_ref: String.t(),
+            tenant_ref: String.t(),
+            memory_ref: MemoryContracts.MemoryRef.t(),
+            evidence_ref: MemoryContracts.MemoryEvidenceRef.t(),
+            eval_evidence_refs: [String.t()],
+            authority_ref: String.t(),
+            trace_ref: String.t(),
+            redaction_policy_ref: String.t(),
+            status: atom(),
+            promotion_ref: String.t() | nil,
+            rollback_ref: String.t() | nil
+          }
+  end
+
+  defmodule PromotionProjection do
+    @moduledoc "Product-safe memory promotion projection."
+    @enforce_keys [
+      :candidate_ref,
+      :promotion_ref,
+      :rollback_ref,
+      :tenant_ref,
+      :citadel_authority_ref,
+      :eval_refs,
+      :trace_ref,
+      :appkit_projection_ref,
+      :status
+    ]
+    defstruct @enforce_keys
+
+    @type t :: %__MODULE__{
+            candidate_ref: String.t(),
+            promotion_ref: String.t(),
+            rollback_ref: String.t(),
+            tenant_ref: String.t(),
+            citadel_authority_ref: String.t(),
+            eval_refs: [String.t()],
+            trace_ref: String.t(),
+            appkit_projection_ref: String.t(),
+            status: :promoted
+          }
+  end
+
+  defmodule RollbackProjection do
+    @moduledoc "Product-safe memory rollback projection."
+    @enforce_keys [
+      :candidate_ref,
+      :rollback_ref,
+      :restored_ref,
+      :tenant_ref,
+      :citadel_authority_ref,
+      :trace_ref,
+      :appkit_projection_ref,
+      :status
+    ]
+    defstruct @enforce_keys
+
+    @type t :: %__MODULE__{
+            candidate_ref: String.t(),
+            rollback_ref: String.t(),
+            restored_ref: String.t(),
+            tenant_ref: String.t(),
+            citadel_authority_ref: String.t(),
+            trace_ref: String.t(),
+            appkit_projection_ref: String.t(),
+            status: :rolled_back
+          }
+  end
+
   @operations [:write, :read, :evict]
   @raw_keys [
     :body,
@@ -163,6 +247,79 @@ defmodule AppKit.MemorySurface do
     end
   end
 
+  @spec candidate_projection(map()) :: {:ok, CandidateProjection.t()} | {:error, term()}
+  def candidate_projection(attrs) when is_map(attrs) do
+    with :ok <- reject_raw_payload(attrs),
+         {:ok, candidate} <- MemoryContracts.memory_candidate(attrs) do
+      {:ok,
+       %CandidateProjection{
+         candidate_ref: candidate.candidate_ref,
+         tenant_ref: candidate.tenant_ref,
+         memory_ref: candidate.memory_ref,
+         evidence_ref: candidate.evidence_ref,
+         eval_evidence_refs: candidate.eval_evidence_refs,
+         authority_ref: candidate.authority_ref,
+         trace_ref: candidate.trace_ref,
+         redaction_policy_ref: candidate.redaction_policy_ref,
+         status: candidate.status,
+         promotion_ref: candidate.promotion_ref,
+         rollback_ref: candidate.rollback_ref
+       }}
+    end
+  end
+
+  @spec promotion_projection(map()) :: {:ok, PromotionProjection.t()} | {:error, term()}
+  def promotion_projection(attrs) when is_map(attrs) do
+    with :ok <- reject_raw_payload(attrs),
+         {:ok, candidate_ref} <- required_string(attrs, :candidate_ref),
+         {:ok, promotion_ref} <- required_string(attrs, :promotion_ref),
+         {:ok, rollback_ref} <- required_string(attrs, :rollback_ref),
+         {:ok, tenant_ref} <- required_string(attrs, :tenant_ref),
+         {:ok, citadel_authority_ref} <- required_string(attrs, :citadel_authority_ref),
+         {:ok, eval_refs} <- required_string_list(attrs, :eval_refs),
+         {:ok, trace_ref} <- required_string(attrs, :trace_ref),
+         {:ok, appkit_projection_ref} <- required_string(attrs, :appkit_projection_ref),
+         :ok <- require_status(attrs, :promoted) do
+      {:ok,
+       %PromotionProjection{
+         candidate_ref: candidate_ref,
+         promotion_ref: promotion_ref,
+         rollback_ref: rollback_ref,
+         tenant_ref: tenant_ref,
+         citadel_authority_ref: citadel_authority_ref,
+         eval_refs: eval_refs,
+         trace_ref: trace_ref,
+         appkit_projection_ref: appkit_projection_ref,
+         status: :promoted
+       }}
+    end
+  end
+
+  @spec rollback_projection(map()) :: {:ok, RollbackProjection.t()} | {:error, term()}
+  def rollback_projection(attrs) when is_map(attrs) do
+    with :ok <- reject_raw_payload(attrs),
+         {:ok, candidate_ref} <- required_string(attrs, :candidate_ref),
+         {:ok, rollback_ref} <- required_string(attrs, :rollback_ref),
+         {:ok, restored_ref} <- required_string(attrs, :restored_ref),
+         {:ok, tenant_ref} <- required_string(attrs, :tenant_ref),
+         {:ok, citadel_authority_ref} <- required_string(attrs, :citadel_authority_ref),
+         {:ok, trace_ref} <- required_string(attrs, :trace_ref),
+         {:ok, appkit_projection_ref} <- required_string(attrs, :appkit_projection_ref),
+         :ok <- require_status(attrs, :rolled_back) do
+      {:ok,
+       %RollbackProjection{
+         candidate_ref: candidate_ref,
+         rollback_ref: rollback_ref,
+         restored_ref: restored_ref,
+         tenant_ref: tenant_ref,
+         citadel_authority_ref: citadel_authority_ref,
+         trace_ref: trace_ref,
+         appkit_projection_ref: appkit_projection_ref,
+         status: :rolled_back
+       }}
+    end
+  end
+
   defp required_access_refs(attrs) do
     case Enum.find(
            [:tenant_ref, :authority_ref, :installation_ref, :idempotency_key, :trace_ref],
@@ -194,6 +351,28 @@ defmodule AppKit.MemorySurface do
 
       _other ->
         {:error, {:missing_field, field}}
+    end
+  end
+
+  defp required_string_list(attrs, field) do
+    case fetch(attrs, field) do
+      values when is_list(values) and values != [] ->
+        if Enum.all?(values, &(is_binary(&1) and String.trim(&1) != "")) do
+          {:ok, Enum.uniq(values)}
+        else
+          {:error, {:missing_field, field}}
+        end
+
+      _other ->
+        {:error, {:missing_field, field}}
+    end
+  end
+
+  defp require_status(attrs, expected) do
+    if fetch(attrs, :status) == expected do
+      :ok
+    else
+      {:error, {:invalid_status, expected}}
     end
   end
 

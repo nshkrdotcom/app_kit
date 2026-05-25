@@ -29,6 +29,24 @@ defmodule AppKit.MemorySurfaceTest do
     assert record.operation == :write
   end
 
+  test "candidate, promotion, and rollback projections expose bounded refs only" do
+    assert {:ok, candidate} = MemorySurface.candidate_projection(candidate_projection_attrs())
+
+    assert candidate.candidate_ref == "memory-candidate://tenant-a/a"
+    assert candidate.status == :candidate
+    refute Map.has_key?(Map.from_struct(candidate), :memory_body)
+
+    assert {:ok, promotion} = MemorySurface.promotion_projection(promotion_projection_attrs())
+
+    assert promotion.status == :promoted
+    assert promotion.promotion_ref == "memory-promotion://tenant-a/a"
+
+    assert {:ok, rollback} = MemorySurface.rollback_projection(rollback_projection_attrs())
+
+    assert rollback.status == :rolled_back
+    assert rollback.rollback_ref == "memory-rollback://tenant-a/a"
+  end
+
   defp projection_attrs do
     %{
       memory_ref: memory_ref(),
@@ -49,6 +67,47 @@ defmodule AppKit.MemorySurfaceTest do
       memory_ref: memory_ref(),
       operation: :write,
       redaction_policy_ref: "policy://redact"
+    }
+  end
+
+  defp candidate_projection_attrs do
+    %{
+      candidate_ref: "memory-candidate://tenant-a/a",
+      tenant_ref: "tenant://a",
+      memory_ref: memory_ref(),
+      evidence_ref: evidence_ref(),
+      eval_evidence_refs: ["eval://memory/a"],
+      authority_ref: "authority://citadel/memory/a",
+      trace_ref: "trace://a",
+      redaction_policy_ref: "policy://redact",
+      status: :candidate
+    }
+  end
+
+  defp promotion_projection_attrs do
+    %{
+      candidate_ref: "memory-candidate://tenant-a/a",
+      promotion_ref: "memory-promotion://tenant-a/a",
+      rollback_ref: "memory-rollback://tenant-a/a",
+      tenant_ref: "tenant://a",
+      citadel_authority_ref: "authority://citadel/promotion/a",
+      eval_refs: ["eval://memory/a"],
+      trace_ref: "trace://promotion/a",
+      appkit_projection_ref: "appkit://memory/promotion/a",
+      status: :promoted
+    }
+  end
+
+  defp rollback_projection_attrs do
+    %{
+      candidate_ref: "memory-candidate://tenant-a/a",
+      rollback_ref: "memory-rollback://tenant-a/a",
+      restored_ref: "memory://tenant-a/promoted/previous",
+      tenant_ref: "tenant://a",
+      citadel_authority_ref: "authority://citadel/rollback/a",
+      trace_ref: "trace://rollback/a",
+      appkit_projection_ref: "appkit://memory/rollback/a",
+      status: :rolled_back
     }
   end
 
