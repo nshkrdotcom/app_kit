@@ -113,6 +113,7 @@ defmodule AppKit.OptimizationSurface do
     :cost_ref,
     :shadow_ref,
     :canary_ref,
+    :citadel_authority_ref,
     :human_approval_ref,
     :provenance_ref,
     :rollback_ref

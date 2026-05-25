@@ -51,6 +51,7 @@ defmodule AppKit.OptimizationSurfaceTest do
       cost_ref: "cost://bounded",
       shadow_ref: "shadow://pass",
       canary_ref: "canary://pass",
+      citadel_authority_ref: "authority://citadel/optimization/promotion",
       human_approval_ref: "approval://operator",
       provenance_ref: "provenance://candidate",
       rollback_ref: "rollback://candidate",
