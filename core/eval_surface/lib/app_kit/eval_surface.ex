@@ -3,6 +3,8 @@ defmodule AppKit.EvalSurface do
   DTO-only eval surface.
   """
 
+  alias OuterBrain.ContextABI.Failure
+
   @verdicts [:pass, :regress, :improve, :inconclusive]
   @raw_keys [
     :body,
@@ -101,6 +103,25 @@ defmodule AppKit.EvalSurface do
             guard_chain_ref: String.t(),
             decision_evidence_ref: String.t()
           }
+  end
+
+  defmodule FailureSummaryProjection do
+    @moduledoc "Product/operator-safe failure summary projection."
+    @enforce_keys [
+      :failure_ref,
+      :failure_family,
+      :owner,
+      :reason_code,
+      :product_summary,
+      :operator_summary,
+      :safe_action,
+      :retryable?,
+      :trace_ref,
+      :evidence_refs
+    ]
+    defstruct @enforce_keys
+
+    @type t :: %__MODULE__{}
   end
 
   @spec suite_author_request(map()) :: {:ok, EvalSuiteAuthorRequest.t()} | {:error, term()}
@@ -206,6 +227,44 @@ defmodule AppKit.EvalSurface do
     end
   end
 
+  @spec failure_projection(Failure.t() | map()) ::
+          {:ok, FailureSummaryProjection.t()} | {:error, term()}
+  def failure_projection(%Failure{} = failure) do
+    with {:ok, summary} <- Failure.summary(failure) do
+      failure_projection(summary)
+    end
+  end
+
+  def failure_projection(attrs) when is_map(attrs) do
+    with :ok <- reject_raw(attrs),
+         :ok <-
+           required_strings(attrs, [
+             :failure_ref,
+             :reason_code,
+             :product_summary,
+             :operator_summary,
+             :trace_ref
+           ]),
+         {:ok, family} <- failure_family(fetch(attrs, :failure_family)),
+         {:ok, owner} <- failure_owner(fetch(attrs, :owner)),
+         {:ok, evidence_refs} <- string_list(attrs, :evidence_refs, []),
+         {:ok, safe_action} <- safe_action(fetch(attrs, :safe_action)) do
+      {:ok,
+       %FailureSummaryProjection{
+         failure_ref: fetch!(attrs, :failure_ref),
+         failure_family: family,
+         owner: owner,
+         reason_code: fetch!(attrs, :reason_code),
+         product_summary: fetch!(attrs, :product_summary),
+         operator_summary: fetch!(attrs, :operator_summary),
+         safe_action: safe_action,
+         retryable?: fetch(attrs, :retryable?, false) == true,
+         trace_ref: fetch!(attrs, :trace_ref),
+         evidence_refs: evidence_refs
+       }}
+    end
+  end
+
   defp verdict(attrs) do
     value = fetch(attrs, :verdict)
     if value in @verdicts, do: {:ok, value}, else: {:error, :unknown_eval_verdict}
@@ -220,6 +279,38 @@ defmodule AppKit.EvalSurface do
       {:error, {:invalid_eval_surface_ref, field}}
     end
   end
+
+  defp failure_family(value) when is_atom(value) do
+    if value in Failure.families(), do: {:ok, value}, else: {:error, :unknown_failure_family}
+  end
+
+  defp failure_family(value) when is_binary(value) do
+    Enum.find(Failure.families(), &(Atom.to_string(&1) == value))
+    |> case do
+      nil -> {:error, :unknown_failure_family}
+      family -> {:ok, family}
+    end
+  end
+
+  defp failure_family(_value), do: {:error, :unknown_failure_family}
+
+  defp failure_owner(value) when is_atom(value) do
+    if value in Failure.owners(), do: {:ok, value}, else: {:error, :unknown_failure_owner}
+  end
+
+  defp failure_owner(value) when is_binary(value) do
+    Enum.find(Failure.owners(), &(Atom.to_string(&1) == value))
+    |> case do
+      nil -> {:error, :unknown_failure_owner}
+      owner -> {:ok, owner}
+    end
+  end
+
+  defp failure_owner(_value), do: {:error, :unknown_failure_owner}
+
+  defp safe_action(value) when is_atom(value), do: {:ok, value}
+  defp safe_action(value) when is_binary(value), do: {:ok, value}
+  defp safe_action(_value), do: {:error, :unknown_failure_safe_action}
 
   defp reject_raw(attrs) do
     case Enum.find(@raw_keys, &Map.has_key?(attrs, &1)) do
