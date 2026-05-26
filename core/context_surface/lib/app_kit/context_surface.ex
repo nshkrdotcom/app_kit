@@ -413,7 +413,13 @@ defmodule AppKit.ContextSurface do
 
   defp raw_key(value) when is_map(value) do
     Enum.find_value(value, fn {key, nested} ->
-      if key in @raw_keys, do: key, else: raw_key(nested)
+      key_string = key |> to_string() |> String.downcase()
+
+      cond do
+        key in @raw_keys -> key
+        String.starts_with?(key_string, "raw_") -> key
+        true -> raw_key(nested)
+      end
     end)
   end
 
@@ -465,8 +471,15 @@ defmodule AppKit.ContextSurface do
 
   defp sha256(attrs, field) do
     case fetch(attrs, field) do
-      "sha256:" <> hash when byte_size(hash) == 64 -> :ok
-      _value -> {:error, {:invalid_context_surface_hash, field}}
+      "sha256:" <> hash when byte_size(hash) == 64 ->
+        if String.match?(hash, ~r/^[0-9a-f]{64}$/) do
+          :ok
+        else
+          {:error, {:invalid_context_surface_hash, field}}
+        end
+
+      _value ->
+        {:error, {:invalid_context_surface_hash, field}}
     end
   end
 

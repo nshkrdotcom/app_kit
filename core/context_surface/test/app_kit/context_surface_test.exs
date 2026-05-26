@@ -62,6 +62,11 @@ defmodule AppKit.ContextSurfaceTest do
              model_attrs()
              |> Map.put(:payload_hash, "not-sha")
              |> ContextSurface.model_invocation_projection()
+
+    assert {:error, {:invalid_context_surface_hash, :payload_hash}} =
+             model_attrs()
+             |> Map.put(:payload_hash, "sha256:" <> String.duplicate("z", 64))
+             |> ContextSurface.model_invocation_projection()
   end
 
   defp compile_attrs do

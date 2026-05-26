@@ -313,11 +313,28 @@ defmodule AppKit.EvalSurface do
   defp safe_action(_value), do: {:error, :unknown_failure_safe_action}
 
   defp reject_raw(attrs) do
-    case Enum.find(@raw_keys, &Map.has_key?(attrs, &1)) do
+    case raw_key(attrs) do
       nil -> :ok
       key -> {:error, {:raw_eval_surface_payload_forbidden, key}}
     end
   end
+
+  defp raw_key(%_struct{} = value), do: value |> Map.from_struct() |> raw_key()
+
+  defp raw_key(value) when is_map(value) do
+    Enum.find_value(value, fn {key, nested} ->
+      key_string = key |> to_string() |> String.downcase()
+
+      cond do
+        key in @raw_keys -> key
+        String.starts_with?(key_string, "raw_") -> key
+        true -> raw_key(nested)
+      end
+    end)
+  end
+
+  defp raw_key(value) when is_list(value), do: Enum.find_value(value, &raw_key/1)
+  defp raw_key(_value), do: nil
 
   defp required_strings(attrs, fields) do
     case Enum.find(fields, &(not present_string?(fetch(attrs, &1)))) do

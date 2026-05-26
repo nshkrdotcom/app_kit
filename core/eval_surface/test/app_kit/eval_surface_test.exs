@@ -45,6 +45,23 @@ defmodule AppKit.EvalSurfaceTest do
              })
   end
 
+  test "rejects nested raw eval payloads" do
+    assert {:error, {:raw_eval_surface_payload_forbidden, "raw_prompt"}} =
+             EvalSurface.failure_projection(%{
+               failure_ref: "failure://eval/a",
+               failure_family: :eval,
+               owner: :mezzanine,
+               reason_code: "mezzanine.eval.failed.v1",
+               product_summary: "Evaluation did not approve this result.",
+               operator_summary: "Eval gate failed.",
+               safe_action: :review_eval_evidence,
+               retryable?: false,
+               trace_ref: "trace://eval",
+               evidence_refs: ["eval-case://a"],
+               nested: %{"raw_prompt" => "secret"}
+             })
+  end
+
   test "projects owner-local failures into product and operator safe summaries" do
     failure =
       Failure.new!(%{
