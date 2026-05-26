@@ -19,6 +19,8 @@ AppKit-owned changes must keep these proof obligations green:
 - schema registry verification for public DTOs;
 - product no-bypass scanner coverage for product-facing paths;
 - StackLab product fixture proof when a surface changes the product contract;
+- context/eval surface fixtures that reject malformed packet hashes and nested
+  raw prompt/provider/memory payloads;
 - no dynamic atom construction in runtime request parsing;
 - no Regex usage in code or tests touched by the change;
 - no unsupervised process starts.

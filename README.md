@@ -92,6 +92,13 @@ architecture from accidental direct imports of lower modules that would make a
 product depend on implementation details or bypass governance, leases,
 redaction, and tenant-scoped checks.
 
+The NSHKR cleanup pass tightened AppKit's product-surface validation. Context
+packet summaries now require canonical lowercase `sha256:<64 hex>` packet
+hashes, and evaluation projections reject nested `raw` prompt/provider/memory
+payloads. Product callers should carry context packet refs, eval verdict refs,
+trace refs, and safe summaries; AppKit should not be used as a tunnel for raw
+model inputs or private lower evidence.
+
 ## Current Delivered Surfaces
 
 The workspace currently exposes these product-facing families:

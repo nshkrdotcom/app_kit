@@ -17,6 +17,12 @@ prompts, execute models, or inspect raw trace payloads. AppKit returns bounded
 summary DTOs with context packet refs, authority refs, model invocation refs,
 eval refs, cost summaries, replay refs, and safe projection state.
 
+`core/context_surface` accepts only canonical lowercase `sha256:<64 hex>`
+packet hashes. `core/eval_surface` rejects raw prompt, provider payload,
+memory body, private tool output, credential, and `raw_*` fields recursively.
+This keeps the product ABI ref-only even when lower proofs include richer
+evidence.
+
 ## Local QC
 
 ```bash
