@@ -419,3 +419,15 @@ See `docs/temporal_operator_surface.md` for the AppKit boundary around Temporal-
 ## Persistence Documentation
 
 See `docs/persistence.md` for tiers, defaults, adapters, unsupported selections, config examples, restart claims, durability claims, debug sidecar behavior, redaction guarantees, migration or preflight behavior, and no-bypass scope when applicable.
+
+## Spatial Gateway
+
+AppKit exposes AppKit.SpatialGateway and AppKit.EvolutionSurface from bridges/chassis_bridge. The bridge resolves backends through AppKit.BackendConfig.resolve/4, keeps product DTOs free of raw diffs or private transcript bodies, and routes mutations through Chassis boundary/authority surfaces.
+
+## Evolution Surface
+
+The EvolutionSurface lists bounded failure batches, reports candidate status, records operator consent, and requires a lower-read lease before returning any raw diff reference.
+
+## Product-Safe DTO Rules
+
+Chassis-facing DTOs may carry refs, bounded summaries, state, scores, and receipt refs. They must not carry raw credentials, raw transcript bodies, raw provider logs, or unleased raw diffs.

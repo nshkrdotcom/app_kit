@@ -42,6 +42,7 @@ defmodule AppKit.Build.WorkspaceContract do
     "bridges/domain_bridge",
     "bridges/integration_bridge",
     "bridges/mezzanine_bridge",
+    "bridges/chassis_bridge",
     "bridges/projection_bridge",
     "examples/reference_host"
   ]
