@@ -422,11 +422,11 @@ See `docs/persistence.md` for tiers, defaults, adapters, unsupported selections,
 
 ## Spatial Gateway
 
-AppKit exposes AppKit.SpatialGateway and AppKit.EvolutionSurface from bridges/chassis_bridge. The bridge resolves backends through AppKit.BackendConfig.resolve/4, keeps product DTOs free of raw diffs or private transcript bodies, and routes mutations through Chassis boundary/authority surfaces.
+AppKit exposes `AppKit.SpatialGateway` from `bridges/chassis_bridge`. The bridge resolves backends through `AppKit.BackendConfig.resolve/4`, supports local Chassis registry reads, boundary readback dispatch, and a standalone `CHASSIS_DEPLOYMENT_PROFILE` fallback. Product repos should pass explicit backend options or backend stacks; the bridge does not mutate `:app_kit` runtime config.
 
 ## Evolution Surface
 
-The EvolutionSurface lists bounded failure batches, reports candidate status, records operator consent, and requires a lower-read lease before returning any raw diff reference.
+The EvolutionSurface module is present only as a future Chassis Evolution placeholder in this phase and fails closed with `{:error, {:not_implemented, AppKit.EvolutionSurface}}`.
 
 ## Product-Safe DTO Rules
 
