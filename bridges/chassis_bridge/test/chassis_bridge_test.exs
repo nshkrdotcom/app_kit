@@ -126,8 +126,16 @@ defmodule AppKit.ChassisBridgeTest do
     assert_receive :injected_backend_used
   end
 
-  test "future evolution surface placeholders fail closed" do
-    assert {:error, {:not_implemented, AppKit.EvolutionSurface}} =
-             AppKit.EvolutionSurface.get_evolution_status(%{}, %{})
+  test "legacy candidate diff entrypoint fails closed instead of exposing raw diffs" do
+    {:ok, context} =
+      AppKit.Core.RequestContext.new(%{
+        trace_id: "33333333333333333333333333333333",
+        actor_ref: %{id: "actor:operator:legacy", kind: :operator, roles: ["operator"]},
+        tenant_ref: %{id: "tenant:dev"},
+        installation_ref: %{id: "installation:dev", pack_slug: "extravaganza"}
+      })
+
+    assert {:error, %AppKit.Core.Evolution.SurfaceError{code: :raw_diff_not_exposed}} =
+             AppKit.EvolutionSurface.get_candidate_diff(context, "candidate:legacy")
   end
 end
