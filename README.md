@@ -422,12 +422,72 @@ See `docs/persistence.md` for tiers, defaults, adapters, unsupported selections,
 
 ## Spatial Gateway
 
-AppKit exposes `AppKit.SpatialGateway` from `bridges/chassis_bridge`. The bridge resolves backends through `AppKit.BackendConfig.resolve/4`, supports local Chassis registry reads, boundary readback dispatch, and a standalone `CHASSIS_DEPLOYMENT_PROFILE` fallback. Product repos should pass explicit backend options or backend stacks; the bridge does not mutate `:app_kit` runtime config.
+`AppKit.SpatialGateway` is the product/operator-safe Chassis spatial readback
+surface. It follows the same `AppKit.BackendConfig.resolve/4` backend
+selection pattern used by the rest of AppKit and exposes
+`get_active_profile/0`, `register_deployed_app/2`, `get_health_status/0`, and
+`trigger_rollback/1` through `Local`, `Boundary`, and `Standalone` backends.
+Products call this surface for active profile, deployed-app registration,
+health, and rollback readback instead of importing Chassis internals.
+
+The Chassis-side contract is documented in
+`../j/jido_brainstorm/nshkrdotcom/docs/20260529/chassis_impl/0516_appkit_spatial_gateway_spec.md`.
 
 ## Evolution Surface
 
-The EvolutionSurface module is present only as a future Chassis Evolution placeholder in this phase and fails closed with `{:error, {:not_implemented, AppKit.EvolutionSurface}}`.
+`AppKit.EvolutionSurface` is the product/operator-safe Chassis Evolution
+readback and consent surface. It uses the same backend resolution shape as the
+Spatial Gateway and exposes `list_evolution_batches/3`,
+`get_evolution_batch/3`, `get_evolution_status/3`,
+`get_candidate_summary/3`, `get_trial_summary/3`,
+`request_candidate_promotion/4`, `record_operator_consent/4`, and
+`get_swap_status/3`.
+
+Product code uses this surface for failure-batch lists, candidate detail,
+promotion request, consent recording, and swap status readback. It must not
+call Mezzanine workflows, Citadel authority internals, or Chassis evolution
+modules directly.
+
+The surface contract is documented in
+`../j/jido_brainstorm/nshkrdotcom/docs/20260529/chassis_impl/0529_chassis_evolution_appkit_and_agent_surface.md`.
 
 ## Product-Safe DTO Rules
 
-Chassis-facing DTOs may carry refs, bounded summaries, state, scores, and receipt refs. They must not carry raw credentials, raw transcript bodies, raw provider logs, or unleased raw diffs.
+Chassis-facing DTOs may include:
+
+- refs such as `failure_batch_ref`, `candidate_ref`, `evolution_ref`,
+  `trial_ref`, `swap_ref`, `operator_consent_ref`, `authority_ref`, and
+  `rollback_ref`
+- closed-set status atoms from Chassis evolution states
+- byte-capped bounded summaries
+- digest refs such as patch, candidate image, artifact, or release digests
+- score summaries, regression gates, confidence, and blocked reason atoms
+- receipt refs such as `FailureBatchRecord`, `ScoreMatrixRecord`, and
+  `SwapRecord`
+- trace refs and correlation ids
+- redaction posture values `:default`, `:strict`, or `:lower_read_lease`
+- operator action hints such as `:can_request_promotion`,
+  `:requires_lower_read_lease`, and blocked-promotion reasons
+
+Chassis-facing DTOs must not include:
+
+- raw private transcript text
+- raw prompt bodies
+- raw provider payloads
+- raw credentials
+- raw diffs by default
+- raw state volume paths unless represented as approved ref summaries
+
+The practical product rule is: no raw diffs by default; raw diffs require a
+Citadel lower-read lease and must still be represented through bounded,
+product-safe DTOs.
+
+## Capability Documents
+
+`mix chassis.capability.write` writes the Chassis capability document consumed
+by product and agent prompts. AppKit treats that generated document as a
+capability reference for operator and agent surfaces: it can describe available
+spatial, evolution, model, hardware, and tensor operations, but it is not
+authority by itself. Products still need AppKit request context, Citadel
+authority refs, and explicit operator consent where the Chassis contract
+requires them.
