@@ -4,111 +4,63 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapter do
   @behaviour AppKit.Core.Backends.AgentIntakeBackend
 
   alias AppKit.Bridges.MezzanineBridge.{
-    Common,
-    RuntimeAdapter,
-    RuntimeMapping,
-    RuntimeReadbackMapping
+    AgentIntakeMapping,
+    Errors,
+    Services
   }
 
-  alias AppKit.Core.AgentIntake.{AgentRunEventPage, RunOutcomeFuture}
   alias AppKit.Core.RequestContext
-  alias AppKit.Core.RuntimeReadback.CommandResult
 
   @impl true
   def start_agent_run(%RequestContext{} = context, request, opts) do
-    RuntimeAdapter.invoke_runtime_operation(
-      context,
-      RuntimeMapping.runtime_role_ref(request, opts),
-      RuntimeMapping.operation_role_ref(request, opts),
-      request,
-      opts
-    )
-  end
-
-  @impl true
-  def submit_agent_turn(%RequestContext{}, turn_submission, opts) do
-    if RuntimeMapping.runtime_available?(RuntimeMapping.agent_runtime(opts)) do
-      CommandResult.new(%{
-        command_ref: "command://#{turn_submission.idempotency_key}",
-        command_kind: :submit_turn,
-        accepted?: true,
-        coalesced?: false,
-        status: :accepted,
-        authority_state: :local_policy,
-        authority_refs: [],
-        workflow_effect_state: "pending_signal",
-        projection_state: :pending,
-        trace_id: nil,
-        correlation_id: turn_submission.run_ref,
-        idempotency_key: turn_submission.idempotency_key,
-        message: "Agent turn submission accepted through AppKit"
-      })
+    with {:ok, command} <- AgentIntakeMapping.accept_command(context, request, opts),
+         {:ok, acceptance} <- Services.agent_intake(opts).accept_run(command, opts),
+         {:ok, future} <- AgentIntakeMapping.future(acceptance, request) do
+      {:ok, future}
     else
-      {:error, :agent_turn_runtime_not_available}
+      {:error, reason} -> Errors.normalize(reason)
     end
   end
 
   @impl true
-  def cancel_agent_run(%RequestContext{}, run_ref, opts) do
-    if RuntimeMapping.runtime_available?(RuntimeMapping.agent_runtime(opts)) do
-      run_id = RuntimeReadbackMapping.readback_ref_id(run_ref)
+  def submit_agent_turn(%RequestContext{}, _turn_submission, _opts),
+    do: Errors.normalize(:agent_turn_submission_not_available)
 
-      CommandResult.new(%{
-        command_ref: "command://cancel/#{run_id}",
-        command_kind: :cancel,
-        accepted?: true,
-        coalesced?: false,
-        status: :accepted,
-        authority_state: :local_policy,
-        authority_refs: [],
-        workflow_effect_state: "pending_signal",
-        projection_state: :pending,
-        correlation_id: run_id,
-        idempotency_key: "agent-run:cancel:#{run_id}",
-        message: "Agent run cancellation accepted through AppKit"
-      })
+  @impl true
+  def cancel_agent_run(%RequestContext{}, _run_ref, _opts),
+    do: Errors.normalize(:agent_run_cancellation_not_available)
+
+  @impl true
+  def await_agent_outcome(%RequestContext{} = context, run_ref, request, opts) do
+    with {:ok, projection} <- Services.agent_intake(opts).fetch_projection(run_ref, opts),
+         :ok <- AgentIntakeMapping.authorize_projection(context, run_ref, projection),
+         {:ok, future} <- AgentIntakeMapping.future_from_projection(projection, request) do
+      {:ok, future}
     else
-      {:error, :agent_turn_runtime_not_available}
+      {:error, reason} -> Errors.normalize(reason)
     end
   end
 
   @impl true
-  def await_agent_outcome(%RequestContext{}, run_ref, request, opts) do
-    if RuntimeMapping.runtime_available?(RuntimeMapping.agent_runtime(opts)) do
-      run_id = RuntimeReadbackMapping.readback_ref_id(run_ref)
+  def catch_up_agent_events(%RequestContext{} = context, cursor, opts) do
+    limit = AgentIntakeMapping.event_limit(opts)
 
-      RunOutcomeFuture.new(%{
-        run_ref: run_id,
-        workflow_ref: Common.fetch_value(request || %{}, :workflow_ref),
-        accepted?: true,
-        command_ref: "command://await/#{run_id}",
-        correlation_id: Common.fetch_value(request || %{}, :correlation_id) || run_id,
-        polling_hint: %{checking?: false, poll_interval_ms: 1_000, staleness_ms: 0}
-      })
+    with :ok <- AgentIntakeMapping.authorize_cursor(context, cursor),
+         {:ok, lower_cursor} <- AgentIntakeMapping.lower_cursor(cursor),
+         {:ok, events} <-
+           Services.agent_intake(opts).list_events(
+             cursor.ledger_ref,
+             lower_cursor,
+             Keyword.put(opts, :limit, limit + 1)
+           ),
+         {:ok, page} <- AgentIntakeMapping.event_page(cursor, events, limit) do
+      {:ok, page}
     else
-      {:error, :agent_turn_runtime_not_available}
+      {:error, reason} -> Errors.normalize(reason)
     end
   end
 
   @impl true
-  def catch_up_agent_events(%RequestContext{}, cursor, opts) do
-    if RuntimeMapping.runtime_available?(RuntimeMapping.agent_runtime(opts)) do
-      AgentRunEventPage.new(%{
-        cursor: cursor,
-        events: [],
-        has_more?: false
-      })
-    else
-      {:error, :agent_turn_runtime_not_available}
-    end
-  end
-
-  @impl true
-  def list_pending_interactions(%RequestContext{}, _request, opts) do
-    if RuntimeMapping.runtime_available?(RuntimeMapping.agent_runtime(opts)) do
-      {:ok, []}
-    else
-      {:error, :agent_turn_runtime_not_available}
-    end
-  end
+  def list_pending_interactions(%RequestContext{}, _request, _opts),
+    do: Errors.normalize(:agent_pending_interactions_not_available)
 end

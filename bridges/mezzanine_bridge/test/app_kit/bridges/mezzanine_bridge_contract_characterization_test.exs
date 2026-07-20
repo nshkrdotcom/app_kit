@@ -16,7 +16,7 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
   }
 
   alias AppKit.Core.AgentIntake.{RunOutcomeFuture, TurnSubmission}
-  alias AppKit.Core.RuntimeReadback.{CommandResult, RuntimeStateSnapshot}
+  alias AppKit.Core.RuntimeReadback.RuntimeStateSnapshot
 
   alias AppKit.Core.{
     ActionResult,
@@ -169,7 +169,7 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
     %{
       behaviour: AppKit.Core.Backends.AgentIntakeBackend,
       target_module: "AppKit.Bridges.MezzanineBridge.AgentIntakeAdapter",
-      service_options: [:agent_loop_runtime, :runtime_adapter],
+      service_options: [:agent_intake_service],
       callbacks: [
         start_agent_run: 3,
         submit_agent_turn: 3,
@@ -726,8 +726,25 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
     end
   end
 
-  defmodule AgentRuntime do
-    def run(_request), do: :ok
+  defmodule AgentIntakeService do
+    def accept_run(command, opts) do
+      send(self(), {:agent_intake_service_called, :accept_run, command, opts})
+
+      Mezzanine.Runs.Acceptance.new(%{
+        command_ref: command.command_ref,
+        run_ref: command.run_ref,
+        turn_ref: command.first_turn.turn_ref,
+        event_ref: "event://mezzanine/characterization/1",
+        workflow_outbox_ref: "outbox://mezzanine/characterization/1",
+        cursor: %{
+          run_ref: command.run_ref,
+          last_event_ref: "event://mezzanine/characterization/1",
+          sequence: 1
+        },
+        run_revision: 1,
+        state: "accepted"
+      })
+    end
   end
 
   test "documents the extraction contract for every current bridge behaviour" do
@@ -968,20 +985,26 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
 
     request = agent_run_request()
 
-    assert {:ok, %RunOutcomeFuture{run_ref: "run://agent-1", workflow_ref: "workflow://agent-1"}} =
+    intake_opts =
+      Keyword.merge(opts,
+        agent_intake_service: AgentIntakeService,
+        program_id: "22222222-2222-4222-8222-222222222222",
+        work_class_id: "33333333-3333-4333-8333-333333333333"
+      )
+
+    assert {:ok, %RunOutcomeFuture{accepted?: true} = future} =
              MezzanineBridge.invoke_runtime_operation(
                context,
                :runtime_role,
                :operation_role,
                request,
-               opts
+               intake_opts
              )
 
-    assert_received {:runtime_gateway_service_called, :invoke_runtime_operation, "tenant-1",
-                     :runtime_role, :operation_role, spec_attrs, %{driver: "fixture"}, ^opts}
-
-    assert spec_attrs.subject_ref == "subject-1"
-    assert spec_attrs.runtime_profile_ref == :runtime_default
+    assert_received {:agent_intake_service_called, :accept_run, accepted_command, ^intake_opts}
+    assert future.run_ref == accepted_command.run_ref
+    assert accepted_command.subject_ref == "subject-1"
+    assert accepted_command.runtime_profile_ref == "runtime-profile://app-kit/runtime-default"
 
     assert {:ok, %{status: :updated, tenant_ref: "tenant-1", profile_ref: "runtime://default"}} =
              RuntimeAdapter.apply_runtime_profile(
@@ -1176,9 +1199,8 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
     assert Keyword.fetch!(projection_opts, :runtime_projection?)
   end
 
-  test "agent intake adapter owns agent command delegation behind the facade" do
+  test "agent intake adapter fails closed for commands not owned by the acceptance contract" do
     context = request_context()
-    opts = [agent_loop_runtime: AgentRuntime]
 
     {:ok, turn_submission} =
       TurnSubmission.new(%{
@@ -1189,11 +1211,19 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
         payload_ref: "payload://turn-1"
       })
 
-    assert {:ok, %CommandResult{command_kind: :submit_turn, correlation_id: "run://agent-1"}} =
-             AgentIntakeAdapter.submit_agent_turn(context, turn_submission, opts)
+    assert {:error,
+            %SurfaceError{
+              code: "agent_turn_submission_not_available",
+              kind: :boundary,
+              retryable: false
+            }} = AgentIntakeAdapter.submit_agent_turn(context, turn_submission, [])
 
-    assert {:ok, %CommandResult{command_kind: :cancel, correlation_id: "run://agent-1"}} =
-             MezzanineBridge.cancel_agent_run(context, "run://agent-1", opts)
+    assert {:error,
+            %SurfaceError{
+              code: "agent_run_cancellation_not_available",
+              kind: :boundary,
+              retryable: false
+            }} = MezzanineBridge.cancel_agent_run(context, "run://agent-1", [])
   end
 
   defp request_context do

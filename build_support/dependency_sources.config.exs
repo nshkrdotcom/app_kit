@@ -44,6 +44,17 @@
       default_order: [:path, :github, :hex],
       publish_order: [:hex]
     },
+    mezzanine_workflow_runtime: %{
+      path: "../mezzanine/core/workflow_runtime",
+      hex: "~> 0.1.0",
+      github: %{
+        repo: "nshkrdotcom/mezzanine",
+        subdir: "core/workflow_runtime",
+        branch: "main"
+      },
+      default_order: [:path, :github, :hex],
+      publish_order: [:hex]
+    },
     mezzanine_source_engine: %{
       path: "../mezzanine/core/source_engine",
       hex: "~> 0.1.0",

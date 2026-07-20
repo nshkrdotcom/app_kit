@@ -9,9 +9,14 @@ defmodule AppKit.Bridges.MezzanineBridge.Errors do
     :unauthorized_lower_read
   ]
   @not_found_reasons [:bridge_not_found, :not_found, :pack_registration_not_found]
-  @conflict_reasons [:installation_pack_conflict, :review_gate_not_satisfied]
-  @transient_reasons [:timeout, :temporarily_unavailable]
-  @validation_reasons [:stale_proof_token]
+  @conflict_reasons [
+    :handoff_state_conflict,
+    :idempotency_conflict,
+    :installation_pack_conflict,
+    :review_gate_not_satisfied
+  ]
+  @transient_reasons [:agent_run_owner_unavailable, :timeout, :temporarily_unavailable]
+  @validation_reasons [:cursor_run_mismatch, :non_contiguous_event, :stale_proof_token]
   @validation_reason_prefixes ["missing_", "invalid_", "unsupported_"]
 
   def normalize(%SurfaceError{} = error), do: {:error, error}

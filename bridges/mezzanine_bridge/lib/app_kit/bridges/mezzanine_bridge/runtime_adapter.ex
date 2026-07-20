@@ -4,15 +4,15 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeAdapter do
   @behaviour AppKit.Core.Backends.RuntimeBackend
 
   alias AppKit.Bridges.MezzanineBridge.{
+    AgentIntakeAdapter,
     Common,
     Errors,
     RuntimeMapping,
-    RuntimeProjectionStore,
     Services,
     WorkContext
   }
 
-  alias AppKit.Core.AgentIntake.{AgentRunRequest, RunOutcomeFuture}
+  alias AppKit.Core.AgentIntake.AgentRunRequest
   alias AppKit.Core.RequestContext
   alias AppKit.Core.RuntimeSurface.{LiveEffectReceipt, RuntimeLogPage, RuntimeStatusSnapshot}
 
@@ -26,33 +26,10 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeAdapter do
       when (is_atom(runtime_role_ref) or is_binary(runtime_role_ref)) and
              (is_atom(operation_role_ref) or is_binary(operation_role_ref)) and is_map(request) and
              is_list(opts) do
-    with {:ok, agent_request} <- AgentRunRequest.new(request),
-         {:ok, spec_attrs} <- RuntimeMapping.agent_run_spec_attrs(context, agent_request),
-         {:ok, projection} <-
-           Services.runtime_gateway(opts).invoke_runtime_operation(
-             context,
-             runtime_role_ref,
-             operation_role_ref,
-             spec_attrs,
-             RuntimeMapping.runtime_binding(agent_request, opts),
-             opts
-           ),
-         run_ref when is_binary(run_ref) <- Common.fetch_value(projection, :run_ref),
-         :ok <- RuntimeProjectionStore.put(context, run_ref, projection, opts),
-         {:ok, future} <-
-           RunOutcomeFuture.new(%{
-             run_ref: run_ref,
-             workflow_ref: Common.fetch_value(projection, :workflow_ref),
-             accepted?: true,
-             command_ref: "command://#{agent_request.idempotency_key}",
-             correlation_id: agent_request.correlation_id,
-             governed_effect_refs: RuntimeMapping.governed_effect_refs(projection, agent_request),
-             polling_hint: %{checking?: false, poll_interval_ms: 1_000, staleness_ms: 0}
-           }) do
-      {:ok, future}
+    with {:ok, agent_request} <- AgentRunRequest.new(request) do
+      AgentIntakeAdapter.start_agent_run(context, agent_request, opts)
     else
       {:error, reason} -> Errors.normalize(reason)
-      _other -> Errors.normalize(:runtime_operation_not_configured)
     end
   end
 

@@ -10,6 +10,9 @@ defmodule AppKit.Bridges.MezzanineBridge.Services do
   def work_control(opts),
     do: Keyword.get(opts, :work_control_service, Mezzanine.AppKitBridge.WorkControlService)
 
+  def agent_intake(opts),
+    do: Keyword.get(opts, :agent_intake_service, Mezzanine.AppKitBridge.AgentIntakeService)
+
   def review_query(opts),
     do: Keyword.get(opts, :review_query_service, Mezzanine.AppKitBridge.ReviewQueryService)
 

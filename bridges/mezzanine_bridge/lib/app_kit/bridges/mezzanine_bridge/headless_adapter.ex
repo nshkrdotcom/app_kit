@@ -4,6 +4,7 @@ defmodule AppKit.Bridges.MezzanineBridge.HeadlessAdapter do
   @behaviour AppKit.Core.Backends.HeadlessBackend
 
   alias AppKit.Bridges.MezzanineBridge.{
+    AgentIntakeMapping,
     Errors,
     RuntimeReadbackMapping,
     Services,
@@ -53,9 +54,18 @@ defmodule AppKit.Bridges.MezzanineBridge.HeadlessAdapter do
   end
 
   @impl true
-  def runtime_run_detail(%RequestContext{} = context, run_ref, request, opts) do
+  def runtime_run_detail(%RequestContext{} = context, run_ref, _request, opts) do
     run_id = RuntimeReadbackMapping.readback_ref_id(run_ref)
-    RuntimeReadbackMapping.runtime_run_detail(context, run_id, request, opts, DateTime.utc_now())
+    service = Services.agent_intake(opts)
+
+    with {:ok, projection} <- service.fetch_projection(run_id, opts),
+         :ok <- AgentIntakeMapping.authorize_projection(context, run_id, projection),
+         {:ok, events} <- service.list_events(run_id, nil, Keyword.put(opts, :limit, 500)),
+         {:ok, detail} <- AgentIntakeMapping.run_detail(projection, events) do
+      {:ok, detail}
+    else
+      {:error, reason} -> Errors.normalize(reason)
+    end
   end
 
   @impl true

@@ -66,6 +66,7 @@ defmodule AppKitMezzanineBridge.MixProject do
       DependencySources.dep(:mezzanine_execution_engine, @repo_root),
       DependencySources.dep(:mezzanine_leasing, @repo_root),
       DependencySources.dep(:mezzanine_m1_m2_runtime, @repo_root),
+      DependencySources.dep(:mezzanine_workflow_runtime, @repo_root),
       DependencySources.dep(:mezzanine_operator_engine, @repo_root),
       DependencySources.dep(:mezzanine_projection_engine, @repo_root),
       DependencySources.dep(:mezzanine_source_engine, @repo_root),
@@ -83,7 +84,7 @@ defmodule AppKitMezzanineBridge.MixProject do
        runtime: false,
        override: true},
       {:jido_integration_v2_direct_runtime,
-       path: Path.expand("../jido_integration/core/direct_runtime", @repo_root),
+       path: sibling_path("jido_integration/core/direct_runtime"),
        only: :test,
        runtime: false,
        override: true},
@@ -103,5 +104,12 @@ defmodule AppKitMezzanineBridge.MixProject do
     else
       DependencySources.dep(:execution_plane, @repo_root, override: true)
     end
+  end
+
+  defp sibling_path(relative_path) do
+    direct = Path.expand("../#{relative_path}", @repo_root)
+    workspace = Path.expand("../../#{relative_path}", @repo_root)
+
+    if File.exists?(direct), do: direct, else: workspace
   end
 end
