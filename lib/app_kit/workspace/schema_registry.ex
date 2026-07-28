@@ -329,7 +329,17 @@ defmodule AppKit.Workspace.SchemaRegistry do
             "review_ref",
             "receipt_ref",
             "owner_execution_ref",
-            "row_version"
+            "row_version",
+            "pinned_tool_manifest",
+            "reviewed_operation",
+            "manifest_ref",
+            "manifest_hash",
+            "action_ids",
+            "operation",
+            "workspace_ref",
+            "file_ref",
+            "relative_path",
+            "content_digest"
           ],
       optional_fields: ["ambiguity_state", "continuation_ref", "cleanup_ref"],
       generator_command: "manual AppKit effect surface DTO package",

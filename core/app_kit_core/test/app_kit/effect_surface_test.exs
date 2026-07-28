@@ -49,6 +49,18 @@ defmodule AppKit.EffectSurfaceTest do
         owner_execution_ref: "effect-execution://00000000-0000-0000-0000-000000000004",
         status: status,
         row_version: row_version,
+        pinned_tool_manifest: %{
+          manifest_ref: "manifest://codex/p04/1",
+          manifest_hash: "sha256:" <> String.duplicate("a", 64),
+          action_ids: ["create_or_replace_one_named_text_file"]
+        },
+        reviewed_operation: %{
+          operation: "create_or_replace",
+          workspace_ref: "workspace://p04/1",
+          file_ref: "file://p04/RESULT.txt",
+          relative_path: "RESULT.txt",
+          content_digest: "sha256:" <> String.duplicate("b", 64)
+        },
         review: %{
           review_ref: "review://mezzanine/p04/1",
           review_unit_id: "00000000-0000-0000-0000-000000000003",

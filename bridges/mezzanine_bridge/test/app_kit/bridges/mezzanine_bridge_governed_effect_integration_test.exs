@@ -53,6 +53,15 @@ defmodule AppKit.Bridges.MezzanineBridgeGovernedEffectIntegrationTest do
     assert opened.decision_ref == proposal.decision_ref
     assert opened.grant_ref == proposal.grant_ref
 
+    assert opened.pinned_tool_manifest["manifest_hash"] ==
+             proposal.pinned_tool_manifest.manifest_hash
+
+    assert opened.reviewed_operation["relative_path"] ==
+             proposal.reviewed_operation.relative_path
+
+    assert opened.reviewed_operation["content_digest"] ==
+             proposal.reviewed_operation.content_digest
+
     assert {:error, %{code: "bridge_error"}} =
              EffectSurface.begin_dispatch(
                context,
@@ -137,7 +146,33 @@ defmodule AppKit.Bridges.MezzanineBridgeGovernedEffectIntegrationTest do
 
     assert by_owner_ref == by_idempotency
     assert by_owner_ref.status == "ambiguous"
-    refute contains_struct?(GovernedEffectDTO.dump(by_owner_ref))
+
+    safe_dump = GovernedEffectDTO.dump(by_owner_ref)
+    refute contains_struct?(safe_dump)
+    refute Map.has_key?(safe_dump["reviewed_operation"], "content")
+    refute Map.has_key?(safe_dump["reviewed_operation"], "workspace_root")
+
+    execution_id =
+      String.replace_prefix(opened.owner_execution_ref, "effect-execution://", "")
+
+    Ecto.Adapters.SQL.query!(
+      Mezzanine.Execution.Repo,
+      """
+      UPDATE execution_records
+      SET dispatch_envelope =
+        jsonb_set(
+          dispatch_envelope,
+          '{reviewed_operation,content}',
+          to_jsonb('smuggled file body'::text),
+          true
+        )
+      WHERE id = $1::uuid
+      """,
+      [Ecto.UUID.dump!(execution_id)]
+    )
+
+    assert {:error, :invalid_governed_effect_dto} =
+             EffectSurface.get_effect(context, opened.owner_execution_ref)
   end
 
   test "AppKit rejects secrets and blind effect retry before a durable command" do

@@ -61,6 +61,30 @@ defmodule AppKit.Core.GovernedEffectDtosTest do
              |> GovernedEffectProposalDTO.new()
   end
 
+  test "governed projection exposes only the exact reviewed manifest and operation" do
+    assert {:ok, %GovernedEffectDTO{} = dto} = GovernedEffectDTO.new(effect_attrs())
+
+    assert dto.pinned_tool_manifest["manifest_hash"] ==
+             "sha256:" <> String.duplicate("a", 64)
+
+    assert dto.reviewed_operation["relative_path"] == "RESULT.txt"
+    assert dto.reviewed_operation["content_digest"] == "sha256:" <> String.duplicate("b", 64)
+
+    dump = GovernedEffectDTO.dump(dto)
+    refute Map.has_key?(dump["reviewed_operation"], "content")
+    refute Map.has_key?(dump["reviewed_operation"], "workspace_root")
+
+    assert {:error, :invalid_governed_effect_dto} =
+             effect_attrs()
+             |> put_in([:reviewed_operation, :content], "smuggled file body")
+             |> GovernedEffectDTO.new()
+
+    assert {:error, :invalid_governed_effect_dto} =
+             effect_attrs()
+             |> put_in([:pinned_tool_manifest, :api_key], "smuggled credential")
+             |> GovernedEffectDTO.new()
+  end
+
   test "ambiguity is reconciliation-only and cannot encode a blind effect retry" do
     assert {:ok, %EffectReceiptCommandDTO{}} =
              EffectReceiptCommandDTO.new(ambiguous_receipt_command_attrs())
@@ -218,6 +242,8 @@ defmodule AppKit.Core.GovernedEffectDtosTest do
       runtime_execution_ref: "execution://p04/1",
       external_ref: "codex-thread://p04/1",
       result_artifact_ref: "artifact://p04/1",
+      pinned_tool_manifest: proposal_attrs().pinned_tool_manifest,
+      reviewed_operation: proposal_attrs().reviewed_operation,
       review: review_attrs(),
       receipt: receipt_attrs(),
       continuation: continuation_attrs()

@@ -33,6 +33,17 @@ defmodule AppKit.Bridges.MezzanineBridgeEffectAdapterTest do
       {:ok, result("ambiguous", 4, attrs)}
     end
 
+    def fetch("effect-execution://smuggled") do
+      smuggled =
+        result("authorized", 1)
+        |> put_in(
+          [:execution, :dispatch_envelope, "reviewed_operation", "content"],
+          "smuggled file body"
+        )
+
+      {:ok, smuggled}
+    end
+
     def fetch(_owner_ref), do: {:ok, result("authorized", 1)}
     def fetch_by_idempotency(_installation_id, _key), do: {:ok, result("authorized", 1)}
 
@@ -62,6 +73,20 @@ defmodule AppKit.Bridges.MezzanineBridgeEffectAdapterTest do
           tenant_id: "tenant-p04",
           intent_snapshot: %{
             "review_unit_id" => "00000000-0000-0000-0000-000000000003"
+          },
+          dispatch_envelope: %{
+            "pinned_tool_manifest" => %{
+              "manifest_ref" => "manifest://codex/p04/1",
+              "manifest_hash" => "sha256:" <> String.duplicate("a", 64),
+              "action_ids" => ["create_or_replace_one_named_text_file"]
+            },
+            "reviewed_operation" => %{
+              "operation" => "create_or_replace",
+              "workspace_ref" => "workspace://p04/1",
+              "file_ref" => "file://p04/RESULT.txt",
+              "relative_path" => "RESULT.txt",
+              "content_digest" => "sha256:" <> String.duplicate("b", 64)
+            }
           },
           lower_receipt:
             if(status == "ambiguous",
@@ -115,6 +140,12 @@ defmodule AppKit.Bridges.MezzanineBridgeEffectAdapterTest do
              "effect-execution://00000000-0000-0000-0000-000000000004"
 
     assert dto.review.status == "accepted"
+
+    assert dto.pinned_tool_manifest["action_ids"] == [
+             "create_or_replace_one_named_text_file"
+           ]
+
+    assert dto.reviewed_operation["relative_path"] == "RESULT.txt"
 
     assert_receive {:open, command}
     assert command.tenant_id == "tenant-p04"
@@ -176,6 +207,11 @@ defmodule AppKit.Bridges.MezzanineBridgeEffectAdapterTest do
 
     assert is_map(dto.review)
     refute Map.has_key?(Map.from_struct(dto), :workspace_root)
+  end
+
+  test "rejects material smuggled into a persisted dispatch envelope" do
+    assert {:error, :invalid_governed_effect_dto} =
+             EffectAdapter.get_effect(context!(), "effect-execution://smuggled", opts())
   end
 
   defp opts do

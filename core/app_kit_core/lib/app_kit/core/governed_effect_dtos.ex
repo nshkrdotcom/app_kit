@@ -120,6 +120,42 @@ defmodule AppKit.Core.GovernedEffectDTOSupport do
 
   def relative_file?(_path), do: false
 
+  def validate_pinned_tool_manifest(value) do
+    with {:ok, manifest} <- normalize(value),
+         true <- only_keys?(manifest, [:manifest_ref, :manifest_hash, :action_ids]),
+         :ok <- reject_forbidden_material(manifest),
+         true <- serializable?(manifest),
+         manifest <- stringify_keys(manifest),
+         true <- safe_ref?(manifest["manifest_ref"]),
+         true <- sha256?(manifest["manifest_hash"]),
+         true <- manifest["action_ids"] == ["create_or_replace_one_named_text_file"] do
+      {:ok, manifest}
+    else
+      _other -> {:error, :invalid_pinned_tool_manifest}
+    end
+  end
+
+  def validate_reviewed_operation(value) do
+    with {:ok, operation} <- normalize(value),
+         true <-
+           only_keys?(
+             operation,
+             [:operation, :workspace_ref, :file_ref, :relative_path, :content_digest]
+           ),
+         :ok <- reject_forbidden_material(operation),
+         true <- serializable?(operation),
+         operation <- stringify_keys(operation),
+         true <- operation["operation"] == "create_or_replace",
+         true <- safe_ref?(operation["workspace_ref"]),
+         true <- safe_ref?(operation["file_ref"]),
+         true <- relative_file?(operation["relative_path"]),
+         true <- sha256?(operation["content_digest"]) do
+      {:ok, operation}
+    else
+      _other -> {:error, :invalid_reviewed_operation}
+    end
+  end
+
   def dump(%_{} = dto) do
     dto
     |> Map.from_struct()
@@ -217,8 +253,12 @@ defmodule AppKit.Core.GovernedEffectProposalDTO do
          {:ok, attempt_ref} <- Support.required_string(attrs, :attempt_ref),
          {:ok, capability_id} <- Support.required_string(attrs, :capability_id),
          {:ok, effect_mode} <- Support.required_string(attrs, :effect_mode),
-         manifest when is_map(manifest) <- Support.optional_map(attrs, :pinned_tool_manifest),
-         operation when is_map(operation) <- Support.optional_map(attrs, :reviewed_operation) do
+         {:ok, manifest} <-
+           attrs
+           |> Support.value(:pinned_tool_manifest)
+           |> Support.validate_pinned_tool_manifest(),
+         {:ok, operation} <-
+           attrs |> Support.value(:reviewed_operation) |> Support.validate_reviewed_operation() do
       validate(%__MODULE__{
         effect_ref: effect_ref,
         run_ref: run_ref,
@@ -260,38 +300,13 @@ defmodule AppKit.Core.GovernedEffectProposalDTO do
     with true <- Enum.all?(refs, &Support.safe_ref?/1),
          true <- proposal.capability_id == "codex.session.turn",
          true <- proposal.effect_mode == "managed_account_local_effect",
-         :ok <- validate_manifest(proposal.pinned_tool_manifest),
-         :ok <- validate_operation(proposal.reviewed_operation) do
+         {:ok, _manifest} <-
+           Support.validate_pinned_tool_manifest(proposal.pinned_tool_manifest),
+         {:ok, _operation} <-
+           Support.validate_reviewed_operation(proposal.reviewed_operation) do
       {:ok, proposal}
     else
       _other -> {:error, :invalid_governed_effect_proposal}
-    end
-  end
-
-  defp validate_manifest(manifest) do
-    if Support.only_keys?(manifest, [:manifest_ref, :manifest_hash, :action_ids]) and
-         Support.safe_ref?(manifest["manifest_ref"]) and
-         Support.sha256?(manifest["manifest_hash"]) and
-         manifest["action_ids"] == ["create_or_replace_one_named_text_file"] do
-      :ok
-    else
-      {:error, :invalid_pinned_tool_manifest}
-    end
-  end
-
-  defp validate_operation(operation) do
-    if Support.only_keys?(
-         operation,
-         [:operation, :workspace_ref, :file_ref, :relative_path, :content_digest]
-       ) and
-         operation["operation"] == "create_or_replace" and
-         Support.safe_ref?(operation["workspace_ref"]) and
-         Support.safe_ref?(operation["file_ref"]) and
-         Support.relative_file?(operation["relative_path"]) and
-         Support.sha256?(operation["content_digest"]) do
-      :ok
-    else
-      {:error, :invalid_reviewed_operation}
     end
   end
 end
@@ -583,6 +598,8 @@ defmodule AppKit.Core.GovernedEffectDTO do
     :runtime_execution_ref,
     :external_ref,
     :result_artifact_ref,
+    :pinned_tool_manifest,
+    :reviewed_operation,
     :review,
     :receipt,
     :ambiguity,
@@ -600,6 +617,8 @@ defmodule AppKit.Core.GovernedEffectDTO do
     :owner_execution_ref,
     :status,
     :row_version,
+    :pinned_tool_manifest,
+    :reviewed_operation,
     :review
   ]
   defstruct @fields
@@ -624,6 +643,12 @@ defmodule AppKit.Core.GovernedEffectDTO do
          {:ok, owner_execution_ref} <- Support.required_string(attrs, :owner_execution_ref),
          {:ok, status} <- Support.required_string(attrs, :status),
          {:ok, row_version} <- Support.required_positive_integer(attrs, :row_version),
+         {:ok, pinned_tool_manifest} <-
+           attrs
+           |> Support.value(:pinned_tool_manifest)
+           |> Support.validate_pinned_tool_manifest(),
+         {:ok, reviewed_operation} <-
+           attrs |> Support.value(:reviewed_operation) |> Support.validate_reviewed_operation(),
          {:ok, review} <- nested(attrs, :review, EffectReviewDTO, true),
          {:ok, receipt} <- nested(attrs, :receipt, EffectReceiptDTO),
          {:ok, ambiguity} <- nested(attrs, :ambiguity, EffectAmbiguityDTO),
@@ -645,6 +670,8 @@ defmodule AppKit.Core.GovernedEffectDTO do
          runtime_execution_ref: Support.string(attrs, :runtime_execution_ref),
          external_ref: Support.string(attrs, :external_ref),
          result_artifact_ref: Support.string(attrs, :result_artifact_ref),
+         pinned_tool_manifest: pinned_tool_manifest,
+         reviewed_operation: reviewed_operation,
          review: review,
          receipt: receipt,
          ambiguity: ambiguity,

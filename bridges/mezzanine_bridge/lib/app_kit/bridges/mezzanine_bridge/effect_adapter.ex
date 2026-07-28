@@ -204,8 +204,9 @@ defmodule AppKit.Bridges.MezzanineBridge.EffectAdapter do
     record = value(result, :effect_record)
     execution = value(result, :execution)
     continuation = value(result, :continuation)
+    dispatch_envelope = value(execution, :dispatch_envelope)
 
-    with true <- is_map(record) and is_map(execution),
+    with true <- is_map(record) and is_map(execution) and is_map(dispatch_envelope),
          {:ok, review} <- review_dto(record, execution, opts),
          {:ok, receipt} <- receipt_dto(record, execution),
          {:ok, continuation} <- continuation_dto(continuation, execution, opts),
@@ -226,6 +227,8 @@ defmodule AppKit.Bridges.MezzanineBridge.EffectAdapter do
         runtime_execution_ref: value(record, :execution_ref),
         external_ref: value(record, :external_ref),
         result_artifact_ref: value(record, :result_artifact_ref),
+        pinned_tool_manifest: value(dispatch_envelope, :pinned_tool_manifest),
+        reviewed_operation: value(dispatch_envelope, :reviewed_operation),
         review: review,
         receipt: receipt,
         ambiguity: ambiguity,
