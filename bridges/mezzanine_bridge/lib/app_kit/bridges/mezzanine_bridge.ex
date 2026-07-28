@@ -482,22 +482,32 @@ defmodule AppKit.Bridges.MezzanineBridge do
   end
 
   @impl AppKit.EffectSurface
-  def propose_effect(%RequestContext{} = context, effect_params, opts) do
-    EffectAdapter.propose_effect(context, effect_params, opts)
+  def propose_effect(%RequestContext{} = context, proposal, opts) do
+    EffectAdapter.propose_effect(context, proposal, opts)
   end
 
   @impl AppKit.EffectSurface
-  def get_effect(%RequestContext{} = context, effect_ref, opts) do
-    EffectAdapter.get_effect(context, effect_ref, opts)
+  def begin_dispatch(%RequestContext{} = context, owner_execution_ref, command, opts) do
+    EffectAdapter.begin_dispatch(context, owner_execution_ref, command, opts)
   end
 
   @impl AppKit.EffectSurface
-  def list_effects(%RequestContext{} = context, run_ref, opts) do
-    EffectAdapter.list_effects(context, run_ref, opts)
+  def record_accepted(%RequestContext{} = context, owner_execution_ref, acceptance, opts) do
+    EffectAdapter.record_accepted(context, owner_execution_ref, acceptance, opts)
   end
 
   @impl AppKit.EffectSurface
-  def get_effect_timeline(%RequestContext{} = context, effect_ref, opts) do
-    EffectAdapter.get_effect_timeline(context, effect_ref, opts)
+  def record_receipt(%RequestContext{} = context, owner_execution_ref, receipt, opts) do
+    EffectAdapter.record_receipt(context, owner_execution_ref, receipt, opts)
+  end
+
+  @impl AppKit.EffectSurface
+  def get_effect(%RequestContext{} = context, owner_execution_ref, opts) do
+    EffectAdapter.get_effect(context, owner_execution_ref, opts)
+  end
+
+  @impl AppKit.EffectSurface
+  def get_effect_by_idempotency(%RequestContext{} = context, idempotency_key, opts) do
+    EffectAdapter.get_effect_by_idempotency(context, idempotency_key, opts)
   end
 end

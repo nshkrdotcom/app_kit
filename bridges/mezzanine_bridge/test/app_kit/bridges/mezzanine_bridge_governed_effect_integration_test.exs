@@ -1,335 +1,338 @@
 defmodule AppKit.Bridges.MezzanineBridgeGovernedEffectIntegrationTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
-  alias AITrace.GovernedEffectEvidence
+  alias AppKit.Core.{GovernedEffectDTO, RequestContext}
   alias AppKit.Bridges.MezzanineBridge
-  alias AppKit.Core.{EffectTimelineDTO, GovernedEffectDTO, RequestContext}
   alias AppKit.EffectSurface
-  alias Citadel.AuthorityContract.AuthorityDecision.V1, as: AuthorityDecisionV1
-  alias Citadel.AuthorityContract.GovernedEffectAuthority
-  alias GroundPlane.BoundaryProtocol.CommandEnvelope
-  alias Jido.Integration.Lanes.DiagnosticLane
-  alias Jido.Integration.V2.{Capability, DirectRuntime, GovernedLowerEnvelope, Manifest}
-  alias Mezzanine.Core.GovernedEffects.Coordinator
-  alias Mezzanine.Core.GovernedEffects.Coordinator.Run
-  alias Mezzanine.Core.GovernedEffects.Projection
+  alias Mezzanine.Control.ControlSession
+  alias Mezzanine.Programs.{PolicyBundle, Program}
+  alias Mezzanine.Review.ReviewUnit
+  alias Mezzanine.Runs.{Run, RunSeries}
+  alias Mezzanine.Work.{WorkClass, WorkObject}
+
+  @repos [
+    Mezzanine.Audit.Repo,
+    Mezzanine.Execution.Repo,
+    Mezzanine.Decisions.Repo,
+    Mezzanine.OpsDomain.Repo
+  ]
 
   setup_all do
-    Application.ensure_all_started(:aitrace)
+    Enum.each(
+      [
+        :mezzanine_audit_engine,
+        :mezzanine_execution_engine,
+        :mezzanine_decision_engine,
+        :mezzanine_ops_domain
+      ],
+      fn app ->
+        {:ok, _started} = Application.ensure_all_started(app)
+      end
+    )
+  end
+
+  setup do
+    Enum.each(@repos, fn repo ->
+      :ok = Ecto.Adapters.SQL.Sandbox.checkout(repo)
+      Ecto.Adapters.SQL.Sandbox.mode(repo, {:shared, self()})
+    end)
+
     :ok
   end
 
-  test "AppKit EffectSurface proposal and readback use Mezzanine governed effects" do
-    attrs = effect_attrs("appkit-proposal")
+  test "AppKit drives durable review, dispatch, ambiguity, continuation, and restart-safe readback" do
+    fixture = effect_fixture()
+    context = context!(fixture)
+    proposal = proposal_attrs(fixture)
 
-    assert {:ok, %GovernedEffectDTO{} = proposed} =
-             EffectSurface.propose_effect(context(), attrs,
-               effect_surface_adapter: MezzanineBridge
+    assert {:ok, %GovernedEffectDTO{status: "authorized"} = opened} =
+             EffectSurface.propose_effect(context, proposal)
+
+    assert opened.review.status == "pending"
+    assert opened.review.review_ref == proposal.review_ref
+    assert opened.decision_ref == proposal.decision_ref
+    assert opened.grant_ref == proposal.grant_ref
+
+    assert {:error, %{code: "bridge_error"}} =
+             EffectSurface.begin_dispatch(
+               context,
+               opened.owner_execution_ref,
+               %{expected_row_version: opened.row_version}
              )
 
-    assert proposed.effect_ref == attrs.effect_ref
-    assert proposed.status == "proposed"
-    assert proposed.metadata["diagnostic_lane"] == "echo"
-    assert proposed.metadata["product_slug"] == "app-kit"
-
-    assert {:ok, %Run{} = run} = Coordinator.propose(command_attrs(attrs))
-
-    assert {:ok, %GovernedEffectDTO{} = readback} =
-             EffectSurface.get_effect(context(), attrs.effect_ref,
-               effect_surface_adapter: MezzanineBridge,
-               effect_runs: %{attrs.effect_ref => run}
+    assert {:ok, %{status: :completed}} =
+             MezzanineBridge.record_decision_by_id(
+               context,
+               fixture.review.id,
+               %{
+                 decision: "accept",
+                 reason: "reviewed exact named-file digest",
+                 trace_id: context.trace_id,
+                 causation_id: "cause://p04/review",
+                 idempotency_key: "p04-review-#{fixture.review.id}"
+               },
+               program_id: fixture.program.id
              )
 
-    assert readback.effect_ref == proposed.effect_ref
-    assert readback.status == "proposed"
-    assert readback.metadata["diagnostic_lane"] == "echo"
-    assert readback.metadata["product_slug"] == "app-kit"
-    assert readback.metadata["trace_summary_hash"]
-
-    assert {:ok, %EffectTimelineDTO{} = timeline} =
-             EffectSurface.get_effect_timeline(context(), attrs.effect_ref,
-               effect_surface_adapter: MezzanineBridge,
-               effect_runs: %{attrs.effect_ref => run}
+    assert {:ok, %GovernedEffectDTO{status: "dispatching"} = dispatching} =
+             EffectSurface.begin_dispatch(
+               context,
+               opened.owner_execution_ref,
+               %{expected_row_version: opened.row_version}
              )
 
-    assert timeline.effect_ref == attrs.effect_ref
-    assert Enum.map(timeline.entries, &Map.fetch!(&1, "status")) == ["proposed"]
-  end
+    assert dispatching.review.status == "accepted"
+    assert dispatching.review.accepted_actor_ref == context.actor_ref.id
 
-  test "Mezzanine, Citadel, Jido, Execution Plane, and AITrace complete a governed effect" do
-    attrs = effect_attrs("full-chain")
-
-    assert {:ok, final_run, lower_output, authority_decision, command_envelope, trace} =
-             run_allowed_pipeline(attrs)
-
-    lower_receipt = Map.fetch!(lower_output, "lower_effect_receipt")
-    diagnostic_result = get_in(lower_receipt, ["lower_facts", "diagnostic_result"])
-    projection = Projection.product_safe(final_run)
-
-    assert final_run.effect.status == :completed
-    assert AuthorityDecisionV1.governed_effect_decision(authority_decision) == "allow"
-    assert lower_receipt["status"] == "success"
-    assert diagnostic_result["status"] == "ok"
-    assert Map.fetch!(projection, "status") == "completed"
-    assert CommandEnvelope.digest(command_envelope) |> sha256_ref?()
-    assert trace.trace_id == attrs.trace_ref
-
-    assert Enum.count(trace.spans, &(&1.name == "governed_effect.transition")) == 9
-
-    assert Enum.take(Enum.map(trace.spans, & &1.name), -3) == [
-             "governed_effect.authority_decision",
-             "governed_effect.lower_execution",
-             "governed_effect.receipt_reduction"
-           ]
-  end
-
-  test "Citadel denial produces no Jido invocation and remains readable through AppKit" do
-    attrs = effect_attrs("denial", effect_type: "diagnostic.probe")
-
-    assert {:ok, run} = Coordinator.propose(command_attrs(attrs))
-
-    assert {:ok, authority_decision} =
-             GovernedEffectAuthority.authorize(authority_request(attrs),
-               allowed_effect_types: ["diagnostic.echo"]
+    assert {:ok, %GovernedEffectDTO{status: "running"} = running} =
+             EffectSurface.record_accepted(
+               context,
+               opened.owner_execution_ref,
+               %{
+                 expected_row_version: dispatching.row_version,
+                 attempt_ref: proposal.attempt_ref,
+                 external_ref: "codex-thread://p04/#{fixture.review.id}",
+                 accepted_receipt_ref: "receipt://p04/accepted/#{fixture.review.id}"
+               }
              )
 
-    assert AuthorityDecisionV1.governed_effect_decision(authority_decision) == "deny"
-    assert {:ok, denied_run} = Coordinator.deny(run, authority_attrs(attrs, authority_decision))
-    refute denied_run.invocation_envelope
-    assert denied_run.effect.status == :denied
-
-    assert {:ok, %GovernedEffectDTO{} = dto} =
-             EffectSurface.get_effect(context(), attrs.effect_ref,
-               effect_surface_adapter: MezzanineBridge,
-               effect_runs: %{attrs.effect_ref => denied_run}
+    assert {:ok, %GovernedEffectDTO{status: "ambiguous"} = ambiguous} =
+             EffectSurface.record_receipt(
+               context,
+               opened.owner_execution_ref,
+               %{
+                 expected_row_version: running.row_version,
+                 receipt_ref: "receipt://p04/ambiguous/#{fixture.review.id}",
+                 receipt_state: "ambiguous",
+                 ambiguity_state: "outcome_unknown",
+                 continuation_target: %{
+                   kind: "owner_command",
+                   owner: "jido_integration",
+                   command: "reconcile_effect_outcome",
+                   idempotency_key: "p04-reconcile-#{fixture.review.id}"
+                 },
+                 cleanup: %{
+                   status: "completed",
+                   cleanup_ref: "cleanup://p04/#{fixture.review.id}",
+                   managed_session_ref: "managed-session://p04/#{fixture.review.id}",
+                   credential_lease_ref: "credential-lease://p04/#{fixture.review.id}",
+                   materialization_ref: "materialization://p04/#{fixture.review.id}",
+                   session_terminated: true,
+                   materialization_removed: true,
+                   credential_lease_released: true
+                 }
+               }
              )
 
-    assert dto.status == "denied"
-    assert dto.authority_ref == authority_decision.decision_id
+    assert ambiguous.receipt.cleanup.materialization_removed
+    assert ambiguous.ambiguity.state == "outcome_unknown"
+    refute ambiguous.ambiguity.effect_retry_allowed
+    assert ambiguous.continuation.target_operation == "reconcile_effect_outcome"
+
+    assert {:ok, %GovernedEffectDTO{} = by_owner_ref} =
+             EffectSurface.get_effect(context, opened.owner_execution_ref)
+
+    assert {:ok, %GovernedEffectDTO{} = by_idempotency} =
+             EffectSurface.get_effect_by_idempotency(context, context.idempotency_key)
+
+    assert by_owner_ref == by_idempotency
+    assert by_owner_ref.status == "ambiguous"
+    refute contains_struct?(GovernedEffectDTO.dump(by_owner_ref))
   end
 
-  defp run_allowed_pipeline(attrs) do
-    command_envelope = command_envelope!(attrs)
+  test "AppKit rejects secrets and blind effect retry before a durable command" do
+    fixture = effect_fixture()
+    context = context!(fixture)
 
-    with {:ok, run} <- Coordinator.propose(command_attrs(attrs)),
-         {:ok, authority_decision} <- GovernedEffectAuthority.authorize(authority_request(attrs)),
-         {:ok, run} <- Coordinator.authorize(run, authority_attrs(attrs, authority_decision)),
-         {:ok, run} <-
-           Coordinator.dispatch(run,
-             dispatch_adapter: &dispatch_to_jido(&1, attrs, authority_decision)
-           ),
-         lower_output <- Map.fetch!(run.invocation_envelope, "lower_output"),
-         receipt <- lower_output |> Map.fetch!("lower_effect_receipt") |> effect_receipt_attrs(),
-         {:ok, run} <- Coordinator.receive_receipt(run, receipt),
-         {:ok, run} <- Coordinator.reduce(run),
-         {:ok, run} <- Coordinator.project(run),
-         {:ok, run} <- Coordinator.complete(run),
-         {:ok, trace} <- evidence_trace(run, authority_decision, lower_output) do
-      {:ok, run, lower_output, authority_decision, command_envelope, trace}
-    end
+    unsafe_proposal =
+      fixture
+      |> proposal_attrs()
+      |> Map.put(:workspace_root, "/tmp/ambient-workspace")
+
+    assert {:error, :invalid_governed_effect_proposal} =
+             EffectSurface.propose_effect(context, unsafe_proposal)
+
+    assert {:error, :invalid_effect_receipt_command} =
+             EffectSurface.record_receipt(
+               context,
+               "effect-execution://00000000-0000-0000-0000-000000000001",
+               %{
+                 expected_row_version: 1,
+                 receipt_ref: "receipt://p04/unknown",
+                 receipt_state: "outcome_unknown",
+                 continuation_target: %{
+                   kind: "owner_command",
+                   owner: "jido_integration",
+                   command: "retry_effect",
+                   idempotency_key: "p04-blind-retry"
+                 }
+               }
+             )
   end
 
-  defp dispatch_to_jido(envelope, attrs, authority_decision) do
-    operation = Map.fetch!(envelope, "operation")
-    manifest = DiagnosticLane.manifest()
-    operation_spec = Manifest.fetch_operation(manifest, operation)
-    capability = Capability.from_operation!(manifest.connector, operation_spec)
+  defp effect_fixture do
+    tenant_id = "tenant-p04-#{System.unique_integer([:positive])}"
+    actor = %{tenant_id: tenant_id}
 
-    governed_envelope =
-      GovernedLowerEnvelope.new!(%{
-        lower_request_ref: Map.fetch!(envelope, "invocation_ref"),
-        lower_runtime_kind: :direct_connector,
-        runtime_profile_ref: "runtime-profile://app-kit/integration/diagnostic/direct",
-        runtime_profile_kind: :diagnostic,
-        capability_id: capability.id,
-        action_id: capability.id,
-        tenant_ref: Map.fetch!(envelope, "tenant_ref"),
-        run_ref: "run://app-kit/integration/#{attrs.token}",
-        trace_id: Map.fetch!(envelope, "trace_ref"),
-        idempotency_key: Map.fetch!(attrs, :command_ref),
-        authority_ref: authority_decision.decision_id,
-        authority_decision_hash: authority_decision.decision_hash,
-        allowed_operations: [capability.id],
-        connector_ref: DiagnosticLane.connector_ref(),
-        connector_manifest_ref: DiagnosticLane.manifest_ref(),
-        connector_manifest_hash: DiagnosticLane.manifest_hash(),
-        connector_manifest_state: :active,
-        side_effect_class: :read,
-        idempotency_class: :idempotent,
-        runtime_class: :direct,
-        effect_ref: Map.fetch!(envelope, "effect_ref"),
-        expected_version: Map.fetch!(attrs, :expected_version),
-        compensation_posture: :not_required,
-        evidence_profile_ref: "evidence-profile://governed-effect",
-        redaction_profile_ref: "redaction-profile://standard"
-      })
-
-    case DirectRuntime.execute(capability, Map.fetch!(envelope, "payload"), %{
-           capability: capability,
-           governed_lower_envelope: governed_envelope
-         }) do
-      {:ok, result} ->
-        {:ok,
-         envelope
-         |> Map.put("dispatch_ref", governed_envelope.lower_request_ref)
-         |> Map.put("lower_output", result.output)}
-
-      {:error, reason, result} ->
-        {:error, {reason, result.output}}
-    end
-  end
-
-  defp evidence_trace(run, authority_decision, lower_output) do
-    projection = Projection.product_safe(run)
-    lower_receipt = Map.fetch!(lower_output, "lower_effect_receipt")
-
-    GovernedEffectEvidence.new(%{
-      trace_ref: run.effect.trace_ref,
-      effect_ref: run.effect.effect_ref,
-      command_ref: run.effect.command_ref,
-      authority_ref: run.effect.authority_ref,
-      receipt_ref: run.effect.receipt_ref,
-      transitions: Map.fetch!(projection, "timeline"),
-      authority_decision: %{
-        "decision" => AuthorityDecisionV1.governed_effect_decision(authority_decision),
-        "decision_hash" => authority_decision.decision_hash,
-        "boundary_class" => authority_decision.boundary_class
-      },
-      lower_execution: Map.fetch!(lower_output, "aitrace_evidence"),
-      receipt_reduction: %{
-        "receipt_ref" => Map.fetch!(lower_receipt, "receipt_ref"),
-        "trace_summary_hash" => Map.fetch!(projection, "trace_summary_hash")
-      }
-    })
-    |> case do
-      {:ok, evidence} -> {:ok, GovernedEffectEvidence.to_trace(evidence)}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp effect_receipt_attrs(receipt) do
-    Map.take(receipt, [
-      "receipt_ref",
-      "effect_ref",
-      "status",
-      "lower_receipt_ref",
-      "lower_facts",
-      "projection_updates",
-      "evidence_refs",
-      "trace_ref",
-      "completed_at"
-    ])
-  end
-
-  defp command_attrs(attrs) do
-    %{
-      effect_ref: Map.fetch!(attrs, :effect_ref),
-      effect_type: Map.fetch!(attrs, :effect_type),
-      command_ref: Map.fetch!(attrs, :command_ref),
-      tenant_ref: Map.fetch!(attrs, :tenant_ref),
-      actor_ref: Map.fetch!(attrs, :actor_ref),
-      installation_ref: Map.fetch!(attrs, :installation_ref),
-      trace_ref: Map.fetch!(attrs, :trace_ref),
-      expected_version: Map.fetch!(attrs, :expected_version),
-      operation: Map.fetch!(attrs, :effect_type),
-      payload: diagnostic_payload(attrs),
-      metadata: diagnostic_metadata(attrs)
-    }
-  end
-
-  defp command_envelope!(attrs) do
-    CommandEnvelope.new!(%{
-      command_ref: Map.fetch!(attrs, :command_ref),
-      tenant_ref: Map.fetch!(attrs, :tenant_ref),
-      actor_ref: Map.fetch!(attrs, :actor_ref),
-      installation_ref: Map.fetch!(attrs, :installation_ref),
-      schema_ref: "schema://gaop/command-envelope/diagnostic/v1",
-      idempotency_key: Map.fetch!(attrs, :command_ref),
-      trace_ref: Map.fetch!(attrs, :trace_ref),
-      operation_type: Map.fetch!(attrs, :effect_type),
-      payload: diagnostic_payload(attrs),
-      expected_version: Map.fetch!(attrs, :expected_version),
-      resource_scopes: [%{"scope_ref" => "diagnostic://app-kit", "access" => "read"}],
-      intent: %{"product_slug" => "app-kit", "reason" => "phase13_integration"},
-      created_at: "2026-05-20T00:00:00Z",
-      effect_class: "observe"
-    })
-  end
-
-  defp authority_request(attrs) do
-    %{
-      request_ref: "authority-request://app-kit/integration/#{attrs.token}",
-      tenant_ref: Map.fetch!(attrs, :tenant_ref),
-      actor_ref: Map.fetch!(attrs, :actor_ref),
-      installation_ref: Map.fetch!(attrs, :installation_ref),
-      effect_ref: Map.fetch!(attrs, :effect_ref),
-      effect_type: Map.fetch!(attrs, :effect_type),
-      operation_type: Map.fetch!(attrs, :effect_type),
-      resource_class: "diagnostic_lane",
-      side_effect_class: "read",
-      target_refs: ["diagnostic://app-kit"],
-      budget_refs: ["budget://app-kit/diagnostic"]
-    }
-  end
-
-  defp authority_attrs(attrs, authority_decision) do
-    %{
-      authority_ref: authority_decision.decision_id,
-      decision: AuthorityDecisionV1.governed_effect_decision(authority_decision),
-      tenant_ref: Map.fetch!(attrs, :tenant_ref),
-      actor_ref: Map.fetch!(attrs, :actor_ref),
-      command_ref: Map.fetch!(attrs, :command_ref),
-      trace_ref: Map.fetch!(attrs, :trace_ref),
-      decision_hash: authority_decision.decision_hash,
-      boundary_class: authority_decision.boundary_class,
-      posture: authority_decision.approval_profile
-    }
-  end
-
-  defp diagnostic_payload(attrs), do: %{"message" => "AppKit #{attrs.token} integration"}
-
-  defp diagnostic_metadata(attrs) do
-    %{
-      "diagnostic_lane" => "echo",
-      "product_slug" => "app-kit",
-      "run_ref" => "run://app-kit/integration/#{attrs.token}"
-    }
-  end
-
-  defp effect_attrs(token, opts \\ []) do
-    effect_type = Keyword.get(opts, :effect_type, "diagnostic.echo")
-
-    %{
-      token: token,
-      effect_ref: "effect://app-kit/integration/#{token}",
-      effect_type: effect_type,
-      command_ref: "command://app-kit/integration/#{token}",
-      tenant_ref: "tenant://app-kit/integration",
-      actor_ref: "actor://app-kit/operator",
-      installation_ref: "installation://app-kit/default",
-      status: "proposed",
-      trace_ref: "trace:app-kit-integration-#{token}",
-      expected_version: 1,
-      metadata: diagnostic_metadata(%{token: token})
-    }
-  end
-
-  defp context do
-    {:ok, context} =
-      RequestContext.new(
-        trace_id: "13131313131313131313131313131313",
-        tenant_ref: %{id: "tenant://app-kit/integration"},
-        actor_ref: %{id: "actor://app-kit/operator", kind: "human"},
-        installation_ref: %{
-          id: "installation://app-kit/default",
-          pack_slug: "app-kit-integration",
-          status: :active
-        }
+    {:ok, program} =
+      Program.create_program(
+        %{
+          slug: "p04-#{System.unique_integer([:positive])}",
+          name: "P04 AppKit Governed Effect",
+          product_family: "operator_stack",
+          configuration: %{},
+          metadata: %{}
+        },
+        actor: actor,
+        tenant: tenant_id
       )
+
+    {:ok, policy_bundle} =
+      PolicyBundle.load_bundle(
+        %{
+          program_id: program.id,
+          name: "p04",
+          version: "1.0.0",
+          policy_kind: :workflow_md,
+          source_ref: "WORKFLOW.md",
+          body: "# P04 governed effect",
+          metadata: %{}
+        },
+        actor: actor,
+        tenant: tenant_id
+      )
+
+    {:ok, work_class} =
+      WorkClass.create_work_class(
+        %{
+          program_id: program.id,
+          name: "p04_effect_#{System.unique_integer([:positive])}",
+          kind: "coding_task",
+          intake_schema: %{"required" => ["title"]},
+          policy_bundle_id: policy_bundle.id,
+          default_review_profile: %{"required" => true},
+          default_run_profile: %{"runtime" => "session"}
+        },
+        actor: actor,
+        tenant: tenant_id
+      )
+
+    {:ok, work_object} =
+      WorkObject.ingest(
+        %{
+          program_id: program.id,
+          work_class_id: work_class.id,
+          external_ref: "app-kit:p04:#{System.unique_integer([:positive])}",
+          title: "Reviewed Codex file effect",
+          description: "Create one reviewed named file",
+          priority: 50,
+          source_kind: "app_kit",
+          payload: %{"effect_ref" => "effect://p04"},
+          normalized_payload: %{"effect_ref" => "effect://p04"}
+        },
+        actor: actor,
+        tenant: tenant_id
+      )
+
+    {:ok, control_session} =
+      ControlSession.open(
+        %{program_id: program.id, work_object_id: work_object.id},
+        actor: actor,
+        tenant: tenant_id
+      )
+
+    {:ok, run_series} =
+      RunSeries.open_series(
+        %{work_object_id: work_object.id, control_session_id: control_session.id},
+        actor: actor,
+        tenant: tenant_id
+      )
+
+    {:ok, run} =
+      Run.schedule(
+        %{
+          run_series_id: run_series.id,
+          attempt: 1,
+          runtime_profile: %{"capability_id" => "codex.session.turn"},
+          grant_profile: %{"effect_mode" => "managed_account_local_effect"}
+        },
+        actor: actor,
+        tenant: tenant_id
+      )
+
+    {:ok, review} =
+      ReviewUnit.create_review_unit(
+        %{
+          work_object_id: work_object.id,
+          run_id: run.id,
+          review_kind: :code_review,
+          decision_profile: %{"required_decisions" => 1},
+          reviewer_actor: %{"kind" => "human", "ref" => "operator://p04"}
+        },
+        actor: actor,
+        tenant: tenant_id
+      )
+
+    %{
+      tenant_id: tenant_id,
+      program: program,
+      work_object: work_object,
+      run: run,
+      review: review
+    }
+  end
+
+  defp context!(fixture) do
+    {:ok, context} =
+      RequestContext.new(%{
+        trace_id: "0123456789abcdef0123456789abcdef",
+        actor_ref: %{id: "operator://p04", kind: "human"},
+        tenant_ref: %{id: fixture.tenant_id},
+        installation_ref: %{id: "installation://p04/local", pack_slug: "synapse"},
+        request_id: "request://p04/#{fixture.review.id}",
+        idempotency_key: "p04-effect-#{fixture.review.id}"
+      })
 
     context
   end
 
-  defp sha256_ref?("sha256:" <> rest), do: rest != ""
-  defp sha256_ref?(_value), do: false
+  defp proposal_attrs(fixture) do
+    suffix = fixture.review.id
+
+    %{
+      effect_ref: "effect://p04/#{suffix}",
+      run_ref: "run://p04/#{fixture.run.id}",
+      turn_ref: "turn://p04/#{suffix}",
+      command_ref: "command://p04/#{suffix}",
+      decision_ref: "decision://citadel/p04/#{suffix}",
+      grant_ref: "grant://citadel/p04/#{suffix}",
+      review_ref: "review://mezzanine/#{fixture.review.id}",
+      subject_id: fixture.work_object.id,
+      run_id: fixture.run.id,
+      review_unit_id: fixture.review.id,
+      target_ref: "target://codex/local/#{suffix}",
+      attempt_ref: "attempt://p04/#{suffix}/1",
+      capability_id: "codex.session.turn",
+      effect_mode: "managed_account_local_effect",
+      pinned_tool_manifest: %{
+        manifest_ref: "manifest://codex/p04/#{suffix}",
+        manifest_hash: "sha256:" <> String.duplicate("a", 64),
+        action_ids: ["create_or_replace_one_named_text_file"]
+      },
+      reviewed_operation: %{
+        operation: "create_or_replace",
+        workspace_ref: "workspace://p04/#{suffix}",
+        file_ref: "file://p04/RESULT.txt",
+        relative_path: "RESULT.txt",
+        content_digest: "sha256:" <> String.duplicate("b", 64)
+      }
+    }
+  end
+
+  defp contains_struct?(value) when is_map(value) do
+    Map.has_key?(value, :__struct__) or Enum.any?(Map.values(value), &contains_struct?/1)
+  end
+
+  defp contains_struct?(value) when is_list(value), do: Enum.any?(value, &contains_struct?/1)
+  defp contains_struct?(_value), do: false
 end

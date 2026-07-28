@@ -31,6 +31,14 @@ defmodule AppKit.Bridges.MezzanineBridge.Services do
   def effect_readback(opts),
     do: Keyword.get(opts, :effect_readback_service, Mezzanine.AppKitBridge.EffectReadbackService)
 
+  def governed_effect(opts),
+    do:
+      Keyword.get(
+        opts,
+        :governed_effect_service,
+        Mezzanine.AppKitBridge.GovernedEffectService
+      )
+
   def program_context(opts),
     do: Keyword.get(opts, :program_context_service, Mezzanine.AppKitBridge.ProgramContextService)
 

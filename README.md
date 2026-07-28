@@ -135,14 +135,16 @@ valid product data and lower adapter facts; AppKit public calls must stay
 role-ref and product-surface based.
 
 The Synapse governed-effect lift adds `AppKit.EffectSurface` as the
-product-facing surface for consequential effects that must be proposed, governed,
-dispatched, reduced, and projected before a product claims `staging_live`.
-`AppKit.Core.GovernedEffectDTO` and `AppKit.Core.EffectTimelineDTO` are the
-stable product DTOs. `AppKit.Bridges.MezzanineBridge.EffectAdapter` is the
-current lower bridge; it preserves product-safe command metadata, authority
-refs, dispatch refs, receipt refs, evidence refs, and trace summary hashes
-without exposing Mezzanine, Citadel, Jido Integration, Execution Plane, or
-AITrace internals to product code.
+product-facing surface for one reviewed named-file effect. It proposes the
+exact operation, advances it through optimistic dispatch and receipt commands,
+and reads it by durable owner identity or installation-scoped idempotency key.
+`AppKit.Core.GovernedEffectProposalDTO` and
+`AppKit.Core.GovernedEffectDTO` bind the stable command and projection packet;
+the nested review, receipt, ambiguity, continuation, and cleanup DTOs expose
+only safe refs and state. `AppKit.Bridges.MezzanineBridge.EffectAdapter` maps
+those calls to Mezzanine's durable governed-effect service without exposing
+provider material, workspace roots, file contents, process identity, or lower
+owner structs.
 
 The native agent foundation uses `AppKit.AgentIntake` as the product-safe
 surface for agent runs. Products may submit an `AgentRunRequest`, submit a

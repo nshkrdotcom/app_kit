@@ -23,4 +23,33 @@ defmodule Mezzanine.AppKitBridge.ReviewQueryService do
       {:error, reason} -> {:error, AdapterSupport.normalize_error(reason)}
     end
   end
+
+  @spec get_effect_review(String.t(), Ecto.UUID.t()) :: {:ok, map()} | {:error, term()}
+  def get_effect_review(tenant_id, review_unit_id)
+      when is_binary(tenant_id) and is_binary(review_unit_id) do
+    case Reviews.review_detail(tenant_id, review_unit_id) do
+      {:ok, %{review_unit: review_unit, decisions: decisions}} ->
+        {:ok,
+         %{
+           status: normalize_string(review_unit.status),
+           row_version: review_unit.row_version,
+           accepted_actor_ref: accepted_actor_ref(decisions)
+         }}
+
+      {:error, reason} ->
+        {:error, AdapterSupport.normalize_error(reason)}
+    end
+  end
+
+  defp accepted_actor_ref(decisions) do
+    decisions
+    |> Enum.find(&(Map.get(&1, :decision) == :accept))
+    |> case do
+      nil -> nil
+      decision -> Map.get(decision, :actor_ref)
+    end
+  end
+
+  defp normalize_string(value) when is_atom(value), do: Atom.to_string(value)
+  defp normalize_string(value), do: value
 end
