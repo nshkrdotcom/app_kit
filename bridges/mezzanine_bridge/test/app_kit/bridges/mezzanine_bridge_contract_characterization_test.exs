@@ -141,7 +141,8 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
       service_options: [
         :runtime_profile_service,
         :operator_query_service,
-        :runtime_gateway_service
+        :runtime_gateway_service,
+        :live_effect_service
       ],
       callbacks: [
         invoke_runtime_operation: 5,
@@ -157,7 +158,12 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
     %{
       behaviour: AppKit.Core.Backends.HeadlessBackend,
       target_module: "AppKit.Bridges.MezzanineBridge.HeadlessAdapter",
-      service_options: [:work_query_service],
+      service_options: [
+        :work_query_service,
+        :agent_intake_service,
+        :work_control_service,
+        :runtime_refresh_service
+      ],
       callbacks: [
         state_snapshot: 3,
         runtime_subject_detail: 4,
@@ -169,7 +175,7 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
     %{
       behaviour: AppKit.Core.Backends.AgentIntakeBackend,
       target_module: "AppKit.Bridges.MezzanineBridge.AgentIntakeAdapter",
-      service_options: [:agent_intake_service],
+      service_options: [:agent_intake_service, :work_control_service],
       callbacks: [
         start_agent_run: 3,
         submit_agent_turn: 3,
@@ -1199,13 +1205,13 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
     assert Keyword.fetch!(projection_opts, :runtime_projection?)
   end
 
-  test "agent intake adapter fails closed for commands not owned by the acceptance contract" do
+  test "agent intake turn submission requires explicit owner authority and cancellation fails closed" do
     context = request_context()
 
     {:ok, turn_submission} =
       TurnSubmission.new(%{
         idempotency_key: "turn-1",
-        actor_ref: "actor-1",
+        actor_ref: "operator",
         run_ref: "run://agent-1",
         kind: :user_input,
         payload_ref: "payload://turn-1"
@@ -1213,15 +1219,15 @@ defmodule AppKit.Bridges.MezzanineBridgeContractCharacterizationTest do
 
     assert {:error,
             %SurfaceError{
-              code: "agent_turn_submission_not_available",
-              kind: :boundary,
+              code: "missing_turn_authority_ref",
+              kind: :validation,
               retryable: false
             }} = AgentIntakeAdapter.submit_agent_turn(context, turn_submission, [])
 
     assert {:error,
             %SurfaceError{
-              code: "agent_run_cancellation_not_available",
-              kind: :boundary,
+              code: "missing_agent_cancel_idempotency_key",
+              kind: :validation,
               retryable: false
             }} = MezzanineBridge.cancel_agent_run(context, "run://agent-1", [])
   end

@@ -9,6 +9,7 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapter do
     Services
   }
 
+  alias AppKit.Core.AgentIntake.TurnSubmission
   alias AppKit.Core.RequestContext
 
   @impl true
@@ -23,12 +24,31 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapter do
   end
 
   @impl true
-  def submit_agent_turn(%RequestContext{}, _turn_submission, _opts),
-    do: Errors.normalize(:agent_turn_submission_not_available)
+  def submit_agent_turn(
+        %RequestContext{} = context,
+        %TurnSubmission{} = turn_submission,
+        opts
+      ) do
+    with {:ok, command} <-
+           AgentIntakeMapping.turn_command(context, turn_submission, opts),
+         {:ok, acceptance} <- Services.agent_intake(opts).submit_turn(command, opts),
+         {:ok, result} <-
+           AgentIntakeMapping.turn_result(context, command, acceptance) do
+      {:ok, result}
+    else
+      {:error, reason} -> Errors.normalize(reason)
+    end
+  end
 
   @impl true
-  def cancel_agent_run(%RequestContext{}, _run_ref, _opts),
-    do: Errors.normalize(:agent_run_cancellation_not_available)
+  def cancel_agent_run(%RequestContext{} = context, run_ref, opts) do
+    with {:ok, request} <- AgentIntakeMapping.cancel_request(context, run_ref, opts),
+         {:ok, result} <- Services.work_control(opts).control_run(context, request, opts) do
+      {:ok, result}
+    else
+      {:error, reason} -> Errors.normalize(reason)
+    end
+  end
 
   @impl true
   def await_agent_outcome(%RequestContext{} = context, run_ref, request, opts) do

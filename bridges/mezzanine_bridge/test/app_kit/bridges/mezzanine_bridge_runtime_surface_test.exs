@@ -145,6 +145,13 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
     end
   end
 
+  defmodule LiveEffectService do
+    def record_live_effect(context, candidate, opts) do
+      send(Keyword.fetch!(opts, :test_pid), {:record_live_effect, context, candidate})
+      {:ok, candidate}
+    end
+  end
+
   test "applies runtime profiles through the Mezzanine runtime profile service" do
     context = request_context()
     runtime_profile = runtime_profile()
@@ -182,35 +189,76 @@ defmodule AppKit.Bridges.MezzanineBridgeRuntimeSurfaceTest do
     assert [%{event_kind: "run_scheduled"}] = logs.entries
   end
 
-  test "wraps live effect proof state without accepting raw provider secrets" do
+  test "records live effect proof through an explicit owner without accepting raw provider secrets" do
     context = request_context()
 
     assert {:ok, %LiveEffectReceipt{} = receipt} =
-             MezzanineBridge.record_live_effect(context, %{
-               effect_ref: "live-effect://linear/source/1",
-               provider: "linear",
-               effect: "source_intake",
-               capability_ids: ["linear.issues.list"],
-               status: :receipt_recorded,
-               credential_present?: true,
-               credential_redeemed?: true,
-               provider_request_sent?: true,
-               provider_response_received?: true,
-               receipt_recorded?: true,
-               product_readback_confirmed?: false
-             })
+             MezzanineBridge.record_live_effect(
+               context,
+               %{
+                 effect_ref: "live-effect://linear/source/1",
+                 provider: "linear",
+                 effect: "source_intake",
+                 capability_ids: ["linear.issues.list"],
+                 status: :receipt_recorded,
+                 credential_present?: true,
+                 credential_redeemed?: true,
+                 provider_request_sent?: true,
+                 provider_response_received?: true,
+                 receipt_recorded?: true,
+                 product_readback_confirmed?: false
+               },
+               live_effect_service: LiveEffectService,
+               test_pid: self()
+             )
 
     assert receipt.tenant_ref == "tenant-1"
     assert receipt.receipt_recorded? == true
+    assert_received {:record_live_effect, ^context, ^receipt}
 
     assert {:error, _surface_error} =
+             MezzanineBridge.record_live_effect(
+               context,
+               %{
+                 effect_ref: "live-effect://linear/source/1",
+                 provider: "linear",
+                 effect: "source_intake",
+                 status: :receipt_recorded,
+                 token: "secret"
+               },
+               live_effect_service: LiveEffectService,
+               test_pid: self()
+             )
+
+    refute_received {:record_live_effect, _, _}
+
+    assert {:error, cross_tenant} =
+             MezzanineBridge.record_live_effect(
+               context,
+               %{
+                 effect_ref: "live-effect://linear/source/1",
+                 tenant_ref: "tenant-other",
+                 provider: "linear",
+                 effect: "source_intake",
+                 status: :receipt_recorded
+               },
+               live_effect_service: LiveEffectService,
+               test_pid: self()
+             )
+
+    assert cross_tenant.code == "cross_tenant_live_effect_denied"
+    assert cross_tenant.kind == :authorization
+    refute_received {:record_live_effect, _, _}
+
+    assert {:error, unavailable} =
              MezzanineBridge.record_live_effect(context, %{
                effect_ref: "live-effect://linear/source/1",
                provider: "linear",
                effect: "source_intake",
-               status: :receipt_recorded,
-               token: "secret"
+               status: :receipt_recorded
              })
+
+    assert unavailable.code == "live_effect_owner_not_configured"
   end
 
   test "publishes Linear source receipts through the AppKit source bridge" do

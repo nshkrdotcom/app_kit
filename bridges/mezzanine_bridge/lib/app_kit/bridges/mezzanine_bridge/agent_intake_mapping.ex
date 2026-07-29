@@ -7,13 +7,29 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeMapping do
     AgentRunCursor,
     AgentRunEvent,
     AgentRunEventPage,
-    RunOutcomeFuture
+    RunOutcomeFuture,
+    TurnSubmission
   }
 
   alias AppKit.Core.PersistencePosture
   alias AppKit.Core.RequestContext
-  alias AppKit.Core.RuntimeReadback.{RuntimeEventRow, RuntimeRow, RuntimeRunDetail}
-  alias Mezzanine.Runs.{AcceptCommand, Acceptance, Event, EventCursor}
+
+  alias AppKit.Core.RuntimeReadback.{
+    CommandResult,
+    ControlRequest,
+    RuntimeEventRow,
+    RuntimeRow,
+    RuntimeRunDetail
+  }
+
+  alias Mezzanine.Runs.{
+    AcceptCommand,
+    Acceptance,
+    Event,
+    EventCursor,
+    TurnAcceptance,
+    TurnCommand
+  }
 
   @default_event_limit 100
 
@@ -87,6 +103,86 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeMapping do
     end
   end
 
+  def turn_command(
+        %RequestContext{} = context,
+        %TurnSubmission{} = submission,
+        opts
+      )
+      when is_list(opts) do
+    with :ok <- ensure_turn_actor(context, submission),
+         {:ok, authority_ref} <- turn_authority_ref(context, opts),
+         {:ok, correlation_ref} <- turn_correlation_ref(context),
+         {:ok, command} <-
+           TurnCommand.new(%{
+             command_ref: turn_stable_ref("command", context, submission),
+             idempotency_key: submission.idempotency_key,
+             request_hash: turn_request_hash(context, submission, authority_ref),
+             tenant_ref: context.tenant_ref.id,
+             actor_ref: context.actor_ref.id,
+             authority_ref: authority_ref,
+             run_ref: submission.run_ref,
+             turn_ref: turn_stable_ref("turn", context, submission),
+             trace_ref: context.trace_id,
+             correlation_ref: correlation_ref,
+             kind: submission.kind,
+             payload_ref: submission.payload_ref,
+             payload_digest: digest(submission.payload_ref),
+             cursor_ref: submission.cursor_ref,
+             pending_ref: submission.pending_ref,
+             params: submission.params || %{}
+           }) do
+      {:ok, command}
+    end
+  end
+
+  def turn_result(
+        %RequestContext{} = context,
+        %TurnCommand{} = command,
+        acceptance
+      ) do
+    with {:ok, acceptance} <- TurnAcceptance.new(acceptance),
+         :ok <- validate_turn_acceptance(command, acceptance) do
+      CommandResult.new(%{
+        command_ref: acceptance.command_ref,
+        command_kind: :submit_turn,
+        accepted?: true,
+        coalesced?: acceptance.idempotent_replay?,
+        status: :accepted,
+        authority_state: :admitted,
+        authority_refs: [command.authority_ref],
+        workflow_effect_state: "queued_signal",
+        projection_state: acceptance.state,
+        trace_id: context.trace_id,
+        correlation_id: command.correlation_ref,
+        receipt_ref: acceptance.event_ref,
+        idempotency_key: command.idempotency_key,
+        persistence_posture: PersistencePosture.durable(:runtime_projection)
+      })
+    end
+  end
+
+  def cancel_request(%RequestContext{} = context, run_ref, opts)
+      when is_binary(run_ref) and run_ref != "" and is_list(opts) do
+    with {:ok, idempotency_key} <- cancel_idempotency_key(context, opts),
+         {:ok, expected_version} <- cancel_expected_version(opts) do
+      ControlRequest.new(%{
+        idempotency_key: idempotency_key,
+        actor_ref: context.actor_ref.id,
+        run_ref: run_ref,
+        action: :cancel,
+        params:
+          %{
+            expected_control_row_version: expected_version
+          }
+          |> Common.maybe_put(:reason, Keyword.get(opts, :cancel_reason))
+          |> Common.maybe_put(:payload_ref, Keyword.get(opts, :cancel_payload_ref))
+      })
+    end
+  end
+
+  def cancel_request(_context, _run_ref, _opts),
+    do: {:error, :invalid_agent_run_cancel_request}
+
   def authorize_projection(%RequestContext{} = context, run_ref, projection)
       when is_binary(run_ref) and is_map(projection) do
     projection_run_ref = Common.fetch_value(projection, :run_ref)
@@ -138,14 +234,15 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeMapping do
     end
   end
 
-  def run_detail(projection, events) when is_map(projection) and is_list(events) do
+  def run_detail(projection, events, provider_events \\ [])
+      when is_map(projection) and is_list(events) and is_list(provider_events) do
     updated_at = Common.fetch_value(projection, :updated_at) || DateTime.utc_now()
     run_ref = Common.fetch_value(projection, :run_ref)
     subject_ref = Common.fetch_value(projection, :subject_ref)
-    latest_turn_ref = Common.fetch_value(projection, :latest_turn_ref)
     event_sequence = Common.fetch_value(projection, :event_sequence) || 0
 
     with :ok <- validate_projection_events(projection, events),
+         :ok <- validate_provider_events(projection, provider_events),
          {:ok, runtime_row} <-
            RuntimeRow.new(%{
              subject_ref: subject_ref,
@@ -166,10 +263,16 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeMapping do
         run_ref: run_ref,
         runtime_row: runtime_row,
         events: runtime_events,
-        turns: turn_rows(latest_turn_ref),
+        turns: turn_rows(projection, provider_events),
         persistence_posture: PersistencePosture.durable(:runtime_projection)
       })
     end
+  end
+
+  def model_turn_ref(projection) when is_map(projection) do
+    projection
+    |> model_turn_projection()
+    |> Common.fetch_value(:turn_ref)
   end
 
   def event_limit(opts) do
@@ -212,6 +315,65 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeMapping do
     |> Common.fetch_value(:projection)
     |> Common.fetch_value(:acceptance)
     |> Acceptance.new()
+  end
+
+  defp ensure_turn_actor(
+         %RequestContext{actor_ref: %{id: actor_ref}},
+         %TurnSubmission{actor_ref: actor_ref}
+       ),
+       do: :ok
+
+  defp ensure_turn_actor(_context, _submission),
+    do: {:error, :operator_actor_context_mismatch}
+
+  defp turn_authority_ref(%RequestContext{} = context, opts) do
+    metadata = context.metadata || %{}
+
+    value =
+      Keyword.get(opts, :turn_authority_ref) ||
+        Common.fetch_value(metadata, :turn_authority_ref)
+
+    required_turn_ref(value, :missing_turn_authority_ref)
+  end
+
+  defp turn_correlation_ref(%RequestContext{} = context) do
+    value =
+      context.request_id || context.causation_id || context.idempotency_key || context.trace_id
+
+    required_turn_ref(value, :missing_turn_correlation_ref)
+  end
+
+  defp required_turn_ref(value, _error) when is_binary(value) and value != "",
+    do: {:ok, value}
+
+  defp required_turn_ref(_value, error), do: {:error, error}
+
+  defp cancel_idempotency_key(%RequestContext{} = context, opts) do
+    value = Keyword.get(opts, :cancel_idempotency_key) || context.idempotency_key
+
+    case value do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _other -> {:error, :missing_agent_cancel_idempotency_key}
+    end
+  end
+
+  defp cancel_expected_version(opts) do
+    case Keyword.get(opts, :expected_control_row_version) do
+      value when is_integer(value) and value > 0 -> {:ok, value}
+      _other -> {:error, :invalid_expected_control_row_version}
+    end
+  end
+
+  defp validate_turn_acceptance(command, acceptance) do
+    if acceptance.command_ref == command.command_ref and
+         acceptance.run_ref == command.run_ref and
+         acceptance.turn_ref == command.turn_ref and
+         acceptance.cursor.run_ref == command.run_ref and
+         acceptance.cursor.last_event_ref == acceptance.event_ref do
+      :ok
+    else
+      {:error, :turn_acceptance_mismatch}
+    end
   end
 
   defp map_events(events) do
@@ -264,16 +426,18 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeMapping do
   end
 
   defp app_event(%Event{} = event) do
-    AgentRunEvent.new(%{
-      event_ref: event.event_ref,
-      ledger_ref: event.run_ref,
-      event_seq: event.sequence,
-      event_kind: event_kind(event.event_type),
-      visibility: :product,
-      observed_at: DateTime.to_iso8601(event.recorded_at),
-      summary: event_summary(event.event_type),
-      payload_ref: event.payload_ref
-    })
+    with {:ok, event_kind, summary} <- event_presentation(event.event_type) do
+      AgentRunEvent.new(%{
+        event_ref: event.event_ref,
+        ledger_ref: event.run_ref,
+        event_seq: event.sequence,
+        event_kind: event_kind,
+        visibility: :product,
+        observed_at: DateTime.to_iso8601(event.recorded_at),
+        summary: summary,
+        payload_ref: event.payload_ref
+      })
+    end
   end
 
   defp advance_cursor(cursor, []), do: {:ok, cursor}
@@ -295,7 +459,12 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeMapping do
 
   defp map_runtime_events(events) do
     events
-    |> Enum.map(fn event ->
+    |> Enum.map(&runtime_event/1)
+    |> Common.collect()
+  end
+
+  defp runtime_event(event) do
+    with {:ok, _event_kind, summary} <- event_presentation(event.event_type) do
       RuntimeEventRow.new(%{
         event_ref: event.event_ref,
         event_seq: event.sequence,
@@ -304,29 +473,133 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeMapping do
         tenant_ref: event.tenant_ref,
         run_ref: event.run_ref,
         payload_ref: event.payload_ref,
-        message_summary: event_summary(event.event_type),
+        message_summary: summary,
         extensions: %{
           "command_ref" => event.command_ref,
           "correlation_ref" => event.correlation_ref,
           "row_version" => event.row_version
         }
       })
-    end)
-    |> Common.collect()
+    end
   end
 
-  defp turn_rows(nil), do: []
-  defp turn_rows(turn_ref), do: [%{turn_ref: turn_ref, sequence: 1, status: "accepted"}]
+  defp turn_rows(projection, provider_events) do
+    case model_turn_projection(projection) do
+      model_turn when is_map(model_turn) and map_size(model_turn) > 0 ->
+        [model_turn_row(model_turn, provider_events)]
 
-  defp event_kind("run_accepted"), do: :run_started
-  defp event_kind("turn_accepted"), do: :conversation_delta
-  defp event_kind("workflow_start_requested"), do: :execution_update
-  defp event_kind("workflow_started"), do: :execution_update
+      _missing ->
+        []
+    end
+  end
 
-  defp event_summary("run_accepted"), do: "Run accepted"
-  defp event_summary("turn_accepted"), do: "Turn accepted"
-  defp event_summary("workflow_start_requested"), do: "Workflow start requested"
-  defp event_summary("workflow_started"), do: "Workflow started"
+  @model_turn_fields [
+    :turn_ref,
+    :run_ref,
+    :tenant_ref,
+    :context_artifact_ref,
+    :context_digest,
+    :prompt_artifact_ref,
+    :decision_ref,
+    :grant_ref,
+    :provider_attempt_ref,
+    :provider_family,
+    :model_ref,
+    :operation_ref,
+    :state,
+    :provisional_event_sequence,
+    :committed_event_sequence,
+    :last_committed_provider_event_ref,
+    :reply_publication_ref,
+    :reply_artifact_ref,
+    :continuation_context_ref,
+    :continuation_context_digest,
+    :cursor,
+    :row_version,
+    :updated_at
+  ]
+
+  @provider_event_fields [
+    :event_ref,
+    :run_ref,
+    :turn_ref,
+    :provider_attempt_ref,
+    :sequence,
+    :event_type,
+    :stream,
+    :payload_ref,
+    :payload_digest,
+    :commit_state,
+    :observed_at,
+    :committed_at,
+    :row_version
+  ]
+
+  defp model_turn_row(model_turn, provider_events) do
+    model_turn
+    |> project_fields(@model_turn_fields)
+    |> Map.put(:events, Enum.map(provider_events, &project_fields(&1, @provider_event_fields)))
+  end
+
+  defp project_fields(value, fields) do
+    Map.new(fields, fn field -> {field, Common.fetch_value(value, field)} end)
+  end
+
+  defp model_turn_projection(projection) do
+    projection
+    |> Common.fetch_value(:projection)
+    |> Common.fetch_value(:model_turn)
+  end
+
+  defp validate_provider_events(projection, provider_events) do
+    run_ref = Common.fetch_value(projection, :run_ref)
+    turn_ref = model_turn_ref(projection)
+    tenant_ref = Common.fetch_value(projection, :tenant_ref)
+
+    provider_events
+    |> Enum.with_index(1)
+    |> Enum.reduce_while(:ok, fn {event, expected_sequence}, :ok ->
+      cond do
+        is_nil(turn_ref) ->
+          {:halt, {:error, :provider_events_without_model_turn}}
+
+        Common.fetch_value(event, :run_ref) != run_ref ->
+          {:halt, {:error, :cursor_run_mismatch}}
+
+        Common.fetch_value(event, :turn_ref) != turn_ref ->
+          {:halt, {:error, :cursor_turn_mismatch}}
+
+        not same_tenant?(Common.fetch_value(event, :tenant_ref) || tenant_ref, tenant_ref) ->
+          {:halt, {:error, :unauthorized_lower_read}}
+
+        Common.fetch_value(event, :sequence) != expected_sequence ->
+          {:halt, {:error, :non_contiguous_provider_event}}
+
+        true ->
+          {:cont, :ok}
+      end
+    end)
+  end
+
+  defp event_presentation("run_accepted"), do: {:ok, :run_started, "Run accepted"}
+  defp event_presentation("turn_accepted"), do: {:ok, :conversation_delta, "Turn accepted"}
+
+  defp event_presentation("provider_event_committed"),
+    do: {:ok, :conversation_delta, "Provider event committed"}
+
+  defp event_presentation("turn_completed"),
+    do: {:ok, :conversation_delta, "Turn completed"}
+
+  defp event_presentation("run_control_updated"),
+    do: {:ok, :execution_update, "Run control updated"}
+
+  defp event_presentation("workflow_start_requested"),
+    do: {:ok, :execution_update, "Workflow start requested"}
+
+  defp event_presentation("workflow_started"),
+    do: {:ok, :execution_update, "Workflow started"}
+
+  defp event_presentation(_event_type), do: {:error, :unsupported_owner_event_type}
 
   defp run_ref(request, context) do
     case Common.fetch_value(request.params || %{}, :run_ref) do
@@ -380,6 +653,31 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeMapping do
       })
 
     "#{kind}://mezzanine/#{token}"
+  end
+
+  defp turn_stable_ref(kind, context, submission) do
+    token =
+      digest_token({
+        context.tenant_ref.id,
+        submission.run_ref,
+        submission.idempotency_key
+      })
+
+    case kind do
+      "command" -> "command://app-kit/agent-turn/#{token}"
+      "turn" -> "turn://mezzanine/#{token}"
+    end
+  end
+
+  defp turn_request_hash(context, submission, authority_ref) do
+    %{
+      submission: TurnSubmission.dump(submission),
+      tenant_ref: context.tenant_ref.id,
+      actor_ref: context.actor_ref.id,
+      authority_ref: authority_ref
+    }
+    |> :erlang.term_to_binary([:deterministic])
+    |> digest()
   end
 
   defp request_hash(request, context, program_id, work_class_id) do

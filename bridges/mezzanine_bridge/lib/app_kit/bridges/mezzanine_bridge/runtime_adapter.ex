@@ -128,7 +128,11 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeAdapter do
       when is_map(attrs) and is_list(opts) do
     with {:ok, tenant_id} <- WorkContext.tenant_id(context),
          attrs <- attrs |> Map.new() |> Map.put_new(:tenant_ref, tenant_id),
-         {:ok, receipt} <- LiveEffectReceipt.new(attrs) do
+         {:ok, candidate} <- LiveEffectReceipt.new(attrs),
+         :ok <- authorize_live_effect_candidate(candidate, tenant_id),
+         {:ok, owner_receipt} <- record_live_effect_via_service(context, candidate, opts),
+         {:ok, receipt} <-
+           owner_live_effect_receipt(owner_receipt, tenant_id, candidate.effect_ref) do
       {:ok, receipt}
     else
       {:error, reason} -> Errors.normalize(reason)
@@ -193,6 +197,35 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeAdapter do
       service.timeline(tenant_id, subject_id)
     else
       {:error, :runtime_logs_service_not_configured}
+    end
+  end
+
+  defp record_live_effect_via_service(context, candidate, opts) do
+    service = Services.live_effect(opts)
+
+    if Services.exports?(service, :record_live_effect, 3) do
+      service.record_live_effect(context, candidate, opts)
+    else
+      {:error, :live_effect_owner_not_configured}
+    end
+  end
+
+  defp authorize_live_effect_candidate(%LiveEffectReceipt{tenant_ref: tenant_id}, tenant_id),
+    do: :ok
+
+  defp authorize_live_effect_candidate(_candidate, _tenant_id),
+    do: {:error, :cross_tenant_live_effect_denied}
+
+  defp owner_live_effect_receipt(owner_receipt, tenant_id, effect_ref) do
+    attrs = if is_struct(owner_receipt), do: Map.from_struct(owner_receipt), else: owner_receipt
+
+    with {:ok, receipt} <- LiveEffectReceipt.new(attrs),
+         true <- receipt.tenant_ref == tenant_id,
+         true <- receipt.effect_ref == effect_ref,
+         true <- receipt.receipt_recorded? do
+      {:ok, receipt}
+    else
+      _other -> {:error, :invalid_live_effect_owner_receipt}
     end
   end
 end

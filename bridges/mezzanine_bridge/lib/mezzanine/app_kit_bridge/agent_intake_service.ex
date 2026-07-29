@@ -14,10 +14,17 @@ defmodule Mezzanine.AppKitBridge.AgentIntakeService do
     :idempotency_conflict,
     :invalid_accept_command,
     :invalid_event_cursor,
-    :not_found
+    :invalid_turn_command,
+    :not_found,
+    :run_cursor_conflict,
+    :run_terminal,
+    :stale_turn_cursor,
+    :unauthorized_turn_submission
   ]
 
   def accept_run(command, _opts \\ []), do: owner_call(fn -> Store.accept_run(command) end)
+
+  def submit_turn(command, opts \\ []), do: owner_call(fn -> Store.submit_turn(command, opts) end)
 
   def fetch_projection(run_ref, _opts \\ []) when is_binary(run_ref),
     do: owner_call(fn -> Store.fetch_projection(run_ref) end)
@@ -29,6 +36,20 @@ defmodule Mezzanine.AppKitBridge.AgentIntakeService do
 
   def read_cursor(run_ref, _opts \\ []) when is_binary(run_ref),
     do: owner_call(fn -> Store.read_cursor(run_ref) end)
+
+  def fetch_model_turn(turn_ref, _opts \\ []) when is_binary(turn_ref),
+    do: owner_call(fn -> Store.fetch_model_turn(turn_ref) end)
+
+  def list_provider_events(turn_ref, after_sequence, opts \\ [])
+      when is_binary(turn_ref) and is_integer(after_sequence) and after_sequence >= 0 and
+             is_list(opts) do
+    owner_call(fn -> Store.list_provider_events(turn_ref, after_sequence, opts) end)
+  end
+
+  def read_model_turn_cursor(turn_ref, _opts \\ []) when is_binary(turn_ref),
+    do: owner_call(fn -> Store.read_model_turn_cursor(turn_ref) end)
+
+  def health(_opts \\ []), do: owner_call(fn -> Store.health() end)
 
   defp owner_call(fun) do
     case fun.() do
