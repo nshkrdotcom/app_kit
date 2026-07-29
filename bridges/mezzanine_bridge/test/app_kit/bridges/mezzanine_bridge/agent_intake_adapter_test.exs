@@ -62,6 +62,11 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapterTest do
       {:ok, Keyword.fetch!(opts, :projection)}
     end
 
+    def list_projections(tenant_ref, opts) do
+      send(Keyword.fetch!(opts, :test_pid), {:projection_list_read, tenant_ref})
+      {:ok, Keyword.fetch!(opts, :projections)}
+    end
+
     def list_events(run_ref, cursor, opts) do
       send(Keyword.fetch!(opts, :test_pid), {:event_read, run_ref, cursor, opts[:limit]})
       {:ok, Keyword.fetch!(opts, :events)}
@@ -145,6 +150,24 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapterTest do
           })
       end
     end
+  end
+
+  defmodule FakeSnapshotQuery do
+    def list_subjects("tenant-1", program_id, %{}) when is_binary(program_id) do
+      {:ok,
+       [
+         %{
+           subject_id: "11111111-1111-4111-8111-111111111111",
+           external_ref: "subject://synapse/agent-1",
+           title: "Synapse agent run",
+           status: :running,
+           updated_at: ~U[2026-07-20 20:00:00Z]
+         }
+       ]}
+    end
+
+    def get_subject_projection(_tenant_ref, _subject_id, _opts),
+      do: {:error, :runtime_projection_not_found}
   end
 
   test "maps AppKit intake to canonical acceptance and preserves the durable owner refs" do
@@ -454,6 +477,33 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapterTest do
     assert_receive {:turn_read, @run_ref}
     assert_receive {:event_read, @run_ref, nil, 500}
     refute_received {:provider_event_read, _, _, _}
+  end
+
+  test "state snapshot overlays canonical agent ledger identity on its work object" do
+    projection =
+      acceptance()
+      |> projection()
+      |> Map.put(:work_object_id, "11111111-1111-4111-8111-111111111111")
+
+    assert {:ok, snapshot} =
+             HeadlessAdapter.state_snapshot(
+               context(),
+               %{},
+               agent_intake_service: FakeOwner,
+               work_query_service: FakeSnapshotQuery,
+               program_id: @program_id,
+               projections: [projection],
+               test_pid: self()
+             )
+
+    assert [row] = snapshot.rows
+    assert row.subject_ref == projection.subject_ref
+    assert row.run_ref == projection.run_ref
+    assert row.state == projection.status
+    assert row.extensions["control"]["state"] == "outcome_unknown"
+    refute Map.has_key?(row.extensions["control"], "private_payload")
+    assert row.persistence_posture.durable?
+    assert_receive {:projection_list_read, "tenant-1"}
   end
 
   test "headless run detail projects the durable model turn and its ordered provider events" do

@@ -17,6 +17,26 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeReadbackMapping do
     TokenTotals
   }
 
+  @agent_control_projection_fields [
+    :state,
+    :generation,
+    :attempt_sequence,
+    :sequence,
+    :row_version,
+    :attempt_ref,
+    :generation_ref,
+    :external_operation_ref,
+    :deadline_at,
+    :fence_epoch,
+    :reconciliation_attempts,
+    :reconcile_owner,
+    :reconcile_lease_expires_at,
+    :next_reconcile_at,
+    :terminal_receipt_ref,
+    :last_error,
+    :updated_at
+  ]
+
   def runtime_state_snapshot(%RequestContext{} = context, rows, runtime_sources, request, now) do
     with {:ok, runtime_rows} <- Common.map_each(runtime_sources, &runtime_row_from_map(&1, now)),
          {:ok, retry_rows} <- state_snapshot_retry_rows(runtime_sources),
@@ -63,6 +83,38 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeReadbackMapping do
       _reason -> row
     end
   end
+
+  def with_agent_projection(source, nil), do: source
+
+  def with_agent_projection(source, projection) when is_map(source) and is_map(projection) do
+    existing_extensions = Common.fetch_value(source, :extensions) || %{}
+
+    canonical = %{
+      subject_ref: Common.fetch_value(projection, :subject_ref),
+      run_ref: Common.fetch_value(projection, :run_ref),
+      state: Common.fetch_value(projection, :status),
+      updated_at: Common.fetch_value(projection, :updated_at),
+      title:
+        Common.fetch_value(source, :title) ||
+          Common.fetch_value(projection, :run_ref),
+      extensions:
+        Map.put(
+          existing_extensions,
+          "control",
+          agent_control_projection(Common.fetch_value(projection, :control))
+        )
+    }
+
+    Map.merge(source, canonical)
+  end
+
+  defp agent_control_projection(control) when is_map(control) do
+    Map.new(@agent_control_projection_fields, fn field ->
+      {Atom.to_string(field), Common.fetch_value(control, field)}
+    end)
+  end
+
+  defp agent_control_projection(_control), do: %{}
 
   def runtime_subject_detail(subject_id, projection, now) do
     with {:ok, runtime_row} <-

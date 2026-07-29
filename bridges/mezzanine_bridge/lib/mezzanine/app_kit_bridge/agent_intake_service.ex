@@ -29,6 +29,9 @@ defmodule Mezzanine.AppKitBridge.AgentIntakeService do
   def fetch_projection(run_ref, _opts \\ []) when is_binary(run_ref),
     do: owner_call(fn -> Store.fetch_projection(run_ref) end)
 
+  def list_projections(tenant_ref, opts \\ []) when is_binary(tenant_ref),
+    do: owner_call(fn -> Store.list_projections(tenant_ref, opts) end)
+
   def list_turns(run_ref, _opts \\ []) when is_binary(run_ref),
     do: owner_call(fn -> Store.list_turns(run_ref) end)
 

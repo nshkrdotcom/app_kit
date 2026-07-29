@@ -5,6 +5,7 @@ defmodule AppKit.Bridges.MezzanineBridge.HeadlessAdapter do
 
   alias AppKit.Bridges.MezzanineBridge.{
     AgentIntakeMapping,
+    Common,
     Errors,
     RuntimeReadbackMapping,
     Services,
@@ -22,12 +23,16 @@ defmodule AppKit.Bridges.MezzanineBridge.HeadlessAdapter do
     with {:ok, tenant_ref} <- WorkContext.tenant_id(context),
          {:ok, program_id} <- WorkContext.program_id(context, opts),
          {:ok, rows} <- query_service.list_subjects(tenant_ref, program_id, %{}),
+         projections <- canonical_agent_projections(tenant_ref, opts),
          runtime_sources <-
-           Enum.map(
-             rows,
-             &RuntimeReadbackMapping.state_snapshot_source(query_service, tenant_ref, &1, opts)
-           ) do
-      RuntimeReadbackMapping.runtime_state_snapshot(context, rows, runtime_sources, request, now)
+           state_snapshot_sources(query_service, tenant_ref, rows, projections, opts) do
+      RuntimeReadbackMapping.runtime_state_snapshot(
+        context,
+        runtime_sources,
+        runtime_sources,
+        request,
+        now
+      )
     else
       {:error, reason} -> Errors.normalize(reason)
     end
@@ -104,5 +109,74 @@ defmodule AppKit.Bridges.MezzanineBridge.HeadlessAdapter do
       turn_ref ->
         service.list_provider_events(turn_ref, 0, Keyword.put(opts, :limit, 500))
     end
+  end
+
+  defp canonical_agent_projections(tenant_ref, opts) do
+    service = Services.agent_intake(opts)
+
+    if Services.exports?(service, :list_projections, 2) do
+      case service.list_projections(tenant_ref, Keyword.put_new(opts, :limit, 500)) do
+        {:ok, projections} when is_list(projections) ->
+          Enum.filter(
+            projections,
+            &same_tenant?(
+              Common.fetch_value(&1, :tenant_ref),
+              tenant_ref
+            )
+          )
+
+        _unavailable ->
+          []
+      end
+    else
+      []
+    end
+  end
+
+  defp state_snapshot_sources(query_service, tenant_ref, rows, projections, opts) do
+    projections_by_work_object =
+      Map.new(projections, fn projection ->
+        {
+          RuntimeReadbackMapping.readback_ref_id(Common.fetch_value(projection, :work_object_id)),
+          projection
+        }
+      end)
+
+    {sources, matched_work_objects} =
+      Enum.map_reduce(rows, MapSet.new(), fn row, matched ->
+        work_object_id =
+          row
+          |> Common.fetch_value(:subject_id)
+          |> RuntimeReadbackMapping.readback_ref_id()
+
+        projection = Map.get(projections_by_work_object, work_object_id)
+
+        source =
+          query_service
+          |> RuntimeReadbackMapping.state_snapshot_source(tenant_ref, row, opts)
+          |> RuntimeReadbackMapping.with_agent_projection(projection)
+
+        matched =
+          if projection, do: MapSet.put(matched, work_object_id), else: matched
+
+        {source, matched}
+      end)
+
+    missing_sources =
+      projections
+      |> Enum.reject(fn projection ->
+        projection
+        |> Common.fetch_value(:work_object_id)
+        |> RuntimeReadbackMapping.readback_ref_id()
+        |> then(&MapSet.member?(matched_work_objects, &1))
+      end)
+      |> Enum.map(&RuntimeReadbackMapping.with_agent_projection(%{}, &1))
+
+    sources ++ missing_sources
+  end
+
+  defp same_tenant?(projection_tenant, tenant_ref) do
+    projection_tenant = RuntimeReadbackMapping.readback_ref_id(projection_tenant)
+    projection_tenant in [tenant_ref, "tenant://#{tenant_ref}"]
   end
 end
