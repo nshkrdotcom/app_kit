@@ -13,6 +13,10 @@ defmodule AppKit.Bridges.MezzanineBridge.Services do
   def agent_intake(opts),
     do: Keyword.get(opts, :agent_intake_service, Mezzanine.AppKitBridge.AgentIntakeService)
 
+  def runtime_refresh(opts), do: Keyword.get(opts, :runtime_refresh_service)
+
+  def live_effect(opts), do: Keyword.get(opts, :live_effect_service)
+
   def review_query(opts),
     do: Keyword.get(opts, :review_query_service, Mezzanine.AppKitBridge.ReviewQueryService)
 

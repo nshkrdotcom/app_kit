@@ -6,8 +6,10 @@ defmodule AppKit.Bridges.MezzanineBridge.Errors do
   @authorization_reasons [
     :cross_tenant_operator_command_denied,
     :cross_tenant_control_denied,
+    :cross_tenant_live_effect_denied,
     :operator_actor_context_mismatch,
     :operator_actor_tenant_mismatch,
+    :unauthorized_turn_submission,
     :unauthorized_lower_read
   ]
   @not_found_reasons [:bridge_not_found, :not_found, :pack_registration_not_found]
@@ -15,10 +17,22 @@ defmodule AppKit.Bridges.MezzanineBridge.Errors do
     :handoff_state_conflict,
     :idempotency_conflict,
     :installation_pack_conflict,
-    :review_gate_not_satisfied
+    :review_gate_not_satisfied,
+    :run_cursor_conflict,
+    :run_terminal,
+    :stale_turn_cursor
   ]
   @transient_reasons [:agent_run_owner_unavailable, :timeout, :temporarily_unavailable]
-  @validation_reasons [:cursor_run_mismatch, :non_contiguous_event, :stale_proof_token]
+  @validation_reasons [
+    :cursor_run_mismatch,
+    :cursor_turn_mismatch,
+    :non_contiguous_event,
+    :non_contiguous_provider_event,
+    :provider_events_without_model_turn,
+    :stale_proof_token,
+    :turn_acceptance_mismatch,
+    :unsupported_owner_event_type
+  ]
   @validation_reason_prefixes ["missing_", "invalid_", "unsupported_"]
 
   def normalize(%SurfaceError{} = error), do: {:error, error}

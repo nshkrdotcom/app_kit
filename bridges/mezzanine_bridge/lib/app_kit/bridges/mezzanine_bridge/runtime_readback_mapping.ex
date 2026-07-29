@@ -86,22 +86,19 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeReadbackMapping do
     end
   end
 
-  def runtime_refresh_result(request) do
+  def durable_runtime_refresh_result(request, owner_result) do
     idempotency_key = Common.fetch_value(request, :idempotency_key)
 
-    CommandResult.new(%{
-      command_ref: "command://#{idempotency_key}",
-      command_kind: :refresh,
-      accepted?: true,
-      coalesced?: false,
-      status: :accepted,
-      authority_state: :local_policy,
-      authority_refs: [],
-      workflow_effect_state: "pending_signal",
-      projection_state: :pending,
-      idempotency_key: idempotency_key,
-      message: "Refresh command accepted with database_first acknowledgement"
-    })
+    with {:ok, result} <- normalize_command_result(owner_result),
+         true <- result.command_kind in [:refresh, "refresh"],
+         true <- result.idempotency_key == idempotency_key,
+         true <- result.persistence_posture.durable?,
+         true <- is_binary(result.receipt_ref) and result.receipt_ref != "",
+         true <- result.authority_refs != [] do
+      {:ok, result}
+    else
+      _other -> {:error, :invalid_runtime_refresh_receipt}
+    end
   end
 
   def runtime_row_from_map(row, now) do
@@ -113,6 +110,11 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeReadbackMapping do
   def readback_ref_id(value) when is_atom(value), do: Atom.to_string(value)
   def readback_ref_id(nil), do: nil
   def readback_ref_id(value), do: to_string(value)
+
+  defp normalize_command_result(%CommandResult{} = result),
+    do: result |> Map.from_struct() |> CommandResult.new()
+
+  defp normalize_command_result(result), do: CommandResult.new(result)
 
   def public_readback_map(%DateTime{} = value), do: value
 

@@ -8,10 +8,6 @@ defmodule Mezzanine.AppKitBridge.MemoryControlService do
 
   alias Mezzanine.Audit.MemoryProofTokenStore
 
-  @share_up_client Module.concat(["OuterBrain", "Memory", "ShareUpClient"])
-  @promotion_coordinator Module.concat(["Mezzanine", "Memory", "PromotionCoordinator"])
-  @invalidation_coordinator Module.concat(["Mezzanine", "Memory", "InvalidationCoordinator"])
-
   @spec list_fragments_by_proof_token(map(), keyword()) :: {:ok, [map()]} | {:error, term()}
   def list_fragments_by_proof_token(attrs, opts \\ []) when is_map(attrs) and is_list(opts) do
     with {:ok, proof_token_ref} <- fetch_string(attrs, :proof_token_ref),
@@ -49,38 +45,46 @@ defmodule Mezzanine.AppKitBridge.MemoryControlService do
 
   @spec request_share_up(map(), keyword()) :: {:ok, map()} | {:error, term()}
   def request_share_up(attrs, opts \\ []) when is_map(attrs) and is_list(opts) do
-    lower = Keyword.get(opts, :share_up_client, @share_up_client)
-
     with {:ok, result} <-
-           call_lower(lower, :share_up, [attrs, Keyword.get(opts, :share_up_callbacks, [])]) do
-      {:ok, action_result(result, attrs, :fragment_ref, "share_up", "Share-up requested")}
+           call_memory_command_owner(
+             opts,
+             :share_up_command_service,
+             :request_share_up,
+             attrs,
+             :memory_share_up_owner_not_configured
+           ),
+         {:ok, action_result} <- owner_action_result(result, "share_up") do
+      {:ok, action_result}
     end
   end
 
   @spec request_promotion(map(), keyword()) :: {:ok, map()} | {:error, term()}
   def request_promotion(attrs, opts \\ []) when is_map(attrs) and is_list(opts) do
-    lower = Keyword.get(opts, :promotion_coordinator, @promotion_coordinator)
-
     with {:ok, result} <-
-           call_lower(lower, :propose_candidate, [
+           call_memory_command_owner(
+             opts,
+             :promotion_command_service,
+             :request_promotion,
              attrs,
-             Keyword.get(opts, :promotion_callbacks, [])
-           ]) do
-      {:ok, action_result(result, attrs, :shared_fragment_ref, "promote", "Promotion requested")}
+             :memory_promotion_owner_not_configured
+           ),
+         {:ok, action_result} <- owner_action_result(result, "promote") do
+      {:ok, action_result}
     end
   end
 
   @spec request_invalidation(map(), keyword()) :: {:ok, map()} | {:error, term()}
   def request_invalidation(attrs, opts \\ []) when is_map(attrs) and is_list(opts) do
-    lower = Keyword.get(opts, :invalidation_coordinator, @invalidation_coordinator)
-
     with {:ok, result} <-
-           call_lower(lower, :invalidate, [
-             invalidation_request_attrs(attrs),
-             Keyword.get(opts, :invalidation_callbacks, [])
-           ]) do
-      {:ok,
-       action_result(result, attrs, :root_fragment_ref, "invalidate", "Invalidation requested")}
+           call_memory_command_owner(
+             opts,
+             :invalidation_command_service,
+             :request_invalidation,
+             attrs,
+             :memory_invalidation_owner_not_configured
+           ),
+         {:ok, action_result} <- owner_action_result(result, "invalidate") do
+      {:ok, action_result}
     end
   end
 
@@ -108,14 +112,6 @@ defmodule Mezzanine.AppKitBridge.MemoryControlService do
         {:error, :missing_memory_read_query}
     end
   end
-
-  defp call_lower(fun, _function, args) when is_function(fun, length(args)), do: apply(fun, args)
-
-  defp call_lower(module, function, args) when is_atom(module) do
-    call_module(module, function, args, {:missing_lower_service, module, function})
-  end
-
-  defp call_lower(_lower, function, _args), do: {:error, {:invalid_lower_service, function}}
 
   defp call_module(module, function, args, missing_reason) do
     if Code.ensure_loaded?(module) and function_exported?(module, function, length(args)) do
@@ -180,47 +176,58 @@ defmodule Mezzanine.AppKitBridge.MemoryControlService do
     }
   end
 
-  defp action_result(result, attrs, fragment_key, action_kind, message) when is_map(result) do
-    result
-    |> normalize_value()
-    |> Map.merge(%{
-      status: value(result, :status) || :accepted,
-      action_ref:
-        value(result, :action_ref) ||
-          %{
-            id: "#{value(attrs, fragment_key)}:#{action_kind}",
-            action_kind: action_kind
-          },
-      message: value(result, :message) || message,
-      metadata:
-        Map.merge(
-          %{fragment_ref: value(attrs, fragment_key)},
-          value(result, :metadata) || %{}
-        )
-    })
+  defp call_memory_command_owner(opts, option, function, attrs, missing_reason) do
+    case Keyword.get(opts, option) do
+      fun when is_function(fun, 2) ->
+        fun.(attrs, opts)
+
+      module when is_atom(module) ->
+        call_module(module, function, [attrs, opts], missing_reason)
+
+      nil ->
+        {:error, missing_reason}
+
+      _other ->
+        {:error, {:invalid_memory_command_owner, option}}
+    end
   end
 
-  defp action_result(result, attrs, fragment_key, action_kind, message) do
-    %{
-      status: :accepted,
-      action_ref: %{id: "#{value(attrs, fragment_key)}:#{action_kind}", action_kind: action_kind},
-      message: message,
-      metadata: %{fragment_ref: value(attrs, fragment_key), lower_result: result}
-    }
+  @owner_action_statuses %{
+    :accepted => :accepted,
+    "accepted" => :accepted,
+    :completed => :completed,
+    "completed" => :completed,
+    :rejected => :rejected,
+    "rejected" => :rejected,
+    :failed => :failed,
+    "failed" => :failed
+  }
+
+  defp owner_action_result(result, action_kind) when is_map(result) do
+    operation_ref = value(result, :operation_ref)
+    receipt_ref = value(result, :receipt_ref)
+    metadata = value(result, :metadata)
+
+    with operation_ref when is_binary(operation_ref) and operation_ref != "" <- operation_ref,
+         {:ok, status} <- Map.fetch(@owner_action_statuses, value(result, :status)),
+         true <- is_nil(receipt_ref) or is_binary(receipt_ref),
+         true <- is_nil(metadata) or is_map(metadata),
+         message <- value(result, :message),
+         true <- is_nil(message) or is_binary(message) do
+      {:ok,
+       %{
+         status: status,
+         action_ref: %{id: operation_ref, action_kind: action_kind},
+         message: message,
+         metadata: maybe_put(Map.new(metadata || %{}), :receipt_ref, receipt_ref)
+       }}
+    else
+      _other -> {:error, :invalid_memory_owner_receipt}
+    end
   end
 
-  defp invalidation_request_attrs(attrs) do
-    attrs
-    |> Map.new()
-    |> Map.put_new(:root_fragment_id, value(attrs, :root_fragment_ref))
-    |> Map.put_new(:effective_at, value(attrs, :effective_at) || DateTime.utc_now())
-    |> Map.put_new(
-      :effective_at_epoch,
-      value(attrs, :effective_at_epoch) || value(attrs, :current_epoch)
-    )
-    |> Map.put_new(:authority_ref, value(attrs, :authority_ref))
-    |> Map.put_new(:evidence_refs, value(attrs, :evidence_refs) || [])
-  end
+  defp owner_action_result(_result, _action_kind),
+    do: {:error, :invalid_memory_owner_receipt}
 
   defp authorize_token(token, attrs) do
     expected_tenant = value(attrs, :expected_tenant_ref)
@@ -320,14 +327,6 @@ defmodule Mezzanine.AppKitBridge.MemoryControlService do
 
   defp public_proof_hash(proof_hash), do: proof_hash
 
-  defp normalize_value(%DateTime{} = value), do: value
-  defp normalize_value(%NaiveDateTime{} = value), do: value
-  defp normalize_value(%_{} = value), do: value |> Map.from_struct() |> normalize_value()
-
-  defp normalize_value(value) when is_map(value) do
-    Map.new(value, fn {key, nested_value} -> {key, normalize_value(nested_value)} end)
-  end
-
-  defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
-  defp normalize_value(value), do: value
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 end

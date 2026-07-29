@@ -61,7 +61,8 @@ defmodule AppKit.Bridges.MezzanineBridge.HeadlessAdapter do
     with {:ok, projection} <- service.fetch_projection(run_id, opts),
          :ok <- AgentIntakeMapping.authorize_projection(context, run_id, projection),
          {:ok, events} <- service.list_events(run_id, nil, Keyword.put(opts, :limit, 500)),
-         {:ok, detail} <- AgentIntakeMapping.run_detail(projection, events) do
+         {:ok, provider_events} <- provider_events(service, projection, opts),
+         {:ok, detail} <- AgentIntakeMapping.run_detail(projection, events, provider_events) do
       {:ok, detail}
     else
       {:error, reason} -> Errors.normalize(reason)
@@ -69,8 +70,20 @@ defmodule AppKit.Bridges.MezzanineBridge.HeadlessAdapter do
   end
 
   @impl true
-  def request_runtime_refresh(%RequestContext{} = _context, request, _opts) do
-    RuntimeReadbackMapping.runtime_refresh_result(request)
+  def request_runtime_refresh(%RequestContext{} = context, request, opts) do
+    service = Services.runtime_refresh(opts)
+
+    if Services.exports?(service, :request_runtime_refresh, 3) do
+      with {:ok, owner_result} <- service.request_runtime_refresh(context, request, opts),
+           {:ok, result} <-
+             RuntimeReadbackMapping.durable_runtime_refresh_result(request, owner_result) do
+        {:ok, result}
+      else
+        {:error, reason} -> Errors.normalize(reason)
+      end
+    else
+      Errors.normalize(:runtime_refresh_owner_not_configured)
+    end
   end
 
   @impl true
@@ -78,6 +91,16 @@ defmodule AppKit.Bridges.MezzanineBridge.HeadlessAdapter do
     case Services.work_control(opts).control_run(context, request, opts) do
       {:ok, result} -> {:ok, result}
       {:error, reason} -> Errors.normalize(reason)
+    end
+  end
+
+  defp provider_events(service, projection, opts) do
+    case AgentIntakeMapping.model_turn_ref(projection) do
+      nil ->
+        {:ok, []}
+
+      turn_ref ->
+        service.list_provider_events(turn_ref, 0, Keyword.put(opts, :limit, 500))
     end
   end
 end
