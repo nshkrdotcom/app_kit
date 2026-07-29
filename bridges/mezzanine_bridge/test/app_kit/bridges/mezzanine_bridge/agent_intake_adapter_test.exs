@@ -113,6 +113,9 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapterTest do
     assert detail.run_ref == @run_ref
     assert detail.runtime_row.persistence_posture.durable?
     assert detail.runtime_row.extensions["owner_event_sequence"] == 2
+    assert detail.runtime_row.extensions["control"]["state"] == "outcome_unknown"
+    assert detail.runtime_row.extensions["control"]["row_version"] == 7
+    refute Map.has_key?(detail.runtime_row.extensions["control"], "private_payload")
     assert Enum.map(detail.events, & &1.event_seq) == [1, 2]
     assert_receive {:projection_read, @run_ref}
     assert_receive {:event_read, @run_ref, nil, 500}
@@ -243,6 +246,21 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapterTest do
       status: "accepted",
       event_sequence: 2,
       run_revision: 1,
+      control: %{
+        state: "outcome_unknown",
+        generation: 1,
+        attempt_sequence: 1,
+        sequence: 6,
+        row_version: 7,
+        attempt_ref: "attempt://mezzanine/agent-1/1",
+        generation_ref: "generation://mezzanine/agent-1/1",
+        external_operation_ref: "operation://codex/agent-1",
+        fence_epoch: 2,
+        reconciliation_attempts: 1,
+        last_error: "error://mezzanine/outcome-unknown",
+        updated_at: @now,
+        private_payload: %{"prompt" => "must not cross AppKit"}
+      },
       projection: %{"acceptance" => Acceptance.dump(acceptance)},
       updated_at: @now
     }

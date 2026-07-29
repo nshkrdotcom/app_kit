@@ -74,7 +74,10 @@ defmodule AppKit.Bridges.MezzanineBridge.HeadlessAdapter do
   end
 
   @impl true
-  def request_runtime_control(%RequestContext{} = _context, request, _opts) do
-    RuntimeReadbackMapping.runtime_control_result(request)
+  def request_runtime_control(%RequestContext{} = context, request, opts) do
+    case Services.work_control(opts).control_run(context, request, opts) do
+      {:ok, result} -> {:ok, result}
+      {:error, reason} -> Errors.normalize(reason)
+    end
   end
 end

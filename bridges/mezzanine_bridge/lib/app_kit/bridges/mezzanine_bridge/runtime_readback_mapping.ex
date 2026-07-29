@@ -104,44 +104,6 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeReadbackMapping do
     })
   end
 
-  def runtime_control_result(request) do
-    command_kind = Common.fetch_value(request, :action)
-    idempotency_key = Common.fetch_value(request, :idempotency_key)
-
-    workflow_effect_state =
-      if to_string(command_kind) == "inspect_memory_proof",
-        do: "not_available",
-        else: "pending_signal"
-
-    diagnostics =
-      if to_string(command_kind) == "inspect_memory_proof" do
-        [
-          %{
-            severity: :info,
-            code: "memory_proof_not_available",
-            message: "Memory proof readback is not available until Phase 7"
-          }
-        ]
-      else
-        []
-      end
-
-    CommandResult.new(%{
-      command_ref: "command://#{idempotency_key}",
-      command_kind: command_kind,
-      accepted?: true,
-      coalesced?: false,
-      status: :accepted,
-      authority_state: :local_policy,
-      authority_refs: [],
-      workflow_effect_state: workflow_effect_state,
-      projection_state: :pending,
-      idempotency_key: idempotency_key,
-      message: "Control command accepted with database_first acknowledgement",
-      diagnostics: diagnostics
-    })
-  end
-
   def runtime_row_from_map(row, now) do
     RuntimeRow.new(readback_row_attrs(row, now))
   end

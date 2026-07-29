@@ -157,7 +157,8 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeMapping do
              extensions: %{
                "owner_cursor_ref" => Common.fetch_value(projection, :latest_event_ref),
                "owner_event_sequence" => event_sequence,
-               "owner_run_revision" => Common.fetch_value(projection, :run_revision)
+               "owner_run_revision" => Common.fetch_value(projection, :run_revision),
+               "control" => control_projection(Common.fetch_value(projection, :control))
              }
            }),
          {:ok, runtime_events} <- map_runtime_events(events) do
@@ -177,6 +178,34 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeMapping do
       _other -> @default_event_limit
     end
   end
+
+  @control_projection_fields [
+    :state,
+    :generation,
+    :attempt_sequence,
+    :sequence,
+    :row_version,
+    :attempt_ref,
+    :generation_ref,
+    :external_operation_ref,
+    :deadline_at,
+    :fence_epoch,
+    :reconciliation_attempts,
+    :reconcile_owner,
+    :reconcile_lease_expires_at,
+    :next_reconcile_at,
+    :terminal_receipt_ref,
+    :last_error,
+    :updated_at
+  ]
+
+  defp control_projection(control) when is_map(control) do
+    Map.new(@control_projection_fields, fn field ->
+      {Atom.to_string(field), Common.fetch_value(control, field)}
+    end)
+  end
+
+  defp control_projection(_control), do: %{}
 
   defp projection_acceptance(projection) do
     projection

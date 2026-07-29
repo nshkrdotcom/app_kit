@@ -5,6 +5,8 @@ defmodule AppKit.Bridges.MezzanineBridge.Errors do
 
   @authorization_reasons [
     :cross_tenant_operator_command_denied,
+    :cross_tenant_control_denied,
+    :operator_actor_context_mismatch,
     :operator_actor_tenant_mismatch,
     :unauthorized_lower_read
   ]
@@ -29,6 +31,33 @@ defmodule AppKit.Bridges.MezzanineBridge.Errors do
         kind: :terminal,
         retryable: false,
         details: %{manifest_ref: manifest_ref}
+      })
+
+    {:error, error}
+  end
+
+  def normalize({:stale_control_version, current_version})
+      when is_integer(current_version) and current_version > 0 do
+    {:ok, error} =
+      SurfaceError.new(%{
+        code: "stale_control_version",
+        message: "Run control changed; reload the durable run state before retrying",
+        kind: :conflict,
+        retryable: false,
+        details: %{current_control_row_version: current_version}
+      })
+
+    {:error, error}
+  end
+
+  def normalize({:invalid_control_transition, current_state, action}) do
+    {:ok, error} =
+      SurfaceError.new(%{
+        code: "invalid_control_transition",
+        message: "The requested control is not valid for the durable run state",
+        kind: :conflict,
+        retryable: false,
+        details: %{current_state: to_string(current_state), action: to_string(action)}
       })
 
     {:error, error}

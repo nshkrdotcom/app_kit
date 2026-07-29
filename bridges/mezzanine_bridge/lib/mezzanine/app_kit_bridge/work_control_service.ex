@@ -3,12 +3,27 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
   Backend-oriented run-start service for the transitional AppKit bridge.
   """
 
-  alias AppKit.Core.{RequestContext, Result, RunRef, RunRequest}
+  alias AppKit.Core.{PersistencePosture, RequestContext, Result, RunRef, RunRequest}
+  alias AppKit.Core.RuntimeReadback.{CommandResult, ControlRequest}
   alias Mezzanine.AppKitBridge.AdapterSupport
   alias Mezzanine.M1M2Runtime.DeterministicLowerCompletion
   alias Mezzanine.M1M2Runtime.WorkflowStartHandoff
   alias Mezzanine.WorkControl
   alias Mezzanine.WorkExecutionHandoff
+  alias Mezzanine.WorkflowRuntime.RecoveryControl
+
+  @durable_control_actions %{
+    :pause => :pause,
+    "pause" => :pause,
+    :resume => :resume,
+    "resume" => :resume,
+    :cancel => :cancel,
+    "cancel" => :cancel,
+    :retry => :retry,
+    "retry" => :retry,
+    :supersede => :supersede,
+    "supersede" => :supersede
+  }
 
   @typep request_context_input :: %{
            required(:__struct__) => RequestContext,
@@ -94,6 +109,39 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
       {:ok, result}
     else
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Submits a product control to the durable Mezzanine recovery owner.
+
+  The caller supplies the last read `expected_control_row_version`; stale
+  requests fail closed so AppKit can require an explicit reload.
+  """
+  @spec control_run(RequestContext.t(), struct(), keyword()) ::
+          {:ok, struct()} | {:error, term()}
+  def control_run(%RequestContext{} = context, %ControlRequest{} = request, opts)
+      when is_list(opts) do
+    params = request.params || %{}
+
+    with :ok <- ensure_control_actor(context, request),
+         {:ok, run_ref} <- required_control_ref(request.run_ref, :missing_run_ref),
+         {:ok, action} <- durable_control_action(request.action),
+         {:ok, expected_version} <- expected_control_version(params),
+         {:ok, lower_context} <- control_context(context, opts),
+         attrs <- control_attrs(request, params),
+         {:ok, result} <-
+           recovery_control(opts).control(
+             lower_context,
+             run_ref,
+             action,
+             expected_version,
+             attrs,
+             recovery_control_opts(opts)
+           ),
+         {:ok, command_result} <-
+           durable_control_result(context, request, action, lower_context, result) do
+      {:ok, command_result}
     end
   end
 
@@ -364,6 +412,121 @@ defmodule Mezzanine.AppKitBridge.WorkControlService do
   defp review_unit_id(%{id: review_unit_id}), do: review_unit_id
 
   defp map_value(map, key), do: AdapterSupport.map_value(map, key)
+
+  defp ensure_control_actor(
+         %RequestContext{actor_ref: %{id: actor_ref}},
+         %ControlRequest{actor_ref: actor_ref}
+       ),
+       do: :ok
+
+  defp ensure_control_actor(_context, _request),
+    do: {:error, :operator_actor_context_mismatch}
+
+  defp required_control_ref(value, _error) when is_binary(value) and value != "",
+    do: {:ok, value}
+
+  defp required_control_ref(_value, error), do: {:error, error}
+
+  defp durable_control_action(action) do
+    case Map.fetch(@durable_control_actions, action) do
+      {:ok, durable_action} -> {:ok, durable_action}
+      :error -> {:error, :unsupported_durable_control_action}
+    end
+  end
+
+  defp expected_control_version(params) do
+    case map_value(params, :expected_control_row_version) do
+      version when is_integer(version) and version > 0 -> {:ok, version}
+      _other -> {:error, :invalid_expected_control_row_version}
+    end
+  end
+
+  defp control_context(%RequestContext{} = context, opts) do
+    metadata = context.metadata || %{}
+
+    authority_ref =
+      Keyword.get(opts, :control_authority_ref) || map_value(metadata, :control_authority_ref)
+
+    permission_decision_ref =
+      Keyword.get(opts, :control_permission_decision_ref) ||
+        map_value(metadata, :control_permission_decision_ref)
+
+    correlation_ref =
+      context.request_id || context.causation_id || context.idempotency_key || context.trace_id
+
+    with {:ok, authority_ref} <-
+           required_control_ref(authority_ref, :missing_control_authority_ref),
+         {:ok, permission_decision_ref} <-
+           required_control_ref(
+             permission_decision_ref,
+             :missing_control_permission_decision_ref
+           ),
+         {:ok, correlation_ref} <-
+           required_control_ref(correlation_ref, :missing_control_correlation_ref) do
+      {:ok,
+       %{
+         tenant_ref: context.tenant_ref.id,
+         actor_ref: context.actor_ref.id,
+         authority_ref: authority_ref,
+         permission_decision_ref: permission_decision_ref,
+         trace_ref: context.trace_id,
+         correlation_ref: correlation_ref
+       }}
+    end
+  end
+
+  defp control_attrs(%ControlRequest{} = request, params) do
+    %{
+      command_ref: control_command_ref(request.run_ref, request.idempotency_key),
+      idempotency_key: request.idempotency_key
+    }
+    |> maybe_put(:reason, map_value(params, :reason))
+    |> maybe_put(:payload_ref, map_value(params, :payload_ref))
+    |> maybe_put(:acknowledgement_ttl_ms, map_value(params, :acknowledgement_ttl_ms))
+    |> maybe_put(:attempt_ref, map_value(params, :attempt_ref))
+    |> maybe_put(:generation_ref, map_value(params, :generation_ref))
+    |> maybe_put(:external_operation_ref, map_value(params, :external_operation_ref))
+    |> maybe_put(:deadline_at, map_value(params, :deadline_at))
+  end
+
+  defp control_command_ref(run_ref, idempotency_key) do
+    token =
+      :crypto.hash(:sha256, :erlang.term_to_binary({run_ref, idempotency_key}))
+      |> Base.url_encode64(padding: false)
+
+    "command://app-kit/control/#{token}"
+  end
+
+  defp durable_control_result(context, request, action, lower_context, result) do
+    workflow_effect_state = if result.outbox_ref, do: "queued_signal", else: "applied"
+
+    CommandResult.new(%{
+      command_ref: result.command_ref,
+      command_kind: action,
+      accepted?: true,
+      coalesced?: result.idempotent_replay?,
+      status: :accepted,
+      authority_state: :admitted,
+      authority_refs: [
+        lower_context.authority_ref,
+        lower_context.permission_decision_ref
+      ],
+      workflow_effect_state: workflow_effect_state,
+      projection_state: result.control_state,
+      trace_id: context.trace_id,
+      correlation_id: lower_context.correlation_ref,
+      receipt_ref: result.event_ref,
+      idempotency_key: request.idempotency_key,
+      message: "Durable control accepted; workflow acknowledgement remains pending",
+      persistence_posture: PersistencePosture.durable(:runtime_projection)
+    })
+  end
+
+  defp recovery_control(opts),
+    do: Keyword.get(opts, :recovery_control_service, RecoveryControl)
+
+  defp recovery_control_opts(opts),
+    do: Keyword.get(opts, :recovery_control_opts, [])
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
