@@ -502,6 +502,12 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapterTest do
     assert row.state == projection.status
     assert row.extensions["control"]["state"] == "outcome_unknown"
     refute Map.has_key?(row.extensions["control"], "private_payload")
+
+    assert row.extensions["agent_run_projection"] == %{
+             "canonical" => true,
+             "owner_ref" => "Mezzanine.WorkflowRuntime.Store"
+           }
+
     assert row.persistence_posture.durable?
     assert_receive {:projection_list_read, "tenant-1"}
   end

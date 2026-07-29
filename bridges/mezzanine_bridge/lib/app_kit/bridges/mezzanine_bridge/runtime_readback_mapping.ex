@@ -89,6 +89,17 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeReadbackMapping do
   def with_agent_projection(source, projection) when is_map(source) and is_map(projection) do
     existing_extensions = Common.fetch_value(source, :extensions) || %{}
 
+    extensions =
+      existing_extensions
+      |> Map.put(
+        "control",
+        agent_control_projection(Common.fetch_value(projection, :control))
+      )
+      |> Map.put("agent_run_projection", %{
+        "canonical" => true,
+        "owner_ref" => "Mezzanine.WorkflowRuntime.Store"
+      })
+
     canonical = %{
       subject_ref: Common.fetch_value(projection, :subject_ref),
       run_ref: Common.fetch_value(projection, :run_ref),
@@ -97,12 +108,7 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeReadbackMapping do
       title:
         Common.fetch_value(source, :title) ||
           Common.fetch_value(projection, :run_ref),
-      extensions:
-        Map.put(
-          existing_extensions,
-          "control",
-          agent_control_projection(Common.fetch_value(projection, :control))
-        )
+      extensions: extensions
     }
 
     Map.merge(source, canonical)
