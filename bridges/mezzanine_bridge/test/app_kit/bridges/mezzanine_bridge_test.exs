@@ -932,6 +932,8 @@ defmodule AppKit.Bridges.MezzanineBridgeTest do
 
     running_row = Enum.find(snapshot.rows, &(&1.subject_ref == "subject://subj-1"))
 
+    assert snapshot.persistence_posture.durable?
+    assert running_row.persistence_posture.durable?
     assert running_row.state == "awaiting_review"
     assert running_row.run_ref == "lower-run://lower-run-1"
     assert running_row.execution_ref == "execution://exec-1"

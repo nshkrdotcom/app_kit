@@ -3,7 +3,7 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeReadbackMapping do
 
   alias AppKit.Bridges.MezzanineBridge.{Common, Services}
 
-  alias AppKit.Core.RequestContext
+  alias AppKit.Core.{PersistencePosture, RequestContext}
 
   alias AppKit.Core.RuntimeReadback.{
     CommandResult,
@@ -40,7 +40,8 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeReadbackMapping do
           page_size: fetch_readback_page_size(request, 25),
           cursor: Common.fetch_value(request || %{}, :cursor),
           total_entries: length(rows)
-        }
+        },
+        persistence_posture: PersistencePosture.durable(:runtime_projection)
       })
     end
   end
@@ -202,7 +203,8 @@ defmodule AppKit.Bridges.MezzanineBridge.RuntimeReadbackMapping do
       polling_state: %{checking?: false, poll_interval_ms: 5_000, staleness_ms: 0},
       token_totals: readback_token_totals(row),
       provider_refs: Common.fetch_value(row, :provider_refs) || %{},
-      extensions: readback_row_extensions(row)
+      extensions: readback_row_extensions(row),
+      persistence_posture: PersistencePosture.durable(:runtime_projection)
     }
   end
 
