@@ -20,6 +20,7 @@ defmodule AppKit.BackendStack do
                    :operator_backend,
                    :runtime_backend,
                    :headless_backend,
+                   :product_surface_backend,
                    :effect_surface_backend,
                    :agent_intake_backend,
                    :agent_runtime
@@ -34,6 +35,7 @@ defmodule AppKit.BackendStack do
           | :operator_backend
           | :runtime_backend
           | :headless_backend
+          | :product_surface_backend
           | :effect_surface_backend
           | :agent_intake_backend
           | :agent_runtime
