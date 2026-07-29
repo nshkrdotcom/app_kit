@@ -9,6 +9,7 @@ defmodule AppKit.Bridges.MezzanineBridge.Errors do
     :cross_tenant_live_effect_denied,
     :operator_actor_context_mismatch,
     :operator_actor_tenant_mismatch,
+    :product_cursor_tenant_mismatch,
     :unauthorized_turn_submission,
     :unauthorized_lower_read
   ]
@@ -29,6 +30,7 @@ defmodule AppKit.Bridges.MezzanineBridge.Errors do
     :non_contiguous_event,
     :non_contiguous_provider_event,
     :provider_events_without_model_turn,
+    :product_run_identity_mismatch,
     :stale_proof_token,
     :turn_acceptance_mismatch,
     :unsupported_owner_event_type
