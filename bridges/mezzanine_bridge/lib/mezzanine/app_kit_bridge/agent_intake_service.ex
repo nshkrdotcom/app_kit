@@ -29,6 +29,9 @@ defmodule Mezzanine.AppKitBridge.AgentIntakeService do
   def fetch_projection(run_ref, _opts \\ []) when is_binary(run_ref),
     do: owner_call(fn -> Store.fetch_projection(run_ref) end)
 
+  def list_turns(run_ref, _opts \\ []) when is_binary(run_ref),
+    do: owner_call(fn -> Store.list_turns(run_ref) end)
+
   def list_events(run_ref, cursor, opts \\ []) when is_binary(run_ref) and is_list(opts) do
     limit = Keyword.get(opts, :limit, 100)
     owner_call(fn -> Store.list_events(run_ref, cursor, limit: limit) end)

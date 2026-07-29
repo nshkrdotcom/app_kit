@@ -60,9 +60,11 @@ defmodule AppKit.Bridges.MezzanineBridge.HeadlessAdapter do
 
     with {:ok, projection} <- service.fetch_projection(run_id, opts),
          :ok <- AgentIntakeMapping.authorize_projection(context, run_id, projection),
+         {:ok, turns} <- service.list_turns(run_id, opts),
          {:ok, events} <- service.list_events(run_id, nil, Keyword.put(opts, :limit, 500)),
          {:ok, provider_events} <- provider_events(service, projection, opts),
-         {:ok, detail} <- AgentIntakeMapping.run_detail(projection, events, provider_events) do
+         {:ok, detail} <-
+           AgentIntakeMapping.run_detail(projection, turns, events, provider_events) do
       {:ok, detail}
     else
       {:error, reason} -> Errors.normalize(reason)

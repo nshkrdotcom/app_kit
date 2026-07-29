@@ -18,7 +18,7 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapterTest do
     RuntimeRunDetail
   }
 
-  alias Mezzanine.Runs.{Acceptance, Event, TurnAcceptance}
+  alias Mezzanine.Runs.{Acceptance, Event, TurnAcceptance, TurnProjection}
 
   @run_ref "run://mezzanine/tenant-1/agent-1"
   @program_id "22222222-2222-4222-8222-222222222222"
@@ -65,6 +65,11 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapterTest do
     def list_events(run_ref, cursor, opts) do
       send(Keyword.fetch!(opts, :test_pid), {:event_read, run_ref, cursor, opts[:limit]})
       {:ok, Keyword.fetch!(opts, :events)}
+    end
+
+    def list_turns(run_ref, opts) do
+      send(Keyword.fetch!(opts, :test_pid), {:turn_read, run_ref})
+      {:ok, Keyword.fetch!(opts, :turns)}
     end
 
     def list_provider_events(turn_ref, after_sequence, opts) do
@@ -440,8 +445,13 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapterTest do
     assert detail.runtime_row.extensions["control"]["row_version"] == 7
     refute Map.has_key?(detail.runtime_row.extensions["control"], "private_payload")
     assert Enum.map(detail.events, & &1.event_seq) == [1, 2]
-    assert detail.turns == []
+    assert [turn] = detail.turns
+    assert turn.turn_ref == "turn://mezzanine/tenant-1/agent-1/1"
+    assert turn.sequence == 1
+    assert turn.status == "accepted"
+    assert turn.state == "accepted"
     assert_receive {:projection_read, @run_ref}
+    assert_receive {:turn_read, @run_ref}
     assert_receive {:event_read, @run_ref, nil, 500}
     refute_received {:provider_event_read, _, _, _}
   end
@@ -467,6 +477,8 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapterTest do
 
     assert [turn] = detail.turns
     assert turn.turn_ref == "turn://mezzanine/tenant-1/agent-1/1"
+    assert turn.sequence == 1
+    assert turn.status == "accepted"
     assert turn.state == "completed"
     assert turn.reply_artifact_ref == "artifact://jido/tenant-1/reply-1"
     assert turn.cursor["sequence"] == 2
@@ -733,6 +745,24 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapterTest do
     [event(1, "run_accepted"), event(2, "turn_accepted")]
   end
 
+  defp turns do
+    [
+      TurnProjection.new!(%{
+        turn_ref: "turn://mezzanine/tenant-1/agent-1/1",
+        run_ref: @run_ref,
+        tenant_ref: "tenant://tenant-1",
+        subject_ref: "subject://synapse/agent-1",
+        input_artifact_ref: "artifact://outer-brain/input-1",
+        payload_digest: @digest,
+        sequence: 1,
+        status: "accepted",
+        provider_attempt_ref: nil,
+        row_version: 1,
+        updated_at: @now
+      })
+    ]
+  end
+
   defp event(sequence, event_type) do
     Event.new!(%{
       event_ref: "event://mezzanine/tenant-1/#{sequence}",
@@ -754,6 +784,7 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeAdapterTest do
     [
       agent_intake_service: FakeOwner,
       projection: projection,
+      turns: turns(),
       events: events,
       provider_events: provider_events,
       event_limit: 1,

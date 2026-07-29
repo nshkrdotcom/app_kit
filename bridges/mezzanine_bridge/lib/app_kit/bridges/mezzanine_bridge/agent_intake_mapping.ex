@@ -234,8 +234,9 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeMapping do
     end
   end
 
-  def run_detail(projection, events, provider_events \\ [])
-      when is_map(projection) and is_list(events) and is_list(provider_events) do
+  def run_detail(projection, turns, events, provider_events \\ [])
+      when is_map(projection) and is_list(turns) and is_list(events) and
+             is_list(provider_events) do
     updated_at = Common.fetch_value(projection, :updated_at) || DateTime.utc_now()
     run_ref = Common.fetch_value(projection, :run_ref)
     subject_ref = Common.fetch_value(projection, :subject_ref)
@@ -243,6 +244,7 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeMapping do
 
     with :ok <- validate_projection_events(projection, events),
          :ok <- validate_provider_events(projection, provider_events),
+         {:ok, turn_rows} <- turn_rows(turns, projection, provider_events),
          {:ok, runtime_row} <-
            RuntimeRow.new(%{
              subject_ref: subject_ref,
@@ -263,7 +265,7 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeMapping do
         run_ref: run_ref,
         runtime_row: runtime_row,
         events: runtime_events,
-        turns: turn_rows(projection, provider_events),
+        turns: turn_rows,
         persistence_posture: PersistencePosture.durable(:runtime_projection)
       })
     end
@@ -483,15 +485,73 @@ defmodule AppKit.Bridges.MezzanineBridge.AgentIntakeMapping do
     end
   end
 
-  defp turn_rows(projection, provider_events) do
-    case model_turn_projection(projection) do
-      model_turn when is_map(model_turn) and map_size(model_turn) > 0 ->
-        [model_turn_row(model_turn, provider_events)]
+  @canonical_turn_fields [
+    :turn_ref,
+    :run_ref,
+    :tenant_ref,
+    :subject_ref,
+    :input_artifact_ref,
+    :payload_digest,
+    :sequence,
+    :status,
+    :provider_attempt_ref,
+    :row_version,
+    :updated_at
+  ]
 
-      _missing ->
-        []
+  defp turn_rows(turns, projection, provider_events) do
+    model_turn = model_turn_projection(projection)
+    run_ref = Common.fetch_value(projection, :run_ref)
+    tenant_ref = Common.fetch_value(projection, :tenant_ref)
+
+    with :ok <- validate_canonical_turns(turns, run_ref, tenant_ref),
+         :ok <- validate_model_turn_binding(model_turn, turns) do
+      rows =
+        Enum.map(turns, fn turn ->
+          canonical = project_fields(turn, @canonical_turn_fields)
+
+          if is_map(model_turn) and
+               Common.fetch_value(model_turn, :turn_ref) == Common.fetch_value(turn, :turn_ref) do
+            canonical
+            |> Map.merge(model_turn_row(model_turn, provider_events))
+            |> Map.put(:sequence, Common.fetch_value(turn, :sequence))
+            |> Map.put(:status, Common.fetch_value(turn, :status))
+            |> Map.put(:input_artifact_ref, Common.fetch_value(turn, :input_artifact_ref))
+          else
+            Map.put(canonical, :state, Common.fetch_value(turn, :status))
+          end
+        end)
+
+      {:ok, rows}
     end
   end
+
+  defp validate_canonical_turns(turns, run_ref, tenant_ref) do
+    valid? =
+      turns
+      |> Enum.with_index(1)
+      |> Enum.all?(fn {turn, expected_sequence} ->
+        Common.fetch_value(turn, :run_ref) == run_ref and
+          same_tenant?(Common.fetch_value(turn, :tenant_ref), tenant_ref) and
+          Common.fetch_value(turn, :sequence) == expected_sequence and
+          present_ref?(Common.fetch_value(turn, :turn_ref))
+      end)
+
+    if valid?, do: :ok, else: {:error, :invalid_durable_turn_projection}
+  end
+
+  defp validate_model_turn_binding(model_turn, turns)
+       when is_map(model_turn) and map_size(model_turn) > 0 do
+    turn_ref = Common.fetch_value(model_turn, :turn_ref)
+
+    if Enum.any?(turns, &(Common.fetch_value(&1, :turn_ref) == turn_ref)),
+      do: :ok,
+      else: {:error, :model_turn_without_canonical_turn}
+  end
+
+  defp validate_model_turn_binding(_model_turn, _turns), do: :ok
+
+  defp present_ref?(value), do: is_binary(value) and value != ""
 
   @model_turn_fields [
     :turn_ref,
