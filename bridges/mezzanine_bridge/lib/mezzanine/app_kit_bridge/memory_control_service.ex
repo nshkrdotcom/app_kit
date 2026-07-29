@@ -144,7 +144,7 @@ defmodule Mezzanine.AppKitBridge.MemoryControlService do
         preferred([value(row, :installation_ref), value(token, :installation_id)]),
       tier: normalize_string(preferred([value(row, :tier), "unknown"])),
       proof_token_ref: value(token, :proof_id),
-      proof_hash: value(token, :proof_hash)
+      proof_hash: public_proof_hash(value(token, :proof_hash))
     }
   end
 
@@ -310,6 +310,15 @@ defmodule Mezzanine.AppKitBridge.MemoryControlService do
   defp normalize_string(nil), do: nil
   defp normalize_string(value) when is_atom(value), do: Atom.to_string(value)
   defp normalize_string(value), do: value
+
+  defp public_proof_hash(<<"sha256:", digest::binary-size(64)>> = proof_hash)
+       when is_binary(digest),
+       do: proof_hash
+
+  defp public_proof_hash(proof_hash) when is_binary(proof_hash) and byte_size(proof_hash) == 64,
+    do: "sha256:" <> proof_hash
+
+  defp public_proof_hash(proof_hash), do: proof_hash
 
   defp normalize_value(%DateTime{} = value), do: value
   defp normalize_value(%NaiveDateTime{} = value), do: value
