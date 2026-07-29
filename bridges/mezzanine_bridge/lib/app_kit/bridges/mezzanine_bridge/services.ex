@@ -58,6 +58,8 @@ defmodule AppKit.Bridges.MezzanineBridge.Services do
   def memory_control(opts),
     do: Keyword.get(opts, :memory_control_service, Mezzanine.AppKitBridge.MemoryControlService)
 
+  def product_projection(opts), do: Keyword.get(opts, :product_projection_service)
+
   def exports?(service, function_name, arity)
       when is_atom(service) and is_atom(function_name) and is_integer(arity) do
     match?({:module, ^service}, Code.ensure_loaded(service)) and
