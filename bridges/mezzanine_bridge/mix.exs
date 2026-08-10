@@ -79,17 +79,20 @@ defmodule AppKitMezzanineBridge.MixProject do
       DependencySources.dep(:mezzanine_pack_compiler, @repo_root),
       DependencySources.dep(:mezzanine_core, @repo_root),
       DependencySources.dep(:mezzanine_integration_bridge, @repo_root),
-      {:citadel_authority_contract,
-       path: Path.expand("../citadel/core/authority_contract", @repo_root),
-       runtime: false,
-       override: true},
-      {:jido_integration_v2_direct_runtime,
-       path: sibling_path("jido_integration/core/direct_runtime"),
-       only: :test,
-       runtime: false,
-       override: true},
-      {:aitrace,
-       path: Path.expand("../AITrace", @repo_root), only: :test, runtime: false, override: true},
+      DependencySources.dep(:citadel_authority_contract, @repo_root,
+        runtime: false,
+        override: true
+      ),
+      DependencySources.dep(:jido_integration_v2_direct_runtime, @repo_root,
+        only: :test,
+        runtime: false,
+        override: true
+      ),
+      DependencySources.dep(:aitrace, @repo_root,
+        only: :test,
+        runtime: false,
+        override: true
+      ),
       {:ash, "~> 3.24"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
@@ -98,18 +101,6 @@ defmodule AppKitMezzanineBridge.MixProject do
   end
 
   defp execution_plane_dep do
-    if Mix.env() == :test do
-      {:execution_plane,
-       path: Path.expand("../execution_plane/core/execution_plane", @repo_root), override: true}
-    else
-      DependencySources.dep(:execution_plane, @repo_root, override: true)
-    end
-  end
-
-  defp sibling_path(relative_path) do
-    direct = Path.expand("../#{relative_path}", @repo_root)
-    workspace = Path.expand("../../#{relative_path}", @repo_root)
-
-    if File.exists?(direct), do: direct, else: workspace
+    DependencySources.dep(:execution_plane, @repo_root, override: true)
   end
 end

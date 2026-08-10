@@ -1,5 +1,64 @@
 %{
   deps: %{
+    aitrace: %{
+      path: "../AITrace",
+      hex: "~> 0.1.0",
+      github: %{repo: "nshkrdotcom/AITrace", branch: "main"},
+      default_order: [:path, :github, :hex],
+      publish_order: [:hex]
+    },
+    blitz: %{
+      hex: "~> 0.3.0",
+      default_order: [:hex],
+      publish_order: [:hex]
+    },
+    chassis_appkit_surface: %{
+      path: "../chassis/governance/chassis_appkit_surface",
+      hex: "~> 0.1.0",
+      github: %{
+        repo: "nshkrdotcom/chassis",
+        subdir: "governance/chassis_appkit_surface",
+        branch: "main"
+      },
+      default_order: [:path, :github, :hex],
+      publish_order: [:hex]
+    },
+    chassis_boundary: %{
+      path: "../chassis/core/chassis_boundary",
+      hex: "~> 0.1.0",
+      github: %{repo: "nshkrdotcom/chassis", subdir: "core/chassis_boundary", branch: "main"},
+      default_order: [:path, :github, :hex],
+      publish_order: [:hex]
+    },
+    chassis_releases: %{
+      path: "../chassis/core/chassis_releases",
+      hex: "~> 0.1.0",
+      github: %{repo: "nshkrdotcom/chassis", subdir: "core/chassis_releases", branch: "main"},
+      default_order: [:path, :github, :hex],
+      publish_order: [:hex]
+    },
+    citadel_authority_contract: %{
+      path: "../citadel/core/authority_contract",
+      hex: "~> 0.1.0",
+      github: %{
+        repo: "nshkrdotcom/citadel",
+        subdir: "core/authority_contract",
+        branch: "main"
+      },
+      default_order: [:path, :github, :hex],
+      publish_order: [:hex]
+    },
+    jido_integration_v2_direct_runtime: %{
+      path: "../jido_integration/core/direct_runtime",
+      hex: "~> 0.1.0",
+      github: %{
+        repo: "nshkrdotcom/jido_integration",
+        subdir: "core/direct_runtime",
+        branch: "main"
+      },
+      default_order: [:path, :github, :hex],
+      publish_order: [:hex]
+    },
     mezzanine_decision_engine: %{
       path: "../mezzanine/core/decision_engine",
       hex: "~> 0.1.0",
@@ -200,13 +259,13 @@
     },
     execution_plane: %{
       path: "../execution_plane/core/execution_plane",
-      hex: "~> 0.1.0",
+      hex: "~> 0.2.0",
       github: %{
         repo: "nshkrdotcom/execution_plane",
         subdir: "core/execution_plane",
         branch: "main"
       },
-      default_order: [:github, :hex, :path],
+      default_order: [:path, :github, :hex],
       publish_order: [:hex]
     },
     outer_brain_contracts: %{
@@ -394,6 +453,11 @@
         branch: "main"
       },
       default_order: [:path, :github, :hex],
+      publish_order: [:hex]
+    },
+    weld: %{
+      hex: "~> 0.8.2",
+      default_order: [:hex],
       publish_order: [:hex]
     }
   }

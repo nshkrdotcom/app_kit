@@ -51,9 +51,9 @@ defmodule AppKit.Workspace.MixProject do
 
   defp deps do
     [
-      {:blitz, "~> 0.3.0", runtime: false},
+      DependencySources.dep(:blitz, __DIR__, runtime: false),
       {:app_kit_chassis_bridge, path: "bridges/chassis_bridge"},
-      {:weld, "~> 0.8.2", only: [:dev, :test], runtime: false},
+      DependencySources.dep(:weld, __DIR__, only: [:dev, :test], runtime: false),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40.1", only: :dev, runtime: false}
