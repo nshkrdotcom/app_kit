@@ -455,6 +455,17 @@
       default_order: [:path, :github, :hex],
       publish_order: [:hex]
     },
+    pristine: %{
+      path: "../pristine/apps/pristine_runtime",
+      hex: "~> 0.2.1",
+      github: %{
+        repo: "nshkrdotcom/pristine",
+        subdir: "apps/pristine_runtime",
+        branch: "main"
+      },
+      default_order: [:path, :github, :hex],
+      publish_order: [:hex]
+    },
     weld: %{
       hex: "~> 0.8.2",
       default_order: [:hex],
